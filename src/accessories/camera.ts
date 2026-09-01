@@ -60,7 +60,19 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
   async putSetting(key: string, value: SettingValue): Promise<void> {
     await this.storageSettings.putSetting(key, value);
     if (key === "p2pRtspUrl") {
+      if (this.storageSettings.values.p2pRtspUrl?.trim()) {
+        this.online = true;
+      }
       this.onDeviceEvent(ScryptedInterface.VideoCamera, undefined);
+    }
+  }
+
+  async updateAllValues(): Promise<void> {
+    if (this.storageSettings.values.p2pRtspUrl?.trim()) {
+      this.online = true;
+      await this.updateStatus(this.tuyaDevice.status || []);
+    } else {
+      await super.updateAllValues();
     }
   }
 
@@ -110,13 +122,6 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
 
   // Video Camera
   async getVideoStream(options?: MediaStreamOptions): Promise<MediaObject> {
-    // Always create new rtsp since it can only be used once and we only have 30 seconds before we can
-    // use it.
-    if (!this.tuyaDevice.online) {
-      this.log.e(`${this.name} is currently offline. Will not be able to stream until device is back online.`);
-      throw new Error(`Failed to stream ${this.name}: Camera is offline.`);
-    }
-
     const p2pRtspUrl = this.storageSettings.values.p2pRtspUrl?.trim();
     let streamUrl: string;
 
@@ -125,8 +130,13 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         throw new Error(`Invalid Smart Life P2P RTSP URL for ${this.name}. The URL must start with rtsp:// or rtsps://.`);
       }
       streamUrl = p2pRtspUrl;
-      this.console.info(`[${this.name}] Using Smart Life P2P main/HD stream through the configured RTSP bridge.`);
+      this.console.info(`[${this.name}] Using Smart Life P2P main/HD stream through the configured RTSP bridge: ${streamUrl}`);
     } else {
+      if (!this.tuyaDevice.online) {
+        this.log.e(`${this.name} is currently offline. Will not be able to stream until device is back online.`);
+        throw new Error(`Failed to stream ${this.name}: Camera is offline.`);
+      }
+
       await this.requestMaximumQuality();
       // Give the camera time to apply the quality change before allocating RTSP.
       await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -141,11 +151,12 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
       this.console.info(`[${this.name}] Probe resolution with: ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 ${streamUrl}`);
     }
 
+    const streamOptions = (await this.getVideoStreamOptions())[0];
     return this.createMediaObject(
       {
         url: streamUrl,
         container: "rtsp",
-        mediaStreamOptions: (await this.getVideoStreamOptions())[0],
+        mediaStreamOptions: streamOptions,
       } satisfies MediaStreamUrl,
       ScryptedMimeTypes.MediaStreamUrl
     );
@@ -227,14 +238,11 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
     return [
       {
         id: "cloud-rtsp",
-        name: "Cloud RTSP",
+        name: p2pRtspUrl ? "Smart Life P2P HD" : "Cloud RTSP",
         container: "rtsp",
         video: {
           codec: "h264",
           ...(resolution ? { width: resolution.width, height: resolution.height } : {}),
-        },
-        audio: {
-          codec: "pcm_ulaw",
         },
         source: p2pRtspUrl ? "local" : "cloud",
         tool: "ffmpeg",

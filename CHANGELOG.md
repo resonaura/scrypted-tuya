@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0-beta.16
+
+- Set stream display name to `Smart Life P2P HD` dynamically when P2P RTSP is configured.
+- Bypass Tuya Cloud offline check when P2P RTSP URL is present and mark camera online locally.
+- Remove hardcoded audio codec requirement to allow FFmpeg dynamic audio negotiation.
+
 ## 0.1.0-beta.15
 
 - Restore stable `cloud-rtsp` stream ID and `MediaStreamUrl` output to fix Rebroadcast stream bindings.
