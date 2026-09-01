@@ -1,5 +1,10 @@
 # Tuya RTSP Bridge Changelog
 
+## 1.2.8
+
+- Hardcode ports: 8787 (Web UI), 8600→8554 (RTSP). Removed port configuration from add-on options.
+- Fix Docker base image architecture parameterization.
+
 ## 1.2.7
 
 - Remove ingress (port-forwarding does not work in add-on).
