@@ -125,6 +125,8 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
       this.console.info(`[${this.name}] Using Smart Life P2P main/HD stream through the configured RTSP bridge.`);
     } else {
       await this.requestMaximumQuality();
+      // Give the camera time to apply the quality change before allocating RTSP.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       const rtsps = await this.plugin.api?.getRTSP(this.tuyaDevice.id);
 
       if (!rtsps) {
@@ -151,22 +153,34 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
       return;
     }
 
-    if (selection.current?.value === selection.value || this.selectedQuality === selection.value) return;
+    if (selection.current?.value === selection.value) {
+      this.console.debug(`[${this.name}] Tuya quality already at maximum: ${selection.code}=${selection.value}`);
+      return;
+    }
+
+    if (this.selectedQuality === selection.value) {
+      this.console.debug(`[${this.name}] Quality already selected this session: ${selection.code}=${selection.value}`);
+      return;
+    }
+
+    this.console.info(`[${this.name}] Requesting maximum advertised Tuya video quality: ${selection.code}=${selection.value}`);
 
     try {
-      const changed = await this.plugin.api?.sendCommands(this.tuyaDevice.id, [{
+      const commands = [{
         code: selection.code,
         value: selection.value,
-      }]);
+      }];
+      this.console.debug(`[${this.name}] Sending command: ${JSON.stringify(commands)}`);
+      const changed = await this.plugin.api?.sendCommands(this.tuyaDevice.id, commands);
 
       if (changed) {
         this.selectedQuality = selection.value;
         selection.current
           ? selection.current.value = selection.value
           : this.tuyaDevice.status.push({ code: selection.code, value: selection.value });
-        this.console.info(`[${this.name}] Requested maximum advertised Tuya video quality: ${selection.code}=${selection.value}`);
+        this.console.info(`[${this.name}] Maximum quality command accepted: ${selection.code}=${selection.value}`);
       } else {
-        this.console.warn(`[${this.name}] Tuya rejected the maximum-quality command. Falling back to Tuya's default RTSP quality.`);
+        this.console.warn(`[${this.name}] Tuya rejected the maximum-quality command (${selection.code}=${selection.value}). Falling back to Tuya's default RTSP quality.`);
       }
     } catch (e) {
       this.console.warn(`[${this.name}] Could not select maximum Tuya video quality. Falling back to Tuya's default RTSP quality.`, e);
