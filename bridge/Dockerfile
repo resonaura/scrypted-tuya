@@ -2,7 +2,8 @@
 # Pull app sources from GitHub at build time (or override REPO_REF).
 # syntax=docker/dockerfile:1
 
-ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base-debian:bookworm
+ARG BUILD_ARCH=amd64
+ARG BUILD_FROM=ghcr.io/home-assistant/${BUILD_ARCH}-base-debian:bookworm
 ARG REPO_URL=https://github.com/DanEng1982/tuya-rtsp-bridge.git
 ARG REPO_REF=v1.2.4
 
