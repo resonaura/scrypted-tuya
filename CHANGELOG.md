@@ -129,3 +129,4 @@ Add Tuya Camera (and Doorbell Cameras) Support (#350)
 - Add per-camera Smart Life P2P HD RTSP override while preserving Tuya events and controls.
 - Add a Home Assistant add-on definition for QR-authenticated Smart Life WebRTC/P2P to RTSP bridging.
 - Pin the bridge backend to `DanEng1982/tuya-rtsp-bridge` v1.2.4.
+- Fix the add-on startup log command outside the Supervisor bashio shell and add an HTTP health check.

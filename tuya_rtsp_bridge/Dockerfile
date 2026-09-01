@@ -48,5 +48,7 @@ ENV TUYA_BRIDGE_ROOT=/app \
     PATH="/app/bin:${PATH}"
 
 EXPOSE 8787 8554
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/api/state', timeout=3).read()" || exit 1
 WORKDIR /data/tuya-rtsp-bridge
 CMD ["/run.sh"]

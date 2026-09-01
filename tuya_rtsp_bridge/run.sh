@@ -12,8 +12,6 @@ export PATH="/app/bin:${PATH}"
 mkdir -p "${XDG_DATA_HOME}/tuya-rtsp-bridge" "${XDG_CONFIG_HOME}/tuya-rtsp-bridge"
 cd "${XDG_DATA_HOME}/tuya-rtsp-bridge"
 
-if command -v bashio >/dev/null 2>&1; then
-  bashio::log.info "Tuya RTSP Bridge starting (API :8787, RTSP :8554)" || true
-fi
+echo "Tuya RTSP Bridge starting (API :8787, RTSP :8554)"
 
 exec python3 -u "${TUYA_BRIDGE_ROOT}/src/server.py"
