@@ -47,9 +47,9 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
   private storageSettings = new StorageSettings(this, {
     p2pRtspUrl: {
       title: "Smart Life P2P HD RTSP URL",
-      description: "Optional HD URL from Tuya RTSP Bridge, for example rtsp://home-assistant:8554/CameraName/hd. When configured, this replaces Tuya Cloud RTSP video while keeping Tuya events and controls.",
+      description: "Optional HD URL from Tuya RTSP Bridge, for example rtsp://home-assistant:8600/CameraName/hd. When configured, this replaces Tuya Cloud RTSP video while keeping Tuya events and controls.",
       type: "string",
-      placeholder: "rtsp://home-assistant:8554/CameraName/hd",
+      placeholder: "rtsp://home-assistant:8600/CameraName/hd",
     },
   });
 

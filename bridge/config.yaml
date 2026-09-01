@@ -1,5 +1,5 @@
 name: "Tuya RTSP Bridge"
-version: "1.2.8"
+version: "1.2.9"
 slug: bridge
 description: "Turn Tuya / Smart Life cameras into plain RTSP for Frigate, go2rtc, Agent DVR."
 url: "https://github.com/resonaura/scrypted-tuya"
@@ -13,7 +13,7 @@ boot: auto
 host_network: true
 ports:
   8787/tcp: 8787
-  8600/tcp: 8554
+  8600/tcp: 8600
 ports_description:
   8787/tcp: Web UI / API (Create QR, camera list)
   8600/tcp: RTSP for NVR clients

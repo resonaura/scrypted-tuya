@@ -1,5 +1,11 @@
 # Tuya RTSP Bridge Changelog
 
+## 1.2.9
+
+- Switch default RTSP port from 8554 to 8600 across engine (Go), backend (Python), and Web UI.
+- Cleanly patch upstream sources during build and startup.
+- Keep add-on options clean and empty.
+
 ## 1.2.8
 
 - Hardcode ports: 8787 (Web UI), 8600→8554 (RTSP). Removed port configuration from add-on options.

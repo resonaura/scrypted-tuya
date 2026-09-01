@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0-beta.12
+
+- Switch Tuya RTSP Bridge default RTSP port to 8600 across the engine, backend, and Web UI.
+- Cleanly patch upstream bridge code during Docker build and startup.
+- Update RTSP URL documentation and camera placeholder to port 8600.
+
 ## 0.1.0-beta.11
 
 - Add ingress and webui support to Tuya RTSP Bridge add-on (sidebar integration + Open Web UI button).

@@ -12,6 +12,9 @@ export PATH="/app/bin:${PATH}"
 mkdir -p "${XDG_DATA_HOME}/bridge" "${XDG_CONFIG_HOME}/bridge"
 cd "${XDG_DATA_HOME}/bridge"
 
-echo "Tuya RTSP Bridge starting (API :8787, RTSP :8554)"
+# Ensure port 8600 across all backend and web assets
+find "${TUYA_BRIDGE_ROOT}/src" "${TUYA_BRIDGE_ROOT}/web" -type f -exec sed -i 's/8554/8600/g' {} + 2>/dev/null || true
+
+echo "Tuya RTSP Bridge starting (API :8787, RTSP :8600)"
 
 exec python3 -u "${TUYA_BRIDGE_ROOT}/src/server.py"

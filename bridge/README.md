@@ -18,7 +18,7 @@ Turn Tuya / Smart Life cameras into plain RTSP endpoints for Frigate, go2rtc, Ag
 4. Open the Web UI (`http://<ha-host>:8787`) → **Create QR** → scan & confirm in Smart Life
 5. Use in Frigate / go2rtc:
    ```
-   rtsp://<ha-host>:8554/<CameraName>/hd
+   rtsp://<ha-host>:8600/<CameraName>/hd
    ```
 
 ## Requirements

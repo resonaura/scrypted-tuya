@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 WORKDIR /src
 RUN git clone --depth 1 --branch "${REPO_REF}" "${REPO_URL}" repo \
     && cd repo/vendor/tuya-ipc-terminal \
+    && find . -type f -name "*.go" -exec sed -i 's/8554/8600/g' {} + \
     && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/tuya-ipc-terminal .
 
 FROM ${BUILD_FROM}
@@ -31,6 +32,7 @@ RUN git clone --depth 1 --branch "${REPO_REF}" "${REPO_URL}" /tmp/repo \
     && cp /tmp/repo/requirements-docker.txt /app/requirements-docker.txt \
     && cp -a /tmp/repo/src /app/src \
     && cp -a /tmp/repo/web /app/web \
+    && find /app/src /app/web -type f -exec sed -i 's/8554/8600/g' {} + \
     && rm -rf /tmp/repo
 
 RUN pip3 install --break-system-packages --no-cache-dir -r /app/requirements-docker.txt \
@@ -48,7 +50,7 @@ ENV TUYA_BRIDGE_ROOT=/app \
     XDG_CONFIG_HOME=/config \
     PATH="/app/bin:${PATH}"
 
-EXPOSE 8787 8554
+EXPOSE 8787 8600
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/api/state', timeout=3).read()" || exit 1
 WORKDIR /data/bridge

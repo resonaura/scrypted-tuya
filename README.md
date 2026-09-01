@@ -85,7 +85,7 @@ For cameras that remain in **Smart Life**, Tuya Cloud RTSP may be fixed at 640×
 2. Add `https://github.com/resonaura/scrypted-tuya`.
 3. Install and start **Tuya RTSP Bridge**.
 4. Open `http://HOME_ASSISTANT_IP:8787`, create a QR code, then scan and confirm it in Smart Life.
-5. Copy the camera HD URL. It has the form `rtsp://HOME_ASSISTANT_IP:8554/CameraName/hd`.
+5. Copy the camera HD URL. It has the form `rtsp://HOME_ASSISTANT_IP:8600/CameraName/hd`.
 6. In Scrypted, open the matching camera created by this Tuya plugin and set **Smart Life P2P HD RTSP URL** to that URL.
 
 The Tuya plugin will keep handling discovery, online state, motion, doorbell events, and controls. Video will come from the P2P/WebRTC bridge using the camera's main/HD stream. Removing the override restores the Tuya Cloud RTSP fallback.
