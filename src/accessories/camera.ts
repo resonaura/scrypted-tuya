@@ -17,10 +17,14 @@ import sdk, {
   Device,
   ScryptedDeviceType,
   ScryptedInterface,
+  Setting,
+  Settings,
+  SettingValue,
 } from "@scrypted/sdk";
 import { TuyaAccessory } from "./accessory";
 import { TuyaDeviceStatus } from "../tuya/const";
 import { selectMaximumQuality } from "../tuya/quality";
+import { StorageSettings } from "@scrypted/sdk/storage-settings";
 
 // TODO: Allow setting motion info based on dp name?
 const SCHEMA_CODE = {
@@ -37,9 +41,25 @@ const SCHEMA_CODE = {
   INDICATOR: ["basic_indicator"]
 };
 
-export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCamera, BinarySensor, MotionSensor, OnOff {
+export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCamera, BinarySensor, MotionSensor, OnOff, Settings {
   private lightAccessory: ScryptedDeviceBase | undefined;
   private selectedQuality: string | undefined;
+  private storageSettings = new StorageSettings(this, {
+    p2pRtspUrl: {
+      title: "Smart Life P2P HD RTSP URL",
+      description: "Optional HD URL from Tuya RTSP Bridge, for example rtsp://home-assistant:8554/CameraName/hd. When configured, this replaces Tuya Cloud RTSP video while keeping Tuya events and controls.",
+      type: "string",
+      placeholder: "rtsp://home-assistant:8554/CameraName/hd",
+    },
+  });
+
+  async getSettings(): Promise<Setting[]> {
+    return this.storageSettings.getSettings();
+  }
+
+  async putSetting(key: string, value: SettingValue): Promise<void> {
+    return this.storageSettings.putSetting(key, value);
+  }
 
   get deviceSpecs(): Device {
     const indicatorSchema = !!this.getSchema(...SCHEMA_CODE.INDICATOR);
@@ -53,6 +73,7 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         ...super.deviceSpecs.interfaces,
         ScryptedInterface.VideoCamera,
         ScryptedInterface.DeviceProvider,
+        ScryptedInterface.Settings,
         indicatorSchema ? ScryptedInterface.OnOff : null,
         motionSchema ? ScryptedInterface.MotionSensor : null,
         doorbellSchema ? ScryptedInterface.BinarySensor : null,
@@ -93,17 +114,29 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
       throw new Error(`Failed to stream ${this.name}: Camera is offline.`);
     }
 
-    await this.requestMaximumQuality();
-    const rtsps = await this.plugin.api?.getRTSP(this.tuyaDevice.id);
+    const p2pRtspUrl = this.storageSettings.values.p2pRtspUrl?.trim();
+    let streamUrl: string;
 
-    if (!rtsps) {
-      this.log.e("There was an error retreiving camera's live feed camera feed.");
-      throw new Error(`Failed to capture stream for ${this.name}: RTSPS link not found.`);
+    if (p2pRtspUrl) {
+      if (!/^rtsps?:\/\//i.test(p2pRtspUrl)) {
+        throw new Error(`Invalid Smart Life P2P RTSP URL for ${this.name}. The URL must start with rtsp:// or rtsps://.`);
+      }
+      streamUrl = p2pRtspUrl;
+      this.console.info(`[${this.name}] Using Smart Life P2P main/HD stream through the configured RTSP bridge.`);
+    } else {
+      await this.requestMaximumQuality();
+      const rtsps = await this.plugin.api?.getRTSP(this.tuyaDevice.id);
+
+      if (!rtsps) {
+        this.log.e("There was an error retrieving the camera live feed.");
+        throw new Error(`Failed to capture stream for ${this.name}: RTSP link not found.`);
+      }
+      streamUrl = rtsps.url;
     }
 
     return this.createMediaObject(
       {
-        url: rtsps.url,
+        url: streamUrl,
         container: "rtsp",
         mediaStreamOptions: (await this.getVideoStreamOptions())[0],
       } satisfies MediaStreamUrl,

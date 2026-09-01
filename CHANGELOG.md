@@ -123,3 +123,9 @@ Add Tuya Camera (and Doorbell Cameras) Support (#350)
 
 - Request the highest recognised writable quality advertised by the camera schema before RTSP allocation.
 - Safely fall back to Tuya's server-selected quality.
+
+## 0.1.0-beta.10
+
+- Add per-camera Smart Life P2P HD RTSP override while preserving Tuya events and controls.
+- Add a Home Assistant add-on definition for QR-authenticated Smart Life WebRTC/P2P to RTSP bridging.
+- Pin the bridge backend to `DanEng1982/tuya-rtsp-bridge` v1.2.4.

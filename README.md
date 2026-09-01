@@ -76,3 +76,18 @@ This repository is a standalone extraction rather than a GitHub network fork bec
 The upstream Scrypted repository uses directory-specific licensing and does not declare a conventional SPDX license specifically for `plugins/tuya`. The original upstream notice is preserved in `UPSTREAM-LICENSE-NOTICE.md`.
 
 Review the upstream terms and obtain any required permission before redistributing this fork or publishing derived packages. Copyright remains with the original contributors.
+
+## Smart Life P2P HD through the Home Assistant add-on
+
+For cameras that remain in **Smart Life**, Tuya Cloud RTSP may be fixed at 640×360. This repository therefore also exposes a Home Assistant add-on based on [DanEng1982/tuya-rtsp-bridge](https://github.com/DanEng1982/tuya-rtsp-bridge), which uses the MIT-licensed [seydx/tuya-ipc-terminal](https://github.com/seydx/tuya-ipc-terminal) WebRTC/P2P engine.
+
+1. In Home Assistant, open **Settings → Add-ons → Add-on Store → Repositories**.
+2. Add `https://github.com/resonaura/scrypted-tuya`.
+3. Install and start **Tuya RTSP Bridge**.
+4. Open `http://HOME_ASSISTANT_IP:8787`, create a QR code, then scan and confirm it in Smart Life.
+5. Copy the camera HD URL. It has the form `rtsp://HOME_ASSISTANT_IP:8554/CameraName/hd`.
+6. In Scrypted, open the matching camera created by this Tuya plugin and set **Smart Life P2P HD RTSP URL** to that URL.
+
+The Tuya plugin will keep handling discovery, online state, motion, doorbell events, and controls. Video will come from the P2P/WebRTC bridge using the camera's main/HD stream. Removing the override restores the Tuya Cloud RTSP fallback.
+
+The add-on is pinned to Tuya RTSP Bridge `v1.2.4` rather than an unversioned branch.
