@@ -248,9 +248,17 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         id: "cloud-rtsp",
         name: p2pRtspUrl ? "Smart Life P2P HD" : "Cloud RTSP",
         container: "rtsp",
-        ...(resolution ? { video: { width: resolution.width, height: resolution.height } } : {}),
-        source: p2pRtspUrl ? "local" : "cloud",
         tool: "ffmpeg",
+        source: p2pRtspUrl ? "local" : "cloud",
+        oobCodecParameters: false,
+        prebuffer: 4000,
+        video: {
+          codec: p2pRtspUrl ? "hevc" : "h264",
+          ...(resolution ? { width: resolution.width, height: resolution.height } : {}),
+        },
+        audio: {
+          codec: "pcm_alaw",
+        },
       },
     ];
   }
