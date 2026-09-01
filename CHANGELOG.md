@@ -124,6 +124,16 @@ Add Tuya Camera (and Doorbell Cameras) Support (#350)
 - Request the highest recognised writable quality advertised by the camera schema before RTSP allocation.
 - Safely fall back to Tuya's server-selected quality.
 
+## 0.1.0-beta.11
+
+- Add ingress and webui support to Tuya RTSP Bridge add-on (sidebar integration + Open Web UI button).
+- Add ffprobe resolution hint and camera stream URL logging in getVideoStream.
+- Add qualityToResolution() mapping for stream options hint.
+- 1.5s delay between quality command and RTSP allocation.
+- Improved logging for quality command acceptance/rejection.
+- Rename tuya_rtsp_bridge to bridge.
+- Remove chat.json from repo.
+
 ## 0.1.0-beta.10
 
 - Add per-camera Smart Life P2P HD RTSP override while preserving Tuya events and controls.
