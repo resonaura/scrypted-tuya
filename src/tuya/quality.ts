@@ -41,7 +41,7 @@ function valueScore(value: string): number | undefined {
 function chooseSchema(schemas: TuyaDeviceSchema[]): TuyaDeviceSchema | undefined {
   return schemas
     .filter((schema) => schema.type === "Enum" && schema.mode !== "r" && codeScore(schema.code) > 0)
-    .filter((schema) => schema.specs.range.some((value) => valueScore(value) !== undefined))
+    .filter((schema) => schema.specs.range.some((value: string) => valueScore(value) !== undefined))
     .sort((a, b) => codeScore(b.code) - codeScore(a.code))[0];
 }
 
