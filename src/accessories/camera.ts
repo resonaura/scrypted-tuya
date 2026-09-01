@@ -1,15 +1,11 @@
 import sdk, {
   ScryptedDeviceBase,
   VideoCamera,
-  Camera,
-  RequestPictureOptions,
-  ResponsePictureOptions,
   MotionSensor,
   BinarySensor,
   MediaObject,
   MediaStreamOptions,
   MediaStreamUrl,
-  FFmpegInput,
   ScryptedMimeTypes,
   ResponseMediaStreamOptions,
   OnOff,
@@ -45,7 +41,7 @@ const SCHEMA_CODE = {
   INDICATOR: ["basic_indicator"]
 };
 
-export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCamera, Camera, BinarySensor, MotionSensor, OnOff, Settings {
+export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCamera, BinarySensor, MotionSensor, OnOff, Settings {
   private lightAccessory: ScryptedDeviceBase | undefined;
   private selectedQuality: string | undefined;
   private storageSettings = new StorageSettings(this, {
@@ -65,7 +61,6 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
     await this.storageSettings.putSetting(key, value);
     if (key === "p2pRtspUrl") {
       this.onDeviceEvent(ScryptedInterface.VideoCamera, undefined);
-      this.onDeviceEvent(ScryptedInterface.Camera, undefined);
     }
   }
 
@@ -80,7 +75,6 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
       interfaces: [
         ...super.deviceSpecs.interfaces,
         ScryptedInterface.VideoCamera,
-        ScryptedInterface.Camera,
         ScryptedInterface.DeviceProvider,
         ScryptedInterface.Settings,
         indicatorSchema ? ScryptedInterface.OnOff : null,
@@ -147,20 +141,13 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
       this.console.info(`[${this.name}] Probe resolution with: ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 ${streamUrl}`);
     }
 
-    const streamOptions = (await this.getVideoStreamOptions())[0];
-    const ffmpegInput: FFmpegInput = {
-      url: streamUrl,
-      container: "rtsp",
-      inputArguments: [
-        "-rtsp_transport", "tcp",
-        "-i", streamUrl,
-      ],
-      mediaStreamOptions: streamOptions,
-    };
-
     return this.createMediaObject(
-      ffmpegInput,
-      ScryptedMimeTypes.FFmpegInput
+      {
+        url: streamUrl,
+        container: "rtsp",
+        mediaStreamOptions: (await this.getVideoStreamOptions())[0],
+      } satisfies MediaStreamUrl,
+      ScryptedMimeTypes.MediaStreamUrl
     );
   }
 
@@ -235,13 +222,12 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
 
   async getVideoStreamOptions(): Promise<[ResponseMediaStreamOptions]> {
     const p2pRtspUrl = this.storageSettings.values.p2pRtspUrl?.trim();
-    const isP2P = !!p2pRtspUrl;
     const selection = selectMaximumQuality(this.tuyaDevice);
     const resolution = selection ? this.qualityToResolution(selection.value) : undefined;
     return [
       {
-        id: isP2P ? "p2p-hd-rtsp" : "cloud-rtsp",
-        name: isP2P ? "Smart Life P2P HD RTSP" : "Cloud RTSP",
+        id: "cloud-rtsp",
+        name: "Cloud RTSP",
         container: "rtsp",
         video: {
           codec: "h264",
@@ -250,35 +236,8 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         audio: {
           codec: "pcm_ulaw",
         },
-        source: isP2P ? "local" : "cloud",
-        destinations: [
-          "local",
-          "remote",
-          "local-recorder",
-          "remote-recorder",
-          "medium-resolution",
-          "low-resolution",
-        ],
+        source: p2pRtspUrl ? "local" : "cloud",
         tool: "ffmpeg",
-      },
-    ];
-  }
-
-  // Camera Snapshots
-  async takePicture(options?: RequestPictureOptions): Promise<MediaObject> {
-    const videoStream = await this.getVideoStream();
-    const buffer = await sdk.mediaManager.convertMediaObjectToBuffer(videoStream, "image/jpeg");
-    return this.createMediaObject(buffer, "image/jpeg");
-  }
-
-  async getPictureOptions(): Promise<ResponsePictureOptions[]> {
-    const isP2P = !!this.storageSettings.values.p2pRtspUrl?.trim();
-    const selection = selectMaximumQuality(this.tuyaDevice);
-    const resolution = selection ? this.qualityToResolution(selection.value) : undefined;
-    return [
-      {
-        id: isP2P ? "p2p-hd-rtsp" : "cloud-rtsp",
-        picture: resolution,
       },
     ];
   }

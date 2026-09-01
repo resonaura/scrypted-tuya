@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0-beta.15
+
+- Restore stable `cloud-rtsp` stream ID and `MediaStreamUrl` output to fix Rebroadcast stream bindings.
+- Let Scrypted's standard FFmpeg Camera mixin handle snapshot extraction from the P2P RTSP stream.
+- Set `source: "local"` when P2P RTSP is configured so Scrypted enables unthrottled local rebroadcast and prebuffering.
+
 ## 0.1.0-beta.14
 
 - Return `ScryptedMimeTypes.FFmpegInput` with `-rtsp_transport tcp` in `getVideoStream` for reliable Rebroadcast and FFmpeg streaming.
