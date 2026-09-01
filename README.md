@@ -1,33 +1,78 @@
-# Tuya for Scrypted
+# scrypted-tuya
 
-This is a Tuya controller that integrates Tuya devices, specifically cameras, into Scrypted.
+Unofficial standalone fork of the Tuya plugin from the [Scrypted repository](https://github.com/koush/scrypted), extracted from [`plugins/tuya`](https://github.com/koush/scrypted/tree/main/plugins/tuya).
 
-The plugin will discover all the cameras within Tuya (or Smart Life) app to Scrypted, including motion events for devices that support this feature.
+The standalone extraction is based on upstream commit [`abd37e416dba4e36bcf9768ab6bbf1e82a206dd9`](https://github.com/koush/scrypted/commit/abd37e416dba4e36bcf9768ab6bbf1e82a206dd9). This repository contains only the Tuya plugin and does not include the rest of the Scrypted monorepository.
+
+This project is unofficial and is not affiliated with or endorsed by Scrypted or Tuya.
+
+## What changed
+
+The upstream plugin requests a cloud RTSP stream from Tuya. For some cameras, Tuya returns the SD profile even when the camera also supports HD.
+
+This fork checks the writable device capabilities advertised through the Tuya Sharing API before allocating the RTSP stream. If the camera exposes a video `quality`, `resolution`, `clarity`, `definition`, or `stream_quality` enum, the plugin requests the highest recognised value advertised by that camera.
+
+Recognised values include common profiles such as:
+
+- `hd`, `high`, `1080p`, and Tuya clarity value `4`;
+- `2k`, `ultra`, `uhd`, and `4k`;
+- lower profiles such as `sd`, `standard`, `720p`, and Tuya clarity value `2` are used only when no higher advertised option exists.
+
+Unknown data points and values are not guessed. If the camera does not advertise a writable quality capability, or rejects the command, the plugin safely falls back to the RTSP quality selected by Tuya.
+
+## Important limitation
+
+Tuya's documented cloud RTSP allocation endpoint exposes the stream transport, such as RTSP or HLS, but does not expose a documented quality selector. Consequently, this fork can request maximum quality only on cameras that advertise a writable quality-related data point through the Sharing API.
+
+Some models control HD exclusively through Tuya's P2P IPC SDK. Those cameras may still return an SD cloud RTSP stream. Check the actual stream resolution on the target camera after installation.
 
 ## Features
-- Supports Tuya Camera Streaming.
-- Supports Tuya Doorbell Cameras with ring notifications.
-- ~~(Once Tuya Upgrades Security) 2-Way communication (for devices that support WebRTC).~~ (will not add support as of this time.)
 
-## Authenticating
+- Tuya and Smart Life camera discovery.
+- Cloud RTSP camera streaming.
+- Maximum advertised video-quality selection with safe fallback.
+- Tuya doorbell ring notifications.
+- Motion events on supported devices.
+- Camera indicator and floodlight controls when exposed by the device.
 
-<details>
-<summary>Authenticating with Tuya or Smart Life (recommended)</summary>
-</details>
+## Authentication
 
-<details>
-<summary>Authenticating with Tuya Developer Account (deprecated)</summary>
+The recommended login method is the QR-code flow using the Tuya or Smart Life application. The legacy Tuya Developer Account login remains available for existing configurations.
 
-### Access Id, Access Key, and User Id
-In order to retrieve `Access Id` and `Access Key`, you must follow the guide below:
-- [Using Smart Home PaaS (TuyaSmart, SmartLife, ect...)](https://developer.tuya.com/en/docs/iot/Platform_Configuration_smarthome?id=Kamcgamwoevrx&_source=6435717a3be1bc67fdd1f6699a1a59ac)
+## Development
 
-- [If you're using custom development](https://developer.tuya.com/en/docs/iot/Configuration_Guide_custom?id=Kamcfx6g5uyot&_source=bdc927ff355af92156074d47e00d6191)
+Requirements:
 
-Once you have retreived both the `Access Id` and `Access Key` from the project, you can get the `User Id` by going to Tuya Cloud IoT -> Select the Project -> Devices -> Link Tuya App Account -> and then get the UID.
+- Node.js
+- npm
+- a Scrypted server for deployment and runtime testing
 
-### Tuya Pulsar
-You need to enable Messages Service in your project in order to receive real time notifications to Scrypted. (motion events, online/offline, light switch ect...) The way this is achieved is by following this [guide](https://developer.tuya.com/en/docs/iot/subscribe-mq?id=Kavqcrvckbh9h). 
+Install dependencies and verify the project:
 
-- NOTE: You do not need to set an alert notification of your phone.
-</details>
+```bash
+npm ci
+npm run typecheck
+npm run build
+```
+
+The Scrypted plugin archive is generated at:
+
+```text
+out/plugin.zip
+```
+
+Quality-selection tests are located in `tests/quality.test.ts` and can be run with Bun:
+
+```bash
+bun test tests/quality.test.ts
+```
+
+## Repository history
+
+This repository is a standalone extraction rather than a GitHub network fork because GitHub cannot fork a single subdirectory of a monorepository. Upstream provenance is recorded in `STANDALONE-NOTICE.md` and `UPSTREAM-LICENSE-NOTICE.md`.
+
+## License and attribution
+
+The upstream Scrypted repository uses directory-specific licensing and does not declare a conventional SPDX license specifically for `plugins/tuya`. The original upstream notice is preserved in `UPSTREAM-LICENSE-NOTICE.md`.
+
+Review the upstream terms and obtain any required permission before redistributing this fork or publishing derived packages. Copyright remains with the original contributors.

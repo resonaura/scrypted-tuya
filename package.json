@@ -1,12 +1,11 @@
 {
-   "name": "@scrypted/tuya",
+   "name": "scrypted-tuya",
    "scripts": {
       "scrypted-setup-project": "scrypted-setup-project",
       "prescrypted-setup-project": "scrypted-package-json",
       "build": "scrypted-webpack",
       "typecheck": "tsc --noEmit",
-      "preprepublishOnly": "scrypted-changelog",
-      "prepublishOnly": "scrypted-changelog && WEBPACK_DEVTOOL=nosources-source-map NODE_ENV=production scrypted-webpack",
+      "prepublishOnly": "WEBPACK_DEVTOOL=nosources-source-map NODE_ENV=production scrypted-webpack",
       "prescrypted-vscode-launch": "WEBPACK_DEVTOOL=nosources-source-map scrypted-webpack",
       "scrypted-vscode-launch": "scrypted-deploy-debug",
       "scrypted-deploy-debug": "scrypted-deploy-debug",
@@ -43,5 +42,18 @@
       "@types/ws": "^8.18.0"
    },
    "version": "0.1.0-beta.9",
-   "packageManager": "npm@10.9.2+sha512.8ab88f10f224a0c614cb717a7f7c30499014f77134120e9c1f0211ea3cf3397592cbe483feb38e0c4b3be1c54e347292c76a1b5edb94a3289d5448484ab8ac81"
+   "packageManager": "npm@10.9.2+sha512.8ab88f10f224a0c614cb717a7f7c30499014f77134120e9c1f0211ea3cf3397592cbe483feb38e0c4b3be1c54e347292c76a1b5edb94a3289d5448484ab8ac81",
+   "description": "Unofficial standalone Scrypted Tuya plugin with maximum advertised camera quality selection.",
+   "repository": {
+      "type": "git",
+      "url": "git+https://github.com/resonaura/scrypted-tuya.git"
+   },
+   "homepage": "https://github.com/resonaura/scrypted-tuya#readme",
+   "bugs": {
+      "url": "https://github.com/resonaura/scrypted-tuya/issues"
+   },
+   "publishConfig": {
+      "access": "public",
+      "tag": "beta"
+   }
 }
