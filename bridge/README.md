@@ -6,12 +6,12 @@ Turn Tuya / Smart Life cameras into plain RTSP endpoints for Frigate, go2rtc, Ag
 
 1. On the HA host (or via Samba/SSH), copy this folder to:
    ```
-   /addons/tuya_rtsp_bridge
-   ```
-   The monorepo layout expects the **repo root** as Docker build context. Easiest path:
-   ```bash
-   git clone https://github.com/DanEng1982/tuya-rtsp-bridge.git /addons/tuya-rtsp-bridge-src
-   ln -s /addons/tuya-rtsp-bridge-src/homeassistant/tuya_rtsp_bridge /addons/tuya_rtsp_bridge
+    /addons/bridge
+    ```
+    The monorepo layout expects the **repo root** as Docker build context. Easiest path:
+    ```bash
+    git clone https://github.com/DanEng1982/tuya-rtsp-bridge.git /addons/tuya-rtsp-bridge-src
+    ln -s /addons/tuya-rtsp-bridge-src/homeassistant/bridge /addons/bridge
    ```
 2. In HA: **Settings → Add-ons → Add-on store → ⋮ → Check for updates**
 3. Open **Local add-ons → Tuya RTSP Bridge → Install → Start**
@@ -31,7 +31,7 @@ Turn Tuya / Smart Life cameras into plain RTSP endpoints for Frigate, go2rtc, Ag
 If you prefer plain Docker on the HA host (no Supervisor add-on):
 
 ```bash
-cd /path/to/tuya-rtsp-bridge
+cd /path/to/bridge
 docker compose up -d --build
 ```
 

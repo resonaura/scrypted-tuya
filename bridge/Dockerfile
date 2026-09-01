@@ -38,7 +38,7 @@ RUN pip3 install --break-system-packages --no-cache-dir -r /app/requirements-doc
 COPY --from=engine /out/tuya-ipc-terminal /app/bin/tuya-ipc-terminal
 COPY run.sh /run.sh
 RUN chmod 755 /app/bin/tuya-ipc-terminal /run.sh \
-    && mkdir -p /data/tuya-rtsp-bridge /config/tuya-rtsp-bridge
+    && mkdir -p /data/bridge /config/bridge
 
 ENV TUYA_BRIDGE_ROOT=/app \
     PYTHONPATH=/app/src \
@@ -50,5 +50,5 @@ ENV TUYA_BRIDGE_ROOT=/app \
 EXPOSE 8787 8554
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/api/state', timeout=3).read()" || exit 1
-WORKDIR /data/tuya-rtsp-bridge
+WORKDIR /data/bridge
 CMD ["/run.sh"]

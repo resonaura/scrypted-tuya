@@ -16,5 +16,5 @@ dist/*.js
 .venv/
 .tmp/
 tmp/
-tuya_rtsp_bridge/
+bridge/
 repository.yaml

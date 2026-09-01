@@ -9,8 +9,8 @@ export XDG_DATA_HOME="${XDG_DATA_HOME:-/data}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-/config}"
 export PATH="/app/bin:${PATH}"
 
-mkdir -p "${XDG_DATA_HOME}/tuya-rtsp-bridge" "${XDG_CONFIG_HOME}/tuya-rtsp-bridge"
-cd "${XDG_DATA_HOME}/tuya-rtsp-bridge"
+mkdir -p "${XDG_DATA_HOME}/bridge" "${XDG_CONFIG_HOME}/bridge"
+cd "${XDG_DATA_HOME}/bridge"
 
 echo "Tuya RTSP Bridge starting (API :8787, RTSP :8554)"
 
