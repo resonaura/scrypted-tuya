@@ -134,6 +134,8 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         throw new Error(`Failed to capture stream for ${this.name}: RTSP link not found.`);
       }
       streamUrl = rtsps.url;
+      this.console.info(`[${this.name}] Cloud RTSP stream URL: ${streamUrl}`);
+      this.console.info(`[${this.name}] Probe resolution with: ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 ${streamUrl}`);
     }
 
     return this.createMediaObject(
@@ -187,7 +189,37 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
     }
   }
 
+  private qualityToResolution(qualityValue: string): { width?: number; height?: number } | undefined {
+    const v = qualityValue.toLowerCase().trim();
+    const map: Record<string, { width: number; height: number }> = {
+      "ssuper": { width: 3840, height: 2160 },
+      "super_ultra": { width: 3840, height: 2160 },
+      "super-ultra": { width: 3840, height: 2160 },
+      "superuhd": { width: 3840, height: 2160 },
+      "super_uhd": { width: 3840, height: 2160 },
+      "ultra": { width: 3840, height: 2160 },
+      "uhd": { width: 3840, height: 2160 },
+      "4k": { width: 3840, height: 2160 },
+      "2k": { width: 2560, height: 1440 },
+      "super": { width: 2560, height: 1440 },
+      "hd": { width: 1920, height: 1080 },
+      "1080p": { width: 1920, height: 1080 },
+      "high": { width: 1280, height: 720 },
+      "720p": { width: 1280, height: 720 },
+      "standard": { width: 640, height: 360 },
+      "sd": { width: 640, height: 360 },
+      "medium": { width: 640, height: 360 },
+      "normal": { width: 640, height: 360 },
+      "low": { width: 320, height: 180 },
+      "fluent": { width: 320, height: 180 },
+      "smooth": { width: 320, height: 180 },
+    };
+    return map[v];
+  }
+
   async getVideoStreamOptions(): Promise<[ResponseMediaStreamOptions]> {
+    const selection = selectMaximumQuality(this.tuyaDevice);
+    const resolution = selection ? this.qualityToResolution(selection.value) : undefined;
     return [
       {
         id: "cloud-rtsp",
@@ -195,6 +227,7 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         container: "rtsp",
         video: {
           codec: "h264",
+          ...(resolution ? { width: resolution.width, height: resolution.height } : {}),
         },
         audio: {
           codec: "pcm_ulaw",
