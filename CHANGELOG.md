@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.1-beta.1
+## 0.1.2-beta
 
 - Accurately declare `codec: "hevc"`, `audio: { codec: "pcm_alaw" }`, `prebuffer: 4000`, and `oobCodecParameters: false` in `getVideoStreamOptions`.
 - Enables Scrypted stream router to automatically trigger the H.264 / AAC transcoding pipeline for HomeKit HAP compliance.
