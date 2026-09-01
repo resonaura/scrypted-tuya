@@ -22,7 +22,8 @@ import sdk, {
   SettingValue,
 } from "@scrypted/sdk";
 import { TuyaAccessory } from "./accessory";
-import { TuyaDeviceStatus } from "../tuya/const";
+import { TuyaPlugin } from "../plugin";
+import { TuyaDevice, TuyaDeviceStatus } from "../tuya/const";
 import { selectMaximumQuality } from "../tuya/quality";
 import { StorageSettings } from "@scrypted/sdk/storage-settings";
 
@@ -52,6 +53,13 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
       placeholder: "rtsp://home-assistant:8600/CameraName/hd",
     },
   });
+
+  constructor(state: TuyaDevice, controller: TuyaPlugin) {
+    super(state, controller);
+    if (this.storageSettings.values.p2pRtspUrl?.trim()) {
+      this.online = true;
+    }
+  }
 
   async getSettings(): Promise<Setting[]> {
     return this.storageSettings.getSettings();
@@ -240,10 +248,7 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         id: "cloud-rtsp",
         name: p2pRtspUrl ? "Smart Life P2P HD" : "Cloud RTSP",
         container: "rtsp",
-        video: {
-          codec: "h264",
-          ...(resolution ? { width: resolution.width, height: resolution.height } : {}),
-        },
+        ...(resolution ? { video: { width: resolution.width, height: resolution.height } } : {}),
         source: p2pRtspUrl ? "local" : "cloud",
         tool: "ffmpeg",
       },

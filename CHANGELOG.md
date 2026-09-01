@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.0-beta.17
+
+- Initialize `online: true` in `TuyaCamera` constructor when P2P RTSP URL is configured.
+- Remove hardcoded `codec: "h264"` constraint in `getVideoStreamOptions` to support HEVC/H.265 streams from Tuya RTSP Bridge without parsing errors.
+
 ## 0.1.0-beta.16
 
 - Set stream display name to `Smart Life P2P HD` dynamically when P2P RTSP is configured.
