@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1-beta
+
+- Tuya RTSP Bridge port 8600 default across full stack.
+- Smart Life P2P HD RTSP stream integration with online auto-status, dynamic UI naming, and unconstrained HEVC/H.264 FFmpeg negotiation for Rebroadcast and snapshots.
+
 ## 0.1.0-beta.17
 
 - Initialize `online: true` in `TuyaCamera` constructor when P2P RTSP URL is configured.
