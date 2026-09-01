@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0-beta.14
+
+- Return `ScryptedMimeTypes.FFmpegInput` with `-rtsp_transport tcp` in `getVideoStream` for reliable Rebroadcast and FFmpeg streaming.
+- Convert video streams to JPEG image buffers in `takePicture` for working snapshot generation.
+- Dynamically label stream as `Smart Life P2P HD RTSP` (`id: p2p-hd-rtsp`) when P2P RTSP is configured.
+
 ## 0.1.0-beta.13
 
 - Implement `Camera` interface (`takePicture` & `getPictureOptions`) using the active video stream (P2P HD RTSP or Cloud RTSP) for snapshots.

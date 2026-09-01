@@ -9,6 +9,7 @@ import sdk, {
   MediaObject,
   MediaStreamOptions,
   MediaStreamUrl,
+  FFmpegInput,
   ScryptedMimeTypes,
   ResponseMediaStreamOptions,
   OnOff,
@@ -146,13 +147,20 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
       this.console.info(`[${this.name}] Probe resolution with: ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 ${streamUrl}`);
     }
 
+    const streamOptions = (await this.getVideoStreamOptions())[0];
+    const ffmpegInput: FFmpegInput = {
+      url: streamUrl,
+      container: "rtsp",
+      inputArguments: [
+        "-rtsp_transport", "tcp",
+        "-i", streamUrl,
+      ],
+      mediaStreamOptions: streamOptions,
+    };
+
     return this.createMediaObject(
-      {
-        url: streamUrl,
-        container: "rtsp",
-        mediaStreamOptions: (await this.getVideoStreamOptions())[0],
-      } satisfies MediaStreamUrl,
-      ScryptedMimeTypes.MediaStreamUrl
+      ffmpegInput,
+      ScryptedMimeTypes.FFmpegInput
     );
   }
 
@@ -227,12 +235,13 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
 
   async getVideoStreamOptions(): Promise<[ResponseMediaStreamOptions]> {
     const p2pRtspUrl = this.storageSettings.values.p2pRtspUrl?.trim();
+    const isP2P = !!p2pRtspUrl;
     const selection = selectMaximumQuality(this.tuyaDevice);
     const resolution = selection ? this.qualityToResolution(selection.value) : undefined;
     return [
       {
-        id: "cloud-rtsp",
-        name: "Cloud RTSP",
+        id: isP2P ? "p2p-hd-rtsp" : "cloud-rtsp",
+        name: isP2P ? "Smart Life P2P HD RTSP" : "Cloud RTSP",
         container: "rtsp",
         video: {
           codec: "h264",
@@ -241,7 +250,7 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         audio: {
           codec: "pcm_ulaw",
         },
-        source: p2pRtspUrl ? "local" : "cloud",
+        source: isP2P ? "local" : "cloud",
         destinations: [
           "local",
           "remote",
@@ -257,15 +266,18 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
 
   // Camera Snapshots
   async takePicture(options?: RequestPictureOptions): Promise<MediaObject> {
-    return this.getVideoStream();
+    const videoStream = await this.getVideoStream();
+    const buffer = await sdk.mediaManager.convertMediaObjectToBuffer(videoStream, "image/jpeg");
+    return this.createMediaObject(buffer, "image/jpeg");
   }
 
   async getPictureOptions(): Promise<ResponsePictureOptions[]> {
+    const isP2P = !!this.storageSettings.values.p2pRtspUrl?.trim();
     const selection = selectMaximumQuality(this.tuyaDevice);
     const resolution = selection ? this.qualityToResolution(selection.value) : undefined;
     return [
       {
-        id: "cloud-rtsp",
+        id: isP2P ? "p2p-hd-rtsp" : "cloud-rtsp",
         picture: resolution,
       },
     ];
