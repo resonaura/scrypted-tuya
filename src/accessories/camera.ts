@@ -1,6 +1,9 @@
 import sdk, {
   ScryptedDeviceBase,
   VideoCamera,
+  Camera,
+  RequestPictureOptions,
+  ResponsePictureOptions,
   MotionSensor,
   BinarySensor,
   MediaObject,
@@ -41,7 +44,7 @@ const SCHEMA_CODE = {
   INDICATOR: ["basic_indicator"]
 };
 
-export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCamera, BinarySensor, MotionSensor, OnOff, Settings {
+export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCamera, Camera, BinarySensor, MotionSensor, OnOff, Settings {
   private lightAccessory: ScryptedDeviceBase | undefined;
   private selectedQuality: string | undefined;
   private storageSettings = new StorageSettings(this, {
@@ -58,7 +61,11 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
   }
 
   async putSetting(key: string, value: SettingValue): Promise<void> {
-    return this.storageSettings.putSetting(key, value);
+    await this.storageSettings.putSetting(key, value);
+    if (key === "p2pRtspUrl") {
+      this.onDeviceEvent(ScryptedInterface.VideoCamera, undefined);
+      this.onDeviceEvent(ScryptedInterface.Camera, undefined);
+    }
   }
 
   get deviceSpecs(): Device {
@@ -72,6 +79,7 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
       interfaces: [
         ...super.deviceSpecs.interfaces,
         ScryptedInterface.VideoCamera,
+        ScryptedInterface.Camera,
         ScryptedInterface.DeviceProvider,
         ScryptedInterface.Settings,
         indicatorSchema ? ScryptedInterface.OnOff : null,
@@ -218,6 +226,7 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
   }
 
   async getVideoStreamOptions(): Promise<[ResponseMediaStreamOptions]> {
+    const p2pRtspUrl = this.storageSettings.values.p2pRtspUrl?.trim();
     const selection = selectMaximumQuality(this.tuyaDevice);
     const resolution = selection ? this.qualityToResolution(selection.value) : undefined;
     return [
@@ -232,8 +241,32 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         audio: {
           codec: "pcm_ulaw",
         },
-        source: "cloud",
+        source: p2pRtspUrl ? "local" : "cloud",
+        destinations: [
+          "local",
+          "remote",
+          "local-recorder",
+          "remote-recorder",
+          "medium-resolution",
+          "low-resolution",
+        ],
         tool: "ffmpeg",
+      },
+    ];
+  }
+
+  // Camera Snapshots
+  async takePicture(options?: RequestPictureOptions): Promise<MediaObject> {
+    return this.getVideoStream();
+  }
+
+  async getPictureOptions(): Promise<ResponsePictureOptions[]> {
+    const selection = selectMaximumQuality(this.tuyaDevice);
+    const resolution = selection ? this.qualityToResolution(selection.value) : undefined;
+    return [
+      {
+        id: "cloud-rtsp",
+        picture: resolution,
       },
     ];
   }

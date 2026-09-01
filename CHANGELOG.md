@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0-beta.13
+
+- Implement `Camera` interface (`takePicture` & `getPictureOptions`) using the active video stream (P2P HD RTSP or Cloud RTSP) for snapshots.
+- Dynamic stream source classification (`local` when P2P RTSP is configured, `cloud` otherwise).
+- Advertise all standard stream destinations (`local`, `remote`, `local-recorder`, `remote-recorder`, etc.) for seamless Scrypted stream auto-routing.
+- Fire `onDeviceEvent` on P2P RTSP URL setting change to immediately re-route streams and snapshots.
+
 ## 0.1.0-beta.12
 
 - Switch Tuya RTSP Bridge default RTSP port to 8600 across the engine, backend, and Web UI.
