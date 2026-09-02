@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <atomic>
 #include "session.hpp"
+#include "webrtc/browser_peer.hpp"
 
 namespace tuya {
 
@@ -23,6 +24,7 @@ private:
     std::atomic<bool> running_{false};
     std::mutex sessions_mutex_;
     std::unordered_map<std::string, std::unique_ptr<StreamSession>> sessions_;
+    std::unordered_map<std::string, std::unique_ptr<BrowserPeer>> viewers_;
 };
 
 }  // namespace tuya

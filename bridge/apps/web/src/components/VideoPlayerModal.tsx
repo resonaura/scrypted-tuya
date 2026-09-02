@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Modal,
   Button,
@@ -16,7 +16,7 @@ import {
   Video,
 } from "lucide-react";
 import type { Camera } from "../types/index.js";
-import { getApiBase } from "../api/client.js";
+import { answerWebRtcViewer, createWebRtcViewer, getApiBase, stopWebRtcViewer } from "../api/client.js";
 import { toast } from "sonner";
 
 interface VideoPlayerModalProps {
@@ -36,6 +36,9 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   const [snapshotKey, setSnapshotKey] = useState(Date.now());
   const [streamError, setStreamError] = useState(false);
   const [isLiveMode, setIsLiveMode] = useState(true);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [viewerKey, setViewerKey] = useState(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const apiBase = getApiBase();
   const cleanSlug =
@@ -43,14 +46,79 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       .toLowerCase()
       .replace(/[^a-z0-9_-]+/g, "_")
       .replace(/^_+|_+$/g, "") || camera.did;
-  const mjpegStreamUrl = `${apiBase}/api/cameras/${camera.id}/mjpeg`;
   const snapshotUrl = `${apiBase}/api/cameras/${camera.id}/snapshot?t=${snapshotKey}`;
-  const videoFeedSrc = isLiveMode && !streamError ? mjpegStreamUrl : snapshotUrl;
   const rtspUrl = `rtsp://${window.location.hostname || "127.0.0.1"}:${camera.rtspPort || 8655}/${camera.rtspPath || `live/${cleanSlug}`}`;
   const h264Url =
     camera.transcodeH264 && camera.h264Port
       ? `rtsp://${window.location.hostname || "127.0.0.1"}:${camera.h264Port}/live/${cleanSlug}_h264`
       : null;
+
+
+  useEffect(() => {
+    if (!isOpen || !isLiveMode) return;
+    let disposed = false;
+    let peer: RTCPeerConnection | undefined;
+    let sessionId: string | undefined;
+
+    const waitForIce = (pc: RTCPeerConnection) =>
+      new Promise<void>((resolve) => {
+        if (pc.iceGatheringState === "complete") return resolve();
+        const onChange = () => {
+          if (pc.iceGatheringState === "complete") {
+            pc.removeEventListener("icegatheringstatechange", onChange);
+            resolve();
+          }
+        };
+        pc.addEventListener("icegatheringstatechange", onChange);
+        setTimeout(() => {
+          pc.removeEventListener("icegatheringstatechange", onChange);
+          resolve();
+        }, 4000);
+      });
+
+    const start = async () => {
+      setIsConnecting(true);
+      setStreamError(false);
+      try {
+        const created = await createWebRtcViewer(camera.did);
+        if (disposed) {
+          await stopWebRtcViewer(camera.did, created.sessionId);
+          return;
+        }
+        sessionId = created.sessionId;
+        peer = new RTCPeerConnection({ bundlePolicy: "max-bundle" });
+        peer.ontrack = (event) => {
+          if (videoRef.current) {
+            videoRef.current.srcObject = event.streams[0] || new MediaStream([event.track]);
+            void videoRef.current.play().catch(() => {});
+          }
+        };
+        peer.onconnectionstatechange = () => {
+          if (["failed", "disconnected", "closed"].includes(peer?.connectionState || "")) {
+            setStreamError(true);
+          }
+        };
+        await peer.setRemoteDescription(created.offer);
+        const answer = await peer.createAnswer();
+        await peer.setLocalDescription(answer);
+        await waitForIce(peer);
+        if (!peer.localDescription) throw new Error("Browser did not create a WebRTC answer");
+        await answerWebRtcViewer(camera.did, created.sessionId, peer.localDescription.toJSON());
+      } catch {
+        if (!disposed) setStreamError(true);
+      } finally {
+        if (!disposed) setIsConnecting(false);
+      }
+    };
+
+    void start();
+    return () => {
+      disposed = true;
+      if (videoRef.current) videoRef.current.srcObject = null;
+      peer?.close();
+      if (sessionId) void stopWebRtcViewer(camera.did, sessionId);
+    };
+  }, [camera.did, isLiveMode, isOpen, viewerKey]);
 
   const handleRefreshSnapshot = () => {
     setIsLiveMode(false);
@@ -62,7 +130,8 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   const handleToggleLive = () => {
     setIsLiveMode(true);
     setStreamError(false);
-    toast.info("Switched to continuous live feed");
+    setViewerKey((value) => value + 1);
+    toast.info("Connecting RTSP through WebRTC");
   };
 
   const handleCopy = (url: string) => {
@@ -102,17 +171,27 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
           <Modal.Body className="p-4 space-y-3">
             {/* Player Viewport */}
             <div className="relative aspect-video w-full bg-zinc-950 rounded-2xl overflow-hidden flex items-center justify-center">
-              <img
-                src={videoFeedSrc}
-                alt={camera.name}
-                className="w-full h-full object-contain"
-                onError={() => {
-                  if (isLiveMode) {
-                    setStreamError(true);
-                    setIsLiveMode(false);
-                  }
-                }}
-              />
+              {isLiveMode && !streamError ? (
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted={isAudioMuted}
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <img
+                  src={snapshotUrl}
+                  alt={camera.name}
+                  className="w-full h-full object-contain"
+                  onError={() => setStreamError(true)}
+                />
+              )}
+              {isConnecting && (
+                <div className="absolute inset-0 grid place-items-center bg-black/35 text-sm text-white">
+                  Connecting WebRTC…
+                </div>
+              )}
 
               <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
                 <Chip

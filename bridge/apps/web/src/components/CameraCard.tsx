@@ -36,13 +36,12 @@ export const CameraCard: React.FC<CameraCardProps> = ({
   const [imgError, setImgError] = React.useState(false);
   const [snapshotKey, setSnapshotKey] = React.useState(Date.now());
 
-  // Auto-refresh snapshot every 5 seconds if online
+  // Refresh the backend snapshot/offline card without starting media work in the browser.
   React.useEffect(() => {
-    if (!camera.online) return;
     const timer = setInterval(() => {
       setSnapshotKey(Date.now());
       setImgError(false);
-    }, 5000);
+    }, 2500);
     return () => clearInterval(timer);
   }, [camera.online, camera.id]);
 

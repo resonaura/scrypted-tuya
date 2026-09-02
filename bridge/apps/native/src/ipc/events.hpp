@@ -80,6 +80,21 @@ struct EventWebRTCDisconnected {
     std::string did;
 };
 
+struct EventViewerOffer {
+    std::string event = "viewer_offer";
+    std::string viewer_id;
+    std::string did;
+    std::string sdp;
+    int rtp_port = 0;
+};
+
+struct EventViewerState {
+    std::string event = "viewer_state";
+    std::string viewer_id;
+    std::string did;
+    std::string state;
+};
+
 struct EventError {
     std::string event = "error";
     std::string did;

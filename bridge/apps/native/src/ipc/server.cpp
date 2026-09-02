@@ -31,6 +31,7 @@ struct IpcCommandDto {
     std::string mid;
     int channel = 0;
     std::string direction;
+    std::string viewer_id;
     int action = 0;
     int speed = 50;
 };
@@ -40,6 +41,7 @@ IpcServer::IpcServer() = default;
 IpcServer::~IpcServer() {
     running_ = false;
     std::lock_guard<std::mutex> lock(sessions_mutex_);
+    viewers_.clear();
     sessions_.clear();
 }
 
@@ -116,6 +118,29 @@ void IpcServer::handle_command(const std::string& line) {
         } else {
             send_event(to_json(EventError{.did = cfg.did, .message = "Failed to start session"}));
         }
+    } else if (cmd == "start_viewer") {
+        if (cmd_dto.viewer_id.empty() || cmd_dto.did.empty()) {
+            send_event(to_json(EventError{.did = cmd_dto.did, .message = "Missing viewer_id or did"}));
+            return;
+        }
+        std::lock_guard<std::mutex> lock(sessions_mutex_);
+        viewers_.erase(cmd_dto.viewer_id);
+        auto viewer = std::make_unique<BrowserPeer>(
+            cmd_dto.viewer_id,
+            cmd_dto.did,
+            [this](const std::string& evt) { send_event(evt); });
+        if (!viewer->start()) {
+            send_event(to_json(EventError{.did = cmd_dto.did, .message = "Failed to start browser WebRTC viewer"}));
+            return;
+        }
+        viewers_[cmd_dto.viewer_id] = std::move(viewer);
+    } else if (cmd == "set_viewer_answer") {
+        std::lock_guard<std::mutex> lock(sessions_mutex_);
+        auto it = viewers_.find(cmd_dto.viewer_id);
+        if (it != viewers_.end()) it->second->set_answer(cmd_dto.sdp);
+    } else if (cmd == "stop_viewer") {
+        std::lock_guard<std::mutex> lock(sessions_mutex_);
+        viewers_.erase(cmd_dto.viewer_id);
     } else if (cmd == "set_remote_answer" || cmd == "set_remote_description") {
         std::lock_guard<std::mutex> lock(sessions_mutex_);
         auto it = sessions_.find(cmd_dto.did);

@@ -50,6 +50,7 @@ set(SOURCES
     src/p2p/cipher.cpp
     src/p2p/client.cpp
     src/webrtc/peer.cpp
+    src/webrtc/browser_peer.cpp
     src/ipc/server.cpp
     src/session.cpp
     src/main.cpp

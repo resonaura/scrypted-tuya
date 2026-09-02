@@ -1,0 +1,41 @@
+#pragma once
+
+#include <atomic>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <rtc/rtc.hpp>
+
+namespace tuya {
+
+class BrowserPeer {
+public:
+    using EventCallback = std::function<void(const std::string&)>;
+
+    BrowserPeer(std::string viewer_id, std::string did, EventCallback event_cb);
+    ~BrowserPeer();
+
+    bool start();
+    void set_answer(const std::string& sdp);
+    void stop();
+    int rtp_port() const { return rtp_port_; }
+
+private:
+    void receive_loop();
+
+    std::string viewer_id_;
+    std::string did_;
+    EventCallback event_cb_;
+    std::shared_ptr<rtc::PeerConnection> pc_;
+    std::shared_ptr<rtc::Track> video_track_;
+    std::atomic<bool> running_{false};
+    std::thread receiver_thread_;
+    std::mutex mutex_;
+    int socket_fd_ = -1;
+    int rtp_port_ = 0;
+    uint32_t ssrc_ = 0;
+};
+
+}  // namespace tuya

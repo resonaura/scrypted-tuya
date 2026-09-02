@@ -17,6 +17,7 @@ const envSchema = z.object({
   NATIVE_BIN_PATH: z.string().optional(),
   INGRESS_PATH: z.string().default(""),
   CORS_ORIGINS: z.string().default("*"),
+  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

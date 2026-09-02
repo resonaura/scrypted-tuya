@@ -251,10 +251,26 @@ void RTSPServer::handle_rtsp_request(int client_fd, const std::string& req, RTSP
         std::string resp_str = resp.str();
         send(client_fd, resp_str.data(), resp_str.length(), 0);
 
-        // Request an instant fresh IDR keyframe from the camera
-        if (kf_req_cb_) {
-            kf_req_cb_();
+        // Prime late RTSP clients from the last complete parameter-set + IDR cache.
+        // This avoids waiting for the camera's next GOP before VLC/Scrypted can decode.
+        std::vector<std::vector<uint8_t>> cached_idr;
+        {
+            std::lock_guard<std::mutex> cache_lock(idr_cache_mutex_);
+            cached_idr = idr_cache_pkts_;
         }
+        if (!cached_idr.empty()) {
+            std::lock_guard<std::mutex> clients_lock(clients_mutex_);
+            auto it = clients_.find(client_fd);
+            if (it != clients_.end() && it->second.is_playing) {
+                for (const auto& packet : cached_idr) {
+                    send_interleaved_packet(client_fd, it->second.video_rtp_channel, packet.data(), packet.size());
+                }
+                it->second.wait_idr = false;
+            }
+        }
+
+        // Also ask for a fresh keyframe so the cached GOP is replaced immediately.
+        if (kf_req_cb_) kf_req_cb_();
         return;
     } else if (method == "TEARDOWN") {
         session.is_playing = false;

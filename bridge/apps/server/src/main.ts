@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import {
   FastifyAdapter,
@@ -13,14 +14,15 @@ async function bootstrap() {
   await initDatabase();
 
   const adapter = new FastifyAdapter({
-    logger: env.NODE_ENV === "development",
+    logger: process.env.LOG_LEVEL === "debug",
   });
 
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     adapter,
+    { bufferLogs: false },
   );
-
+  app.enableShutdownHooks();
   app.useWebSocketAdapter(new WsAdapter(app));
 
   const corsOrigins = env.CORS_ORIGINS.split(",").map((o) => o.trim());
@@ -32,14 +34,30 @@ async function bootstrap() {
   });
 
   await app.listen(env.PORT, "0.0.0.0");
+  Logger.log(`Tuya bridge ready: API :${env.PORT}, RTSP :${env.RTSP_BASE_PORT}`, "Bootstrap");
 
-  console.log("\n======================================================");
-  console.log("🚀 Tuya RTSP & P2P Media Bridge (Backend API) is running!");
-  console.log(`📡 REST API & WebSockets: http://localhost:${env.PORT}`);
-  console.log(
-    `📹 RTSP Stream Base Port: rtsp://localhost:${env.RTSP_BASE_PORT}`,
-  );
-  console.log("======================================================\n");
+  let closing = false;
+  const shutdown = async (signal: string) => {
+    if (closing) return;
+    closing = true;
+    Logger.log(`Received ${signal}, stopping bridge`, "Bootstrap");
+    const forceTimer = setTimeout(() => process.exit(1), 7000);
+    forceTimer.unref();
+    try {
+      await app.close();
+      clearTimeout(forceTimer);
+      process.exit(0);
+    } catch (error) {
+      Logger.error(error, undefined, "Bootstrap");
+      process.exit(1);
+    }
+  };
+
+  process.once("SIGINT", () => void shutdown("SIGINT"));
+  process.once("SIGTERM", () => void shutdown("SIGTERM"));
 }
 
-bootstrap();
+bootstrap().catch((error) => {
+  Logger.error(error, undefined, "Bootstrap");
+  process.exit(1);
+});

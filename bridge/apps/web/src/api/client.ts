@@ -146,3 +146,26 @@ export async function fetchSystemConfig(): Promise<SystemConfig> {
   if (!res.ok) return { rtspBasePort: 8655, serverPort: 6766, webPort: 6767, core: "C++23 ZeroLatency", version: "1.0.0" };
   return res.json();
 }
+
+
+export async function createWebRtcViewer(did: string): Promise<{ sessionId: string; offer: RTCSessionDescriptionInit }> {
+  const res = await fetch(`${getApiBase()}/api/streaming/${encodeURIComponent(did)}/webrtc`, { method: "POST" });
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.message || "Failed to create WebRTC viewer");
+  return res.json();
+}
+
+export async function answerWebRtcViewer(did: string, sessionId: string, answer: RTCSessionDescriptionInit): Promise<void> {
+  const res = await fetch(`${getApiBase()}/api/streaming/${encodeURIComponent(did)}/webrtc/${encodeURIComponent(sessionId)}/answer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(answer),
+  });
+  if (!res.ok) throw new Error("Failed to apply WebRTC answer");
+}
+
+export async function stopWebRtcViewer(did: string, sessionId: string): Promise<void> {
+  await fetch(`${getApiBase()}/api/streaming/${encodeURIComponent(did)}/webrtc/${encodeURIComponent(sessionId)}`, {
+    method: "DELETE",
+    keepalive: true,
+  }).catch(() => {});
+}

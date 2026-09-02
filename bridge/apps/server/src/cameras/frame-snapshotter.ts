@@ -15,6 +15,7 @@ export interface FrameSnapshotterOptions {
 export class FrameSnapshotter extends EventEmitter {
   private proc: ChildProcess | null = null;
   private timer: NodeJS.Timeout | null = null;
+  private initialTimer: NodeJS.Timeout | null = null;
   private stopped = false;
   private inFlight = false;
   private currentPath: string;
@@ -64,21 +65,26 @@ export class FrameSnapshotter extends EventEmitter {
   public start(): void {
     this.stopped = false;
     // Initial quick grab after short warmup
-    setTimeout(() => {
-      if (!this.stopped) {
-        this.grabOnce().catch(() => {});
-      }
-    }, 1500);
+    this.initialTimer = setTimeout(() => {
+      this.initialTimer = null;
+      if (!this.stopped) this.grabOnce().catch(() => {});
+    }, 750);
+    this.initialTimer.unref();
 
     this.timer = setInterval(() => {
       if (!this.stopped && !this.inFlight) {
         this.grabOnce().catch(() => {});
       }
     }, this.intervalMs);
+    this.timer.unref();
   }
 
   public stop(): void {
     this.stopped = true;
+    if (this.initialTimer) {
+      clearTimeout(this.initialTimer);
+      this.initialTimer = null;
+    }
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
@@ -179,6 +185,12 @@ export class FrameSnapshotter extends EventEmitter {
 
   private handleFailure(): void {
     this.consecutiveFailures++;
+    this.emit("failure", {
+      did: this.did,
+      slug: this.slug,
+      count: this.consecutiveFailures,
+      max: this.maxConsecutiveFailures,
+    });
     if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
       this.emit("unhealthy", { did: this.did, slug: this.slug });
     }

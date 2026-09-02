@@ -265,6 +265,7 @@ export class TuyaMqttService {
       retries++;
       sendOfferPayload();
     }, 2500);
+    meta.retryTimer.unref();
   }
 
   private handleLocalCandidate(did: string, candidate: string, mid: string): void {

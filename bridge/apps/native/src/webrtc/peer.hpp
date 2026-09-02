@@ -48,6 +48,7 @@ private:
     void setup_data_channel();
     void send_data_channel_msg(const std::string& type, const std::string& msg = "");
     void keyframe_loop();
+    void handle_video_packet(const rtc::binary& packet);
 
     WebRTCConfig config_;
     std::shared_ptr<RTSPServer> rtsp_server_;
@@ -60,6 +61,8 @@ private:
 
     std::atomic<bool> running_{false};
     std::atomic<bool> connected_{false};
+    std::atomic<bool> unhealthy_sent_{false};
+    std::atomic<int64_t> last_video_packet_ms_{0};
     std::thread keyframe_thread_;
     std::mutex mutex_;
 };

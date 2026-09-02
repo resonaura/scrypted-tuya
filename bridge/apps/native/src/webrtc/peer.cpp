@@ -55,12 +55,33 @@ void WebRTCPeer::stop() {
 }
 
 void WebRTCPeer::keyframe_loop() {
+    int seconds = 0;
     while (running_) {
-        std::this_thread::sleep_for(std::chrono::seconds(10));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         if (!running_) break;
-        if (connected_) {
+        if (!connected_) continue;
+        ++seconds;
+        const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        const auto last = last_video_packet_ms_.load();
+        if (last > 0 && now - last > 5000 && !unhealthy_sent_.exchange(true)) {
+            if (event_cb_) event_cb_(to_json(EventUnhealthy{.did = config_.did}));
+        }
+        if (seconds >= 10) {
+            seconds = 0;
             request_keyframe();
         }
+    }
+}
+
+void WebRTCPeer::handle_video_packet(const rtc::binary& packet) {
+    if (packet.empty()) return;
+    const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    last_video_packet_ms_ = now;
+    unhealthy_sent_ = false;
+    if (rtsp_server_) {
+        rtsp_server_->feed_raw_rtp(reinterpret_cast<const uint8_t*>(packet.data()), packet.size(), true);
     }
 }
 
@@ -85,6 +106,9 @@ void WebRTCPeer::setup_peer_connection() {
         if (state == rtc::PeerConnection::State::Connected) {
             std::cout << "[WebRTCPeer] WebRTC Connected for " << config_.did << std::endl;
             connected_ = true;
+            unhealthy_sent_ = false;
+            last_video_packet_ms_ = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
             if (event_cb_) {
                 event_cb_(to_json(EventWebRTCConnected{.did = config_.did}));
             }
@@ -132,9 +156,7 @@ void WebRTCPeer::setup_peer_connection() {
             track->onMessage([this](rtc::message_variant msg) {
                 if (std::holds_alternative<rtc::binary>(msg)) {
                     const auto& bin = std::get<rtc::binary>(msg);
-                    if (rtsp_server_ && !bin.empty()) {
-                        rtsp_server_->feed_raw_rtp(reinterpret_cast<const uint8_t*>(bin.data()), bin.size(), true);
-                    }
+                    handle_video_packet(bin);
                 }
             });
         } else if (desc.type() == "audio") {
@@ -168,7 +190,6 @@ void WebRTCPeer::setup_tracks() {
     audio_track_->onMessage([this](rtc::message_variant msg) {
         if (std::holds_alternative<rtc::binary>(msg)) {
             const auto& bin = std::get<rtc::binary>(msg);
-            std::cout << "[WebRTCPeer] 🔊 Received RTP Audio Packet: " << bin.size() << " bytes" << std::endl;
             if (rtsp_server_ && !bin.empty()) {
                 rtsp_server_->feed_raw_rtp(reinterpret_cast<const uint8_t*>(bin.data()), bin.size(), false);
             }
@@ -186,16 +207,7 @@ void WebRTCPeer::setup_tracks() {
     video_track_->onMessage([this](rtc::message_variant msg) {
         if (std::holds_alternative<rtc::binary>(msg)) {
             const auto& bin = std::get<rtc::binary>(msg);
-            if (bin.size() >= 16) {
-                std::ostringstream oss;
-                for (size_t i = 0; i < 16 && i < bin.size(); i++) {
-                    oss << std::hex << std::setw(2) << std::setfill('0') << (int)std::to_integer<uint8_t>(bin[i]) << " ";
-                }
-                std::cout << "[WebRTCPeer] 📹 RTP len=" << std::dec << bin.size() << " hex: " << oss.str() << std::endl;
-            }
-            if (rtsp_server_ && !bin.empty()) {
-                rtsp_server_->feed_raw_rtp(reinterpret_cast<const uint8_t*>(bin.data()), bin.size(), true);
-            }
+            handle_video_packet(bin);
         }
     });
 }
@@ -234,10 +246,7 @@ void WebRTCPeer::setup_data_channel() {
             }
         } else if (std::holds_alternative<rtc::binary>(msg)) {
             const auto& bin = std::get<rtc::binary>(msg);
-            std::cout << "[WebRTCPeer] 📹 Received DataChannel binary RTP packet: " << bin.size() << " bytes" << std::endl;
-            if (rtsp_server_ && !bin.empty()) {
-                rtsp_server_->feed_raw_rtp(reinterpret_cast<const uint8_t*>(bin.data()), bin.size(), true);
-            }
+            handle_video_packet(bin);
         }
     });
 }

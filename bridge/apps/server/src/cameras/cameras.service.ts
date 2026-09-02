@@ -18,22 +18,18 @@ import {
 } from "./offline-card.js";
 import { findFreePortRange, isPortAllowed } from "../utils/ports.js";
 import { env } from "../config/env.js";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
 import * as path from "node:path";
 import * as fsPromises from "node:fs/promises";
 import type { CreateCameraDto, PtzDto } from "./dto.js";
-
-const execAsync = promisify(exec);
+import { FrameSnapshotter } from "./frame-snapshotter.js";
 
 @Injectable()
 export class CamerasService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CamerasService.name);
   private engine = NativeMediaEngine.getInstance();
-  private snapshotCache: Map<
-    string,
-    { buffer: Buffer; mimeType: string; updatedAt: number }
-  > = new Map();
+  private snapshotters = new Map<string, FrameSnapshotter>();
+  private activeStreams = new Set<string>();
+  private recoveryAttempts = new Map<string, number>();
 
   constructor(
     @Inject(forwardRef(() => TuyaProtectService))
@@ -56,6 +52,11 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(
         `Session started for camera ${did} on RTSP port ${rtspPort}`,
       );
+      this.activeStreams.add(did);
+      this.recoveryAttempts.delete(did);
+      const pendingRecovery = this.recoveryTimers.get(did);
+      if (pendingRecovery) clearTimeout(pendingRecovery);
+      this.recoveryTimers.delete(did);
       const cam = await CameraEntity.findOne({ where: { did } });
       if (cam) {
         cam.online = true;
@@ -64,6 +65,8 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
         await cam.save();
         const slug = this.getSlug(cam);
         OfflineCardManager.getInstance().setOnline(slug);
+
+        this.ensureSnapshotter(cam);
 
         if (cam.transcodeH264 && cam.h264Port) {
           this.transcoder.startH264Transcode({
@@ -93,6 +96,7 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     );
 
     this.engine.on("webrtc_disconnected", async (did: string) => {
+      this.activeStreams.delete(did);
       this.logger.warn(`⚠️ [CamerasService] WebRTC disconnected for camera ${did}! Scheduling automatic stream recovery...`);
       const cam = await CameraEntity.findOne({ where: { did } });
       if (cam) {
@@ -103,11 +107,13 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.engine.on("unhealthy", async (did: string) => {
+      this.activeStreams.delete(did);
       this.logger.warn(
         `Camera stream ${did} reported unhealthy! Attempting self-healing recovery...`,
       );
       const cam = await CameraEntity.findOne({ where: { did } });
       if (cam) {
+        this.stopSnapshotter(cam.did);
         const slug = this.getSlug(cam);
         OfflineCardManager.getInstance().setOffline({
           slug,
@@ -125,20 +131,29 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
   private recoveryTimers = new Map<string, NodeJS.Timeout>();
   private watchdogInterval: NodeJS.Timeout | null = null;
 
-  public scheduleStreamRecovery(cam: CameraEntity, delayMs = 2500): void {
-    if (this.recoveryTimers.has(cam.did)) {
-      clearTimeout(this.recoveryTimers.get(cam.did)!);
-    }
+  public scheduleStreamRecovery(cam: CameraEntity, delayMs = 250): void {
+    if (this.recoveryTimers.has(cam.did)) return;
+    const attempt = (this.recoveryAttempts.get(cam.did) || 0) + 1;
+    this.recoveryAttempts.set(cam.did, attempt);
+    const backoff = attempt === 1 ? delayMs : Math.min(1000 * 2 ** Math.min(attempt - 2, 5), 30_000);
+    const jitteredDelay = Math.round(backoff * (0.8 + Math.random() * 0.2));
+    OfflineCardManager.getInstance().updateStatus(
+      this.getSlug(cam),
+      `Reconnecting P2P stream · attempt ${attempt}`,
+    );
     const timer = setTimeout(async () => {
       this.recoveryTimers.delete(cam.did);
-      this.logger.log(`🔄 [CamerasService] Auto-reconnecting live stream for ${cam.name} (${cam.did})...`);
+      this.logger.warn(`Reconnecting ${cam.name} (${cam.did}), attempt ${attempt}`);
       try {
+        this.stopSnapshotter(cam.did);
+        this.tuyaMqtt.stopCameraSession(cam.did);
         await this.startStream(cam);
       } catch (err: any) {
-        this.logger.error(`Failed to auto-reconnect camera ${cam.did}: ${err.message}`);
-        this.scheduleStreamRecovery(cam, Math.min(delayMs * 2, 30000));
+        this.logger.warn(`Reconnect attempt ${attempt} failed for ${cam.did}: ${err.message}`);
+        this.scheduleStreamRecovery(cam);
       }
-    }, delayMs);
+    }, jitteredDelay);
+    timer.unref();
     this.recoveryTimers.set(cam.did, timer);
   }
 
@@ -148,7 +163,7 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
       try {
         const cameras = await CameraEntity.find();
         for (const cam of cameras) {
-          const isStreaming = this.tuyaMqtt.isSessionActive(cam.did);
+          const isStreaming = this.activeStreams.has(cam.did) || this.tuyaMqtt.isSessionActive(cam.did);
           if (!isStreaming && !this.recoveryTimers.has(cam.did)) {
             this.logger.debug(`[Watchdog] Camera ${cam.name} stream inactive, auto-reviving...`);
             this.scheduleStreamRecovery(cam, 1000);
@@ -156,12 +171,17 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
         }
       } catch {}
     }, 15000);
+    this.watchdogInterval.unref();
   }
 
   async onModuleDestroy() {
     if (this.watchdogInterval) clearInterval(this.watchdogInterval);
     for (const timer of this.recoveryTimers.values()) clearTimeout(timer);
     this.recoveryTimers.clear();
+    this.activeStreams.clear();
+    this.recoveryAttempts.clear();
+    for (const did of [...this.snapshotters.keys()]) this.stopSnapshotter(did);
+    OfflineCardManager.getInstance().stopAll();
     this.transcoder.stopAll();
     this.engine.stop();
   }
@@ -267,6 +287,8 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     if (!cam) return false;
     const slug = this.getSlug(cam);
     OfflineCardManager.getInstance().setOnline(slug);
+    this.activeStreams.delete(cam.did);
+    this.stopSnapshotter(cam.did);
     this.transcoder.stopTranscode(cam.did);
     this.engine.stopP2P(cam.did);
     await cam.remove();
@@ -278,12 +300,13 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     const rtspPath = cam.rtspPath || `live/${cam.did}`;
 
     if (this.tuyaProtect.isLoggedIn()) {
-      await this.tuyaMqtt.startCameraSession(
+      const started = await this.tuyaMqtt.startCameraSession(
         cam.did,
         rtspPort,
         rtspPath,
         (cam.quality as "hd" | "sd") || "hd",
       );
+      if (!started) throw new Error("Tuya signaling session did not start");
     } else {
       this.engine.startP2P({
         did: cam.did,
@@ -306,6 +329,8 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
       deviceId: cam.did,
       reason: "Stream Stopped",
     });
+    this.activeStreams.delete(cam.did);
+    this.stopSnapshotter(cam.did);
     this.transcoder.stopTranscode(cam.did);
     this.tuyaMqtt.stopCameraSession(cam.did);
   }
@@ -322,83 +347,73 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     this.engine.requestKeyframe(did);
   }
 
-  async getSnapshot(id: string): Promise<{ buffer: Buffer; mimeType: string }> {
-    const cam = await this.getById(id);
-    const cameraName = cam ? cam.name : "Tuya Camera";
-    const did = cam ? cam.did : id;
-    const slug = cam ? this.getSlug(cam) : did;
-
-    if (!cam) {
-      const offlineBuf = await generateOfflineCardImage({
-        slug,
-        deviceName: cameraName,
-        statusText: "CAMERA NOT FOUND",
-        durationSeconds: 1,
-      });
-      return {
-        buffer: offlineBuf || Buffer.from(""),
-        mimeType: "image/jpeg",
-      };
-    }
-
-    const cached = this.snapshotCache.get(cam.did);
-    const now = Date.now();
-    if (cached && now - cached.updatedAt < 1200) {
-      return { buffer: cached.buffer, mimeType: cached.mimeType };
-    }
-
-    const dataDir = getDataDir();
-    const framesDir = path.join(dataDir, "frames");
-    await fsPromises.mkdir(framesDir, { recursive: true });
-
-    const lastLivePath = path.join(framesDir, `${slug}.last_live.jpg`);
-    const cleanPath = cam.rtspPath || `live/${slug}`;
-    const rtspUrl = `rtsp://127.0.0.1:${cam.rtspPort || env.RTSP_BASE_PORT}/${cleanPath}`;
-    const tempFile = path.join("/tmp", `snap_${cam.did}_${Date.now()}.jpg`);
-
-    try {
-      await execAsync(
-        `ffmpeg -y -rtsp_transport tcp -analyzeduration 1000000 -probesize 1000000 -i "${rtspUrl}" -frames:v 1 -q:v 2 "${tempFile}"`,
-        { timeout: 4000 },
-      );
-      const buf = await fsPromises.readFile(tempFile);
-      await fsPromises.unlink(tempFile).catch(() => {});
-
-      await fsPromises.writeFile(lastLivePath, buf).catch(() => {});
-
+  private ensureSnapshotter(cam: CameraEntity): void {
+    if (this.snapshotters.has(cam.did)) return;
+    const slug = this.getSlug(cam);
+    const rtspUrl = `rtsp://127.0.0.1:${cam.rtspPort || env.RTSP_BASE_PORT}/${cam.rtspPath || `live/${slug}`}`;
+    const snapshotter = new FrameSnapshotter({
+      slug,
+      did: cam.did,
+      rtspUrl,
+      dataDir: getDataDir(),
+      intervalMs: 10_000,
+      maxConsecutiveFailures: 3,
+    });
+    snapshotter.on("frame", ({ buffer }: { buffer: Buffer }) => {
       OfflineCardManager.getInstance().setOnline(slug);
-      this.snapshotCache.set(cam.did, {
-        buffer: buf,
-        mimeType: "image/jpeg",
-        updatedAt: now,
-      });
-      return { buffer: buf, mimeType: "image/jpeg" };
-    } catch (e: any) {
-      this.logger.debug(
-        `ffmpeg live snapshot grab fallback for ${cam.did}: ${e.message}`,
-      );
-
-      const offlineBuf = await generateOfflineCardImage({
+      cam.online = true;
+      cam.lastSeen = new Date();
+      void cam.save().catch(() => {});
+      if (buffer.length > 0) this.logger.debug(`Snapshot refreshed for ${cam.name}`);
+    });
+    snapshotter.on("failure", ({ count, max }: { count: number; max: number }) => {
+      OfflineCardManager.getInstance().setOffline({
         slug,
         deviceName: cam.name,
-        statusText: cam.online ? "BUFFERING STREAM" : "OFFLINE",
-        durationSeconds: Math.max(
-          1,
-          Math.round((Date.now() - (cam.lastSeen?.getTime() || now)) / 1000),
-        ),
+        deviceId: cam.did,
+        reason: `Snapshot unavailable · retry ${count}/${max}`,
       });
+    });
+    snapshotter.on("unhealthy", () => {
+      if (this.snapshotters.get(cam.did) !== snapshotter) return;
+      this.stopSnapshotter(cam.did);
+      OfflineCardManager.getInstance().setOffline({
+        slug,
+        deviceName: cam.name,
+        deviceId: cam.did,
+        reason: "Snapshot unavailable · Reconnecting stream",
+      });
+      this.scheduleStreamRecovery(cam, 250);
+    });
+    this.snapshotters.set(cam.did, snapshotter);
+    snapshotter.start();
+  }
 
-      if (offlineBuf) {
-        this.snapshotCache.set(cam.did, {
-          buffer: offlineBuf,
-          mimeType: "image/jpeg",
-          updatedAt: now,
-        });
-        return { buffer: offlineBuf, mimeType: "image/jpeg" };
-      }
+  private stopSnapshotter(did: string): void {
+    const snapshotter = this.snapshotters.get(did);
+    if (!snapshotter) return;
+    this.snapshotters.delete(did);
+    snapshotter.removeAllListeners();
+    snapshotter.stop();
+  }
 
-      if (cached) return { buffer: cached.buffer, mimeType: cached.mimeType };
-      return { buffer: Buffer.from(""), mimeType: "image/jpeg" };
-    }
+  async getSnapshot(id: string): Promise<{ buffer: Buffer; mimeType: string }> {
+    const cam = await this.getById(id);
+    const did = cam?.did || id;
+    const slug = cam ? this.getSlug(cam) : did;
+    const framePath = path.join(getDataDir(), "frames", `${slug}.jpg`);
+
+    try {
+      const buffer = await fsPromises.readFile(framePath);
+      if (buffer.length > 0) return { buffer, mimeType: "image/jpeg" };
+    } catch {}
+
+    const buffer = await generateOfflineCardImage({
+      slug,
+      deviceName: cam?.name || "Tuya Camera",
+      statusText: cam ? (cam.online ? "WAITING FOR VIDEO" : "OFFLINE") : "CAMERA NOT FOUND",
+      durationSeconds: 1,
+    });
+    return { buffer: buffer || Buffer.from(""), mimeType: "image/jpeg" };
   }
 }

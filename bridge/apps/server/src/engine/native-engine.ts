@@ -71,7 +71,9 @@ export class NativeMediaEngine extends EventEmitter {
           const msg = JSON.parse(line);
           this.handleEvent(msg);
         } catch {
-          console.log(`[NativeEngine] ${line}`);
+          if (process.env.LOG_LEVEL === "debug") {
+            console.debug(`[NativeEngine] ${line}`);
+          }
         }
       });
 
@@ -138,6 +140,10 @@ export class NativeMediaEngine extends EventEmitter {
       this.emit("keyframe", msg.did);
     } else if (msg.event === "unhealthy") {
       this.emit("unhealthy", msg.did);
+    } else if (msg.event === "viewer_offer") {
+      this.emit("viewer_offer", msg.viewer_id, msg.did, msg.sdp, msg.rtp_port);
+    } else if (msg.event === "viewer_state") {
+      this.emit("viewer_state", msg.viewer_id, msg.did, msg.state);
     } else {
       this.emit(msg.event || "message", msg);
     }
@@ -203,6 +209,18 @@ export class NativeMediaEngine extends EventEmitter {
     if (this.isReady) {
       this.sendLine(payload);
     }
+  }
+
+  public startViewer(viewerId: string, did: string): void {
+    this.sendLine({ cmd: "start_viewer", viewer_id: viewerId, did });
+  }
+
+  public setViewerAnswer(viewerId: string, did: string, sdp: string): void {
+    this.sendLine({ cmd: "set_viewer_answer", viewer_id: viewerId, did, sdp });
+  }
+
+  public stopViewer(viewerId: string, did: string): void {
+    this.sendLine({ cmd: "stop_viewer", viewer_id: viewerId, did });
   }
 
   public stop(): void {
