@@ -22,7 +22,7 @@ BrowserPeer::~BrowserPeer() {
     stop();
 }
 
-bool BrowserPeer::start() {
+bool BrowserPeer::start(const std::string& remote_offer) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (running_) return true;
 
@@ -52,7 +52,7 @@ bool BrowserPeer::start() {
 
     rtc::Configuration config;
     config.bindAddress = "0.0.0.0";
-    config.disableAutoNegotiation = false;
+    config.disableAutoNegotiation = true;
     pc_ = std::make_shared<rtc::PeerConnection>(config);
 
     pc_->onStateChange([this](rtc::PeerConnection::State state) {
@@ -84,20 +84,15 @@ bool BrowserPeer::start() {
 
     running_ = true;
     receiver_thread_ = std::thread(&BrowserPeer::receive_loop, this);
-    pc_->setLocalDescription();
-    return true;
-}
-
-void BrowserPeer::set_answer(const std::string& sdp) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!pc_ || sdp.empty()) return;
     try {
-        pc_->setRemoteDescription(rtc::Description(sdp, "answer"));
+        pc_->setRemoteDescription(rtc::Description(remote_offer, "offer"));
+        pc_->setLocalDescription();
     } catch (const std::exception& e) {
-        if (event_cb_) {
-            event_cb_(to_json(EventError{.did = did_, .message = "Browser WebRTC answer rejected: " + std::string(e.what())}));
-        }
+        running_ = false;
+        if (event_cb_) event_cb_(to_json(EventError{.did = did_, .message = "Browser WebRTC offer rejected: " + std::string(e.what())}));
+        return false;
     }
+    return true;
 }
 
 void BrowserPeer::receive_loop() {

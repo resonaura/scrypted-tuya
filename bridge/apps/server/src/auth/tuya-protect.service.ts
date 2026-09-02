@@ -75,8 +75,8 @@ export class TuyaProtectService implements OnModuleInit {
     return Boolean(this.loginResult && (this.loginResult.uid || this.loginResult.token));
   }
   private readonly logger = new Logger(TuyaProtectService.name);
-  private regionId = "eu";
-  private host = TUYA_REGIONS.eu.host;
+  private regionId = "us";
+  private host = TUYA_REGIONS.us.host;
   private currentQrToken: string | null = null;
   private currentQrSvg: string | null = null;
   private currentQrDataUrl: string | null = null;
@@ -414,7 +414,7 @@ export class TuyaProtectService implements OnModuleInit {
       const session: StoredSession = JSON.parse(setting.value);
       if (!session || !session.loginResult) return false;
 
-      this.setRegion(session.region || "eu");
+      this.setRegion(session.region || "us");
       this.host = session.host || this.host;
       this.loginResult = session.loginResult;
 

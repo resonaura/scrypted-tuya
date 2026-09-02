@@ -17,8 +17,7 @@ public:
     BrowserPeer(std::string viewer_id, std::string did, EventCallback event_cb);
     ~BrowserPeer();
 
-    bool start();
-    void set_answer(const std::string& sdp);
+    bool start(const std::string& remote_offer);
     void stop();
     int rtp_port() const { return rtp_port_; }
 

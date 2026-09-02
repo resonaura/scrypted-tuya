@@ -64,6 +64,6 @@ ENV NODE_ENV=production \
     NATIVE_BIN_PATH=/app/bin/tuya-streamer \
     PATH="/app/bin:${PATH}"
 
-EXPOSE 6766 6767 8554
+EXPOSE 6766 6767 8655
 WORKDIR /app
 CMD ["/run.sh"]

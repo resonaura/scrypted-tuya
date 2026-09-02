@@ -17,9 +17,3 @@ export const CreateCameraSchema = z.object({
 });
 
 export type CreateCameraDto = z.infer<typeof CreateCameraSchema>;
-
-export const PtzSchema = z.object({
-  direction: z.enum(["up", "down", "left", "right", "stop"]),
-});
-
-export type PtzDto = z.infer<typeof PtzSchema>;

@@ -44,6 +44,10 @@ export async function createCamera(data: Partial<Camera>): Promise<Camera> {
   return res.json();
 }
 
+export async function updateCamera(camera: Camera, patch: Partial<Camera>): Promise<Camera> {
+  return createCamera({ ...camera, ...patch, id: undefined });
+}
+
 export async function deleteCamera(id: string): Promise<void> {
   const res = await fetch(`${getApiBase()}/api/cameras/${id}`, {
     method: "DELETE",
@@ -68,18 +72,6 @@ export async function stopCameraStream(id: string): Promise<void> {
   if (!res.ok) throw new Error("Failed to stop stream");
 }
 
-export async function ptzCamera(
-  id: string,
-  direction: "up" | "down" | "left" | "right" | "stop",
-): Promise<void> {
-  const res = await fetch(`${getApiBase()}/api/cameras/${id}/ptz`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ direction }),
-  });
-  if (!res.ok) throw new Error("Failed to execute PTZ");
-}
-
 // Auth API
 export async function fetchAuthState(): Promise<AuthState> {
   const res = await fetch(`${getApiBase()}/api/auth/state`);
@@ -88,7 +80,7 @@ export async function fetchAuthState(): Promise<AuthState> {
 }
 
 export async function startQrFlow(
-  region = "eu",
+  region = "us",
 ): Promise<{ token: string; qrDataUrl: string; qrPayload: string }> {
   const res = await fetch(`${getApiBase()}/api/auth/qr/start`, {
     method: "POST",
@@ -111,8 +103,8 @@ export async function pollQr(
 export async function loginWithPassword(
   email: string,
   password: string,
-  countryCode = "49",
-  region = "eu",
+  countryCode = "1",
+  region = "us",
 ) {
   const res = await fetch(`${getApiBase()}/api/auth/login`, {
     method: "POST",
@@ -148,19 +140,14 @@ export async function fetchSystemConfig(): Promise<SystemConfig> {
 }
 
 
-export async function createWebRtcViewer(did: string): Promise<{ sessionId: string; offer: RTCSessionDescriptionInit }> {
-  const res = await fetch(`${getApiBase()}/api/streaming/${encodeURIComponent(did)}/webrtc`, { method: "POST" });
-  if (!res.ok) throw new Error((await res.json().catch(() => null))?.message || "Failed to create WebRTC viewer");
-  return res.json();
-}
-
-export async function answerWebRtcViewer(did: string, sessionId: string, answer: RTCSessionDescriptionInit): Promise<void> {
-  const res = await fetch(`${getApiBase()}/api/streaming/${encodeURIComponent(did)}/webrtc/${encodeURIComponent(sessionId)}/answer`, {
+export async function createWebRtcViewer(did: string, offer: RTCSessionDescriptionInit): Promise<{ sessionId: string; answer: RTCSessionDescriptionInit }> {
+  const res = await fetch(`${getApiBase()}/api/streaming/${encodeURIComponent(did)}/webrtc`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(answer),
+    body: JSON.stringify(offer),
   });
-  if (!res.ok) throw new Error("Failed to apply WebRTC answer");
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.message || "Failed to create WebRTC viewer");
+  return res.json();
 }
 
 export async function stopWebRtcViewer(did: string, sessionId: string): Promise<void> {

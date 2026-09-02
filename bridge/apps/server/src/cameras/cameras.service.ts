@@ -20,7 +20,7 @@ import { findFreePortRange, isPortAllowed } from "../utils/ports.js";
 import { env } from "../config/env.js";
 import * as path from "node:path";
 import * as fsPromises from "node:fs/promises";
-import type { CreateCameraDto, PtzDto } from "./dto.js";
+import type { CreateCameraDto } from "./dto.js";
 import { FrameSnapshotter } from "./frame-snapshotter.js";
 
 @Injectable()
@@ -278,6 +278,7 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     }
 
     await cam.save();
+    if (!cam.transcodeH264) this.transcoder.stopTranscode(cam.did);
     await this.startStream(cam);
     return cam;
   }
@@ -333,14 +334,6 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     this.stopSnapshotter(cam.did);
     this.transcoder.stopTranscode(cam.did);
     this.tuyaMqtt.stopCameraSession(cam.did);
-  }
-
-  async ptz(did: string, dto: PtzDto): Promise<boolean> {
-    const cloudSuccess = await this.tuyaProtect.movePtz(did, dto.direction);
-    if (!cloudSuccess) {
-      this.engine.ptz(did, dto.direction);
-    }
-    return true;
   }
 
   requestKeyframe(did: string): void {

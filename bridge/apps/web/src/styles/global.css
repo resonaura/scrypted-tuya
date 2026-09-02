@@ -7,3 +7,18 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   overflow-x: hidden;
 }
+
+
+html { scroll-behavior: smooth; }
+body {
+  min-width: 320px;
+  background-image:
+    radial-gradient(circle at 10% -10%, color-mix(in oklab, var(--color-primary) 10%, transparent) 0, transparent 35%),
+    radial-gradient(circle at 90% 5%, color-mix(in oklab, var(--color-success) 6%, transparent) 0, transparent 28%);
+  background-attachment: fixed;
+}
+button, [role="button"] { -webkit-tap-highlight-color: transparent; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}

@@ -1,49 +1,16 @@
 import React from "react";
-import { Surface, Chip } from "@heroui/react";
-import { Video, Radio } from "lucide-react";
+import { Surface } from "@heroui/react";
+import { Camera, CircleCheck, Radio, Wifi } from "lucide-react";
 
-interface StatsBannerProps {
-  totalCameras: number;
-  onlineCameras: number;
-}
-
-export const StatsBanner: React.FC<StatsBannerProps> = ({
-  totalCameras,
-  onlineCameras,
-}) => {
-  const isHealthy = onlineCameras > 0 || totalCameras === 0;
-
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-2 gap-3.5 mb-6 max-w-md">
-      <Surface className="flex items-center gap-3 p-3.5 rounded-2xl">
-        <div className="p-2 rounded-xl bg-primary/10 text-primary">
-          <Video className="size-4" />
-        </div>
-        <div>
-          <p className="text-[11px] text-muted-foreground font-medium">Total Cameras</p>
-          <p className="text-lg font-bold tracking-tight">{totalCameras}</p>
-        </div>
-      </Surface>
-
-      <Surface className="flex items-center gap-3 p-3.5 rounded-2xl">
-        <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500">
-          <Radio className="size-4" />
-        </div>
-        <div>
-          <p className="text-[11px] text-muted-foreground font-medium">Active Streams</p>
-          <div className="flex items-center gap-1.5">
-            <span className="text-lg font-bold tracking-tight">{onlineCameras}</span>
-            <Chip
-              size="sm"
-              variant="soft"
-              color={isHealthy ? "success" : "warning"}
-              className="h-4 text-[9px] px-1.5"
-            >
-              {isHealthy ? "Live" : "Offline"}
-            </Chip>
-          </div>
-        </div>
-      </Surface>
-    </div>
-  );
+export const StatsBanner: React.FC<{ totalCameras: number; onlineCameras: number; isBridgeConnected: boolean }> = ({ totalCameras, onlineCameras, isBridgeConnected }) => {
+  const offline = Math.max(0, totalCameras - onlineCameras);
+  const stats = [
+    { label: "Cameras", value: String(totalCameras), icon: Camera, tone: "bg-primary/10 text-primary" },
+    { label: "Live streams", value: String(onlineCameras), icon: Radio, tone: "bg-success/10 text-success" },
+    { label: "Recovering", value: String(offline), icon: CircleCheck, tone: offline ? "bg-warning/10 text-warning" : "bg-default-100 text-muted-foreground" },
+    { label: "Realtime events", value: isBridgeConnected ? "Connected" : "Reconnecting", icon: Wifi, tone: isBridgeConnected ? "bg-success/10 text-success" : "bg-warning/10 text-warning" },
+  ];
+  return <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    {stats.map(({ label, value, icon: Icon, tone }) => <Surface key={label} className="flex items-center gap-3 rounded-2xl border border-default-200/70 bg-content1/70 p-3.5"><div className={`grid size-10 shrink-0 place-items-center rounded-xl ${tone}`}><Icon className="size-5" /></div><div className="min-w-0"><p className="text-xs text-muted-foreground">{label}</p><p className="truncate text-lg font-semibold tracking-tight">{value}</p></div></Surface>)}
+  </div>;
 };

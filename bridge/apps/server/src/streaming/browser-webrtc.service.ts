@@ -29,7 +29,7 @@ export class BrowserWebRtcService implements OnModuleDestroy {
     });
   }
 
-  async create(did: string): Promise<{ sessionId: string; offer: RTCSessionDescriptionInit }> {
+  async create(did: string, browserOffer: string): Promise<{ sessionId: string; answer: RTCSessionDescriptionInit }> {
     const cam = await CameraEntity.findOne({ where: [{ id: did }, { did }] });
     if (!cam) throw new Error("Camera not found");
 
@@ -43,7 +43,7 @@ export class BrowserWebRtcService implements OnModuleDestroy {
     const offer = await new Promise<{ sdp: string; rtpPort: number }>((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
-        reject(new Error("Timed out waiting for native WebRTC offer"));
+        reject(new Error("Timed out waiting for native WebRTC answer"));
       }, 8000);
       timeout.unref();
 
@@ -57,7 +57,7 @@ export class BrowserWebRtcService implements OnModuleDestroy {
         this.engine.off("viewer_offer", onOffer);
       };
       this.engine.on("viewer_offer", onOffer);
-      this.engine.startViewer(id, cam.did);
+      this.engine.startViewer(id, cam.did, browserOffer);
     }).catch((error) => {
       this.stop(id);
       throw error;
@@ -66,14 +66,8 @@ export class BrowserWebRtcService implements OnModuleDestroy {
     const session = this.sessions.get(id);
     if (!session || session.generation !== generation) throw new Error("Viewer session was cancelled");
     session.rtpPort = offer.rtpPort;
-    return { sessionId: id, offer: { type: "offer", sdp: offer.sdp } };
-  }
-
-  answer(sessionId: string, sdp: string): void {
-    const session = this.sessions.get(sessionId);
-    if (!session || !session.rtpPort) throw new Error("Viewer session not found");
-    this.engine.setViewerAnswer(session.id, session.did, sdp);
-    if (!session.ffmpeg) this.startFfmpeg(session);
+    this.startFfmpeg(session);
+    return { sessionId: id, answer: { type: "answer", sdp: offer.sdp } };
   }
 
   stop(sessionId: string): void {

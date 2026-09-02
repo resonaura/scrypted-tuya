@@ -1,299 +1,103 @@
 import React, { useEffect, useRef, useState } from "react";
-import {
-  Modal,
-  Button,
-  ButtonGroup,
-  Chip,
-  Surface,
-} from "@heroui/react";
-import {
-  Signal,
-  Navigation,
-  Volume2,
-  VolumeX,
-  RefreshCw,
-  Copy,
-  Video,
-} from "lucide-react";
+import { Button, Chip, Modal, Surface } from "@heroui/react";
+import { Check, Copy, Maximize, Play, RefreshCw, Video } from "lucide-react";
 import type { Camera } from "../types/index.js";
-import { answerWebRtcViewer, createWebRtcViewer, getApiBase, stopWebRtcViewer } from "../api/client.js";
+import { createWebRtcViewer, stopWebRtcViewer } from "../api/client.js";
+import { copyText, getCameraUrls } from "../utils.js";
 import { toast } from "sonner";
 
-interface VideoPlayerModalProps {
-  camera: Camera;
-  isOpen: boolean;
-  onClose: () => void;
-  onPtz: (id: string, dir: "up" | "down" | "left" | "right" | "stop") => void;
-}
-
-export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
-  camera,
-  isOpen,
-  onClose,
-  onPtz,
-}) => {
-  const [isAudioMuted, setIsAudioMuted] = useState(!camera.audioEnabled);
-  const [snapshotKey, setSnapshotKey] = useState(Date.now());
-  const [streamError, setStreamError] = useState(false);
-  const [isLiveMode, setIsLiveMode] = useState(true);
-  const [isConnecting, setIsConnecting] = useState(false);
+export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClose: () => void }> = ({ camera, isOpen, onClose }) => {
   const [viewerKey, setViewerKey] = useState(0);
+  const [status, setStatus] = useState<"connecting" | "live" | "error">("connecting");
+  const [snapshotKey, setSnapshotKey] = useState(Date.now());
+  const [copied, setCopied] = useState<"rtsp" | "snapshot" | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-
-  const apiBase = getApiBase();
-  const cleanSlug =
-    camera.name
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]+/g, "_")
-      .replace(/^_+|_+$/g, "") || camera.did;
-  const snapshotUrl = `${apiBase}/api/cameras/${camera.id}/snapshot?t=${snapshotKey}`;
-  const rtspUrl = `rtsp://${window.location.hostname || "127.0.0.1"}:${camera.rtspPort || 8655}/${camera.rtspPath || `live/${cleanSlug}`}`;
-  const h264Url =
-    camera.transcodeH264 && camera.h264Port
-      ? `rtsp://${window.location.hostname || "127.0.0.1"}:${camera.h264Port}/live/${cleanSlug}_h264`
-      : null;
-
+  const { rtsp, snapshot } = getCameraUrls(camera);
 
   useEffect(() => {
-    if (!isOpen || !isLiveMode) return;
+    if (!isOpen) return;
     let disposed = false;
     let peer: RTCPeerConnection | undefined;
     let sessionId: string | undefined;
+    let reconnectTimer: number | undefined;
+    setStatus("connecting");
 
-    const waitForIce = (pc: RTCPeerConnection) =>
-      new Promise<void>((resolve) => {
-        if (pc.iceGatheringState === "complete") return resolve();
-        const onChange = () => {
-          if (pc.iceGatheringState === "complete") {
-            pc.removeEventListener("icegatheringstatechange", onChange);
-            resolve();
-          }
-        };
-        pc.addEventListener("icegatheringstatechange", onChange);
-        setTimeout(() => {
-          pc.removeEventListener("icegatheringstatechange", onChange);
-          resolve();
-        }, 4000);
-      });
+    const waitForIce = (pc: RTCPeerConnection) => new Promise<void>((resolve) => {
+      if (pc.iceGatheringState === "complete") return resolve();
+      const finish = () => { pc.removeEventListener("icegatheringstatechange", change); resolve(); };
+      const change = () => pc.iceGatheringState === "complete" && finish();
+      pc.addEventListener("icegatheringstatechange", change);
+      window.setTimeout(finish, 4000);
+    });
 
     const start = async () => {
-      setIsConnecting(true);
-      setStreamError(false);
       try {
-        const created = await createWebRtcViewer(camera.did);
-        if (disposed) {
-          await stopWebRtcViewer(camera.did, created.sessionId);
-          return;
-        }
-        sessionId = created.sessionId;
         peer = new RTCPeerConnection({ bundlePolicy: "max-bundle" });
+        const transceiver = peer.addTransceiver("video", { direction: "recvonly" });
+        const capabilities = RTCRtpReceiver.getCapabilities("video");
+        const h264 = capabilities?.codecs.filter((codec) => codec.mimeType.toLowerCase() === "video/h264") || [];
+        if (h264.length && "setCodecPreferences" in transceiver) transceiver.setCodecPreferences(h264);
         peer.ontrack = (event) => {
-          if (videoRef.current) {
-            videoRef.current.srcObject = event.streams[0] || new MediaStream([event.track]);
-            void videoRef.current.play().catch(() => {});
-          }
+          if (!videoRef.current) return;
+          videoRef.current.srcObject = event.streams[0] || new MediaStream([event.track]);
+          void videoRef.current.play().catch(() => {});
         };
         peer.onconnectionstatechange = () => {
-          if (["failed", "disconnected", "closed"].includes(peer?.connectionState || "")) {
-            setStreamError(true);
+          if (disposed || !peer) return;
+          if (peer.connectionState === "connected") setStatus("live");
+          if (peer.connectionState === "failed" || peer.connectionState === "closed") {
+            setStatus("error");
+            reconnectTimer = window.setTimeout(() => setViewerKey((value) => value + 1), 2000);
           }
+          if (peer.connectionState === "disconnected") setStatus("connecting");
         };
-        await peer.setRemoteDescription(created.offer);
-        const answer = await peer.createAnswer();
-        await peer.setLocalDescription(answer);
+        await peer.setLocalDescription(await peer.createOffer());
         await waitForIce(peer);
-        if (!peer.localDescription) throw new Error("Browser did not create a WebRTC answer");
-        await answerWebRtcViewer(camera.did, created.sessionId, peer.localDescription.toJSON());
+        if (!peer.localDescription) throw new Error("No browser WebRTC offer");
+        const created = await createWebRtcViewer(camera.did, peer.localDescription.toJSON());
+        if (disposed) { await stopWebRtcViewer(camera.did, created.sessionId); return; }
+        sessionId = created.sessionId;
+        await peer.setRemoteDescription(created.answer);
       } catch {
-        if (!disposed) setStreamError(true);
-      } finally {
-        if (!disposed) setIsConnecting(false);
+        if (!disposed) { setStatus("error"); reconnectTimer = window.setTimeout(() => setViewerKey((value) => value + 1), 3000); }
       }
     };
-
     void start();
     return () => {
       disposed = true;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
       if (videoRef.current) videoRef.current.srcObject = null;
       peer?.close();
       if (sessionId) void stopWebRtcViewer(camera.did, sessionId);
     };
-  }, [camera.did, isLiveMode, isOpen, viewerKey]);
+  }, [camera.did, isOpen, viewerKey]);
 
-  const handleRefreshSnapshot = () => {
-    setIsLiveMode(false);
-    setStreamError(false);
-    setSnapshotKey(Date.now());
-    toast.info("Snapshot refreshed");
+  useEffect(() => {
+    if (status === "live") return;
+    const timer = window.setInterval(() => setSnapshotKey(Date.now()), 3000);
+    return () => window.clearInterval(timer);
+  }, [status]);
+
+  const copy = async (kind: "rtsp" | "snapshot", value: string) => {
+    try { await copyText(value); setCopied(kind); toast.success(kind === "rtsp" ? "RTSP URL copied" : "Snapshot URL copied"); window.setTimeout(() => setCopied(null), 1500); }
+    catch { toast.error("Could not copy the URL"); }
   };
 
-  const handleToggleLive = () => {
-    setIsLiveMode(true);
-    setStreamError(false);
-    setViewerKey((value) => value + 1);
-    toast.info("Connecting RTSP through WebRTC");
-  };
-
-  const handleCopy = (url: string) => {
-    navigator.clipboard.writeText(url);
-    toast.success("RTSP link copied!");
-  };
-
-  return (
-    <Modal.Backdrop
-      isOpen={isOpen}
-      onOpenChange={(open) => !open && onClose()}
-      variant="blur"
-    >
-      <Modal.Container placement="center" size="lg">
-        <Modal.Dialog className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
-          <Modal.CloseTrigger />
-          <Modal.Header>
-            <Modal.Icon className="bg-primary/10 text-primary">
-              <Video className="size-5" />
-            </Modal.Icon>
-            <div className="flex items-center gap-2">
-              <Modal.Heading>{camera.name}</Modal.Heading>
-              <Chip
-                size="sm"
-                variant="soft"
-                color={camera.online ? "success" : "danger"}
-                className="text-[10px] font-semibold h-5 px-2"
-              >
-                {camera.online ? (isLiveMode ? "Live Stream" : "Snapshot") : "Offline"}
-              </Chip>
-              <Chip size="sm" variant="soft" className="text-[10px] uppercase font-mono h-5 px-2">
-                {camera.quality || "HD"}
-              </Chip>
-            </div>
-          </Modal.Header>
-
-          <Modal.Body className="p-4 space-y-3">
-            {/* Player Viewport */}
-            <div className="relative aspect-video w-full bg-zinc-950 rounded-2xl overflow-hidden flex items-center justify-center">
-              {isLiveMode && !streamError ? (
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted={isAudioMuted}
-                  className="w-full h-full object-contain"
-                />
-              ) : (
-                <img
-                  src={snapshotUrl}
-                  alt={camera.name}
-                  className="w-full h-full object-contain"
-                  onError={() => setStreamError(true)}
-                />
-              )}
-              {isConnecting && (
-                <div className="absolute inset-0 grid place-items-center bg-black/35 text-sm text-white">
-                  Connecting WebRTC…
-                </div>
-              )}
-
-              <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
-                <Chip
-                  size="sm"
-                  variant="soft"
-                  className="backdrop-blur-md bg-black/60 text-white text-[10px]"
-                >
-                  <Signal className="size-2.5 text-emerald-400 mr-1 inline-block animate-pulse" />
-                  RTSP :{camera.rtspPort || 8655}
-                </Chip>
-              </div>
-
-              {/* PTZ Overlay */}
-              <div className="absolute bottom-2.5 right-2.5 bg-black/60 backdrop-blur-md p-1 rounded-xl">
-                <ButtonGroup size="sm" variant="secondary">
-                  <Button isIconOnly onPress={() => onPtz(camera.id, "left")} aria-label="Left">
-                    <Navigation className="size-3.5 -rotate-90 text-white" />
-                  </Button>
-                  <Button isIconOnly onPress={() => onPtz(camera.id, "up")} aria-label="Up">
-                    <ButtonGroup.Separator />
-                    <Navigation className="size-3.5 text-white" />
-                  </Button>
-                  <Button isIconOnly onPress={() => onPtz(camera.id, "down")} aria-label="Down">
-                    <ButtonGroup.Separator />
-                    <Navigation className="size-3.5 rotate-180 text-white" />
-                  </Button>
-                  <Button isIconOnly onPress={() => onPtz(camera.id, "right")} aria-label="Right">
-                    <ButtonGroup.Separator />
-                    <Navigation className="size-3.5 rotate-90 text-white" />
-                  </Button>
-                </ButtonGroup>
-              </div>
-            </div>
-
-            {/* RTSP Links */}
-            <div className="space-y-2">
-              <Surface className="flex items-center justify-between gap-2 p-2.5 rounded-xl">
-                <span className="text-xs font-mono truncate text-muted-foreground">
-                  {rtspUrl}
-                </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onPress={() => handleCopy(rtspUrl)}
-                  className="text-xs h-7 px-2"
-                >
-                  <Copy className="size-3 mr-1" />
-                  Copy
-                </Button>
-              </Surface>
-
-              {h264Url && (
-                <Surface className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-purple-500/10">
-                  <span className="text-xs font-mono truncate text-purple-400">
-                    {h264Url}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onPress={() => handleCopy(h264Url)}
-                    className="text-xs h-7 px-2 text-purple-400"
-                  >
-                    <Copy className="size-3 mr-1" />
-                    Copy x264
-                  </Button>
-                </Surface>
-              )}
-            </div>
-          </Modal.Body>
-
-          <Modal.Footer className="flex items-center justify-start gap-2">
-            <Button
-              size="sm"
-              variant={isLiveMode ? "primary" : "secondary"}
-              onPress={handleToggleLive}
-            >
-              <Signal className="size-3.5 mr-1 text-emerald-400" />
-              Live Stream
-            </Button>
-            <Button
-              size="sm"
-              variant={!isLiveMode ? "primary" : "secondary"}
-              onPress={handleRefreshSnapshot}
-            >
-              <RefreshCw className="size-3.5 mr-1" />
-              Snapshot
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              onPress={() => setIsAudioMuted(!isAudioMuted)}
-            >
-              {isAudioMuted ? (
-                <VolumeX className="size-3.5 mr-1 text-muted-foreground" />
-              ) : (
-                <Volume2 className="size-3.5 mr-1 text-emerald-400" />
-              )}
-              {isAudioMuted ? "Muted" : "Audio"}
-            </Button>
-          </Modal.Footer>
-        </Modal.Dialog>
-      </Modal.Container>
-    </Modal.Backdrop>
-  );
+  return <Modal.Backdrop isOpen={isOpen} onOpenChange={(open) => !open && onClose()} variant="blur">
+    <Modal.Container placement="center" size="lg"><Modal.Dialog className="sm:max-w-4xl"><Modal.CloseTrigger />
+      <Modal.Header><Modal.Icon className="bg-primary/10 text-primary"><Video className="size-5" /></Modal.Icon><div><div className="flex items-center gap-2"><Modal.Heading>{camera.name}</Modal.Heading><Chip size="sm" variant="soft" color={status === "live" ? "success" : status === "error" ? "danger" : "warning"}>{status === "live" ? "WebRTC live" : status === "error" ? "Recovering" : "Connecting"}</Chip></div><p className="font-mono text-[11px] text-muted-foreground">{camera.did}</p></div></Modal.Header>
+      <Modal.Body className="space-y-4 p-4">
+        <div className="relative aspect-video overflow-hidden rounded-2xl bg-zinc-950 shadow-inner">
+          <video ref={videoRef} autoPlay playsInline muted className={`h-full w-full object-contain transition-opacity ${status === "live" ? "opacity-100" : "opacity-0"}`} />
+          {status !== "live" && <img src={`${snapshot}?t=${snapshotKey}`} alt={`Snapshot from ${camera.name}`} className="absolute inset-0 h-full w-full object-contain opacity-60 blur-[1px]" />}
+          {status !== "live" && <div className="absolute inset-0 grid place-items-center bg-black/30"><div className="rounded-2xl bg-black/55 px-5 py-4 text-center text-white backdrop-blur-md"><RefreshCw className={`mx-auto mb-2 size-5 ${status === "connecting" ? "animate-spin" : ""}`} /><p className="text-sm font-semibold">{status === "error" ? "Restoring the stream" : "Opening RTSP through WebRTC"}</p><p className="mt-1 text-xs text-white/65">The latest backend snapshot remains available.</p></div></div>}
+          <Button isIconOnly size="sm" variant="secondary" className="absolute bottom-3 right-3 bg-black/45 text-white backdrop-blur" aria-label="Enter fullscreen" onPress={() => void videoRef.current?.requestFullscreen()}><Maximize className="size-4" /></Button>
+        </div>
+        <div className="grid gap-2 md:grid-cols-2">
+          {[{ kind: "rtsp" as const, label: "RTSP stream", value: rtsp }, { kind: "snapshot" as const, label: "Stable snapshot URL", value: snapshot }].map((item) => <Surface key={item.kind} className="flex min-w-0 items-center gap-2 rounded-2xl border border-default-200/70 p-3"><div className="min-w-0 flex-1"><p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{item.label}</p><p className="truncate font-mono text-xs">{item.value}</p></div><Button isIconOnly size="sm" variant="ghost" aria-label={`Copy ${item.label}`} onPress={() => void copy(item.kind, item.value)}>{copied === item.kind ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}</Button></Surface>)}
+        </div>
+      </Modal.Body>
+      <Modal.Footer><Button variant="secondary" onPress={() => { setStatus("connecting"); setViewerKey((value) => value + 1); }}><Play className="size-4" /> Reconnect</Button><Button variant="primary" onPress={onClose}>Done</Button></Modal.Footer>
+    </Modal.Dialog></Modal.Container>
+  </Modal.Backdrop>;
 };

@@ -119,8 +119,8 @@ void IpcServer::handle_command(const std::string& line) {
             send_event(to_json(EventError{.did = cfg.did, .message = "Failed to start session"}));
         }
     } else if (cmd == "start_viewer") {
-        if (cmd_dto.viewer_id.empty() || cmd_dto.did.empty()) {
-            send_event(to_json(EventError{.did = cmd_dto.did, .message = "Missing viewer_id or did"}));
+        if (cmd_dto.viewer_id.empty() || cmd_dto.did.empty() || cmd_dto.sdp.empty()) {
+            send_event(to_json(EventError{.did = cmd_dto.did, .message = "Missing viewer_id, did, or browser offer"}));
             return;
         }
         std::lock_guard<std::mutex> lock(sessions_mutex_);
@@ -129,15 +129,11 @@ void IpcServer::handle_command(const std::string& line) {
             cmd_dto.viewer_id,
             cmd_dto.did,
             [this](const std::string& evt) { send_event(evt); });
-        if (!viewer->start()) {
+        if (!viewer->start(cmd_dto.sdp)) {
             send_event(to_json(EventError{.did = cmd_dto.did, .message = "Failed to start browser WebRTC viewer"}));
             return;
         }
         viewers_[cmd_dto.viewer_id] = std::move(viewer);
-    } else if (cmd == "set_viewer_answer") {
-        std::lock_guard<std::mutex> lock(sessions_mutex_);
-        auto it = viewers_.find(cmd_dto.viewer_id);
-        if (it != viewers_.end()) it->second->set_answer(cmd_dto.sdp);
     } else if (cmd == "stop_viewer") {
         std::lock_guard<std::mutex> lock(sessions_mutex_);
         viewers_.erase(cmd_dto.viewer_id);

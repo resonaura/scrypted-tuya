@@ -8,7 +8,6 @@ import {
   Label,
   Select,
   ListBox,
-  Switch,
   Spinner,
   Surface,
 } from "@heroui/react";
@@ -16,7 +15,6 @@ import {
   QrCode,
   RefreshCw,
   AlertCircle,
-  Layers,
 } from "lucide-react";
 import {
   startQrFlow,
@@ -29,6 +27,7 @@ import { toast } from "sonner";
 
 interface AddCameraModalProps {
   isOpen: boolean;
+  initialRegion?: string;
   onClose: () => void;
   onAdded: () => void;
 }
@@ -44,11 +43,12 @@ const REGIONS = [
 
 export const AddCameraModal: React.FC<AddCameraModalProps> = ({
   isOpen,
+  initialRegion,
   onClose,
   onAdded,
 }) => {
   const [selectedTab, setSelectedTab] = useState<string>("qr");
-  const [region, setRegion] = useState<string>("eu");
+  const [region, setRegion] = useState<string>(() => initialRegion || localStorage.getItem("tuya-bridge.region") || "us");
 
   // QR Flow State
   const [qrToken, setQrToken] = useState<string | null>(null);
@@ -59,7 +59,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
   // Password Flow State
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [countryCode, setCountryCode] = useState("49");
+  const [countryCode, setCountryCode] = useState("1");
   const [isPasswordLoading, setIsPasswordLoading] = useState(false);
 
   // Manual Camera State
@@ -68,8 +68,18 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
   const [manualLocalKey, setManualLocalKey] = useState("");
   const [manualIp, setManualIp] = useState("");
   const [manualQuality, setManualQuality] = useState<"hd" | "sd">("hd");
-  const [manualTranscode, setManualTranscode] = useState(false);
   const [isManualSubmitting, setIsManualSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const nextRegion = initialRegion || localStorage.getItem("tuya-bridge.region") || "us";
+    setRegion(nextRegion);
+  }, [initialRegion, isOpen]);
+
+  useEffect(() => {
+    localStorage.setItem("tuya-bridge.region", region);
+    if (region === "us" || region === "ue") setCountryCode((current) => current === "49" ? "1" : current);
+  }, [region]);
 
   const fetchQr = async (selectedRegion = region) => {
     setIsQrLoading(true);
@@ -157,7 +167,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
         localKey: manualLocalKey,
         ip: manualIp,
         quality: manualQuality,
-        transcodeH264: manualTranscode,
+        transcodeH264: false,
       });
       toast.success(`Camera ${manualName} added!`);
       onAdded();
@@ -182,7 +192,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
             <Modal.Icon className="bg-primary/10 text-primary">
               <QrCode className="size-5" />
             </Modal.Icon>
-            <Modal.Heading>Connect Tuya</Modal.Heading>
+            <Modal.Heading>Connect Tuya profile</Modal.Heading>
           </Modal.Header>
 
           <Modal.Body className="p-4">
@@ -206,7 +216,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                   <div className="flex-1">
                     <Select
                       selectedKey={region}
-                      onSelectionChange={(k) => setRegion((k as string) || "eu")}
+                      onSelectionChange={(k) => setRegion((k as string) || "us")}
                     >
                       <Label className="text-xs text-muted-foreground font-medium mb-1 block">Account Region</Label>
                       <Select.Trigger>
@@ -271,7 +281,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                   <div className="grid grid-cols-2 gap-2">
                     <Select
                       selectedKey={region}
-                      onSelectionChange={(k) => setRegion((k as string) || "eu")}
+                      onSelectionChange={(k) => setRegion((k as string) || "us")}
                     >
                       <Label className="text-xs text-muted-foreground font-medium mb-1 block">Region</Label>
                       <Select.Trigger>
@@ -356,24 +366,6 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                       </Select.Popover>
                     </Select>
                   </div>
-
-                  <Surface className="flex items-center justify-between p-3 rounded-xl">
-                    <div className="flex items-center gap-2">
-                      <Layers className="size-4 text-purple-400" />
-                      <Label className="text-xs font-medium cursor-pointer">Enable x264 Transcoding</Label>
-                    </div>
-                    <Switch
-                      isSelected={manualTranscode}
-                      onChange={setManualTranscode}
-                      size="sm"
-                    >
-                      <Switch.Content>
-                        <Switch.Control>
-                          <Switch.Thumb />
-                        </Switch.Control>
-                      </Switch.Content>
-                    </Switch>
-                  </Surface>
 
                   <Button
                     type="submit"

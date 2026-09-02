@@ -11,12 +11,7 @@ import {
   Inject,
 } from "@nestjs/common";
 import { CamerasService } from "./cameras.service.js";
-import {
-  CreateCameraSchema,
-  PtzSchema,
-  type CreateCameraDto,
-  type PtzDto,
-} from "./dto.js";
+import { CreateCameraSchema } from "./dto.js";
 import type { FastifyReply } from "fastify";
 
 @Controller("api/cameras")
@@ -67,14 +62,6 @@ export class CamerasController {
     const cam = await this.camerasService.getById(id);
     if (!cam) throw new NotFoundException("Camera not found");
     this.camerasService.stopStream(cam);
-    return { success: true };
-  }
-
-  @Post(":id/ptz")
-  async ptz(@Param("id") id: string, @Body() body: unknown) {
-    const parse = PtzSchema.safeParse(body);
-    if (!parse.success) throw new BadRequestException(parse.error.format());
-    await this.camerasService.ptz(id, parse.data);
     return { success: true };
   }
 

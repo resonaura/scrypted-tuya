@@ -211,12 +211,8 @@ export class NativeMediaEngine extends EventEmitter {
     }
   }
 
-  public startViewer(viewerId: string, did: string): void {
-    this.sendLine({ cmd: "start_viewer", viewer_id: viewerId, did });
-  }
-
-  public setViewerAnswer(viewerId: string, did: string, sdp: string): void {
-    this.sendLine({ cmd: "set_viewer_answer", viewer_id: viewerId, did, sdp });
+  public startViewer(viewerId: string, did: string, sdp: string): void {
+    this.sendLine({ cmd: "start_viewer", viewer_id: viewerId, did, sdp });
   }
 
   public stopViewer(viewerId: string, did: string): void {

@@ -1,240 +1,121 @@
 import React from "react";
-import {
-  Surface,
-  Button,
-  ButtonGroup,
-  Chip,
-} from "@heroui/react";
-import {
-  Play,
-  Trash2,
-  Navigation,
-  Volume2,
-  VolumeX,
-  Copy,
-  Check,
-} from "lucide-react";
-import { motion } from "framer-motion";
+import { Button, Card, Chip, Dropdown, Label, Surface } from "@heroui/react";
+import { ArrowDown, ArrowUp, Check, Copy, MoreVertical, Play, RefreshCw, Trash2, Video } from "lucide-react";
+import { motion, useReducedMotion } from "framer-motion";
 import type { Camera } from "../types/index.js";
-import { getApiBase } from "../api/client.js";
+import { copyText, getCameraUrls } from "../utils.js";
 import { toast } from "sonner";
 
 interface CameraCardProps {
   camera: Camera;
+  index: number;
+  total: number;
   onPlay: (camera: Camera) => void;
   onDelete: (id: string) => void;
-  onPtz: (id: string, dir: "up" | "down" | "left" | "right" | "stop") => void;
+  onMove: (id: string, direction: -1 | 1) => void;
+  onTranscodeChange: (camera: Camera, enabled: boolean) => Promise<void>;
 }
 
-export const CameraCard: React.FC<CameraCardProps> = ({
-  camera,
-  onPlay,
-  onDelete,
-  onPtz,
-}) => {
-  const [copied, setCopied] = React.useState(false);
-  const [imgError, setImgError] = React.useState(false);
+export const CameraCard: React.FC<CameraCardProps> = ({ camera, index, total, onPlay, onDelete, onMove, onTranscodeChange }) => {
+  const reduceMotion = useReducedMotion();
   const [snapshotKey, setSnapshotKey] = React.useState(Date.now());
+  const [imgError, setImgError] = React.useState(false);
+  const [copied, setCopied] = React.useState<"rtsp" | "snapshot" | null>(null);
+  const { rtsp, snapshot } = getCameraUrls(camera);
 
-  // Refresh the backend snapshot/offline card without starting media work in the browser.
   React.useEffect(() => {
-    const timer = setInterval(() => {
-      setSnapshotKey(Date.now());
-      setImgError(false);
-    }, 2500);
-    return () => clearInterval(timer);
-  }, [camera.online, camera.id]);
+    const refresh = () => {
+      if (document.visibilityState === "visible") setSnapshotKey(Date.now());
+    };
+    const timer = window.setInterval(refresh, camera.online ? 3500 : 7000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [camera.id, camera.online]);
 
-  const cleanSlug =
-    camera.name
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]+/g, "_")
-      .replace(/^_+|_+$/g, "") || camera.did;
-  const snapshotUrl = `${getApiBase()}/api/cameras/${camera.id}/snapshot?t=${snapshotKey}`;
-  const rtspUrl = `rtsp://${window.location.hostname || "127.0.0.1"}:${camera.rtspPort || 8655}/${camera.rtspPath || `live/${cleanSlug}`}`;
-  const h264Url =
-    camera.transcodeH264 && camera.h264Port
-      ? `rtsp://${window.location.hostname || "127.0.0.1"}:${camera.h264Port}/live/${cleanSlug}_h264`
-      : null;
-
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    toast.success("RTSP link copied to clipboard");
-    setTimeout(() => setCopied(false), 2000);
+  const copy = async (kind: "rtsp" | "snapshot", value: string) => {
+    try {
+      await copyText(value);
+      setCopied(kind);
+      toast.success(kind === "rtsp" ? "RTSP URL copied" : "Snapshot URL copied");
+      window.setTimeout(() => setCopied(null), 1600);
+    } catch {
+      toast.error("Could not copy the URL");
+    }
   };
 
-  const handleDelete = async () => {
+  const remove = async () => {
+    if (!window.confirm(`Delete “${camera.name}”?`)) return;
     try {
       await onDelete(camera.id);
-      toast.success(`Camera ${camera.name} deleted`);
+      toast.success(`${camera.name} deleted`);
     } catch {
       toast.error("Failed to delete camera");
     }
   };
 
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.18 }}
-    >
-      <Surface className="flex flex-col rounded-3xl overflow-hidden shadow-xs">
-        {/* Stream Viewport */}
-        <div className="relative aspect-video w-full bg-zinc-950 flex items-center justify-center overflow-hidden group">
-          {!imgError ? (
-            <img
-              src={snapshotUrl}
-              alt={camera.name}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-              onError={() => setImgError(true)}
-              onLoad={() => setImgError(false)}
-            />
-          ) : (
-            <div className="flex flex-col items-center justify-center gap-2 text-zinc-500">
-              <Play className="size-8 opacity-40" />
-              <span className="text-xs font-mono">{camera.online ? "Connecting stream..." : "Offline"}</span>
-            </div>
-          )}
-
-          {/* Badges */}
-          <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 z-10">
-            <Chip
-              size="sm"
-              variant="soft"
-              color={camera.online ? "success" : "danger"}
-              className="backdrop-blur-md bg-black/60 text-white text-[10px] font-semibold h-5 px-2"
-            >
-              {camera.online ? "Online" : "Connecting"}
-            </Chip>
-
-            <Chip
-              size="sm"
-              variant="soft"
-              className="backdrop-blur-md bg-black/60 text-white text-[10px] uppercase font-mono h-5 px-2"
-            >
-              {camera.quality || "HD"}
-            </Chip>
-
-            {camera.transcodeH264 && (
-              <Chip
-                size="sm"
-                variant="soft"
-                className="backdrop-blur-md bg-purple-500/80 text-white text-[10px] font-semibold h-5 px-2"
-              >
-                x264
-              </Chip>
+    <motion.div layout initial={reduceMotion ? false : { opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={reduceMotion ? undefined : { opacity: 0, scale: 0.97 }} transition={{ duration: 0.22 }}>
+      <Card className="group overflow-hidden rounded-3xl border border-default-200/70 bg-content1/90 shadow-sm transition-shadow hover:shadow-xl">
+        <Card.Content className="p-0">
+          <div className="relative aspect-video overflow-hidden bg-zinc-950">
+            {!imgError ? (
+              <img src={`${snapshot}?t=${snapshotKey}`} alt={`Latest snapshot from ${camera.name}`} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.025]" onLoad={() => setImgError(false)} onError={() => setImgError(true)} />
+            ) : (
+              <div className="grid h-full place-items-center text-zinc-500">
+                <div className="flex flex-col items-center gap-2"><Video className="size-8" /><span className="text-xs">Preview unavailable</span></div>
+              </div>
             )}
-          </div>
-
-          {/* Audio Badge */}
-          <div className="absolute top-2.5 right-2.5 z-10">
-            <div className="p-1 rounded-md bg-black/60 backdrop-blur-md text-white">
-              {camera.audioEnabled ? (
-                <Volume2 className="size-3 text-emerald-400" />
-              ) : (
-                <VolumeX className="size-3 text-white/50" />
-              )}
+            <div className="absolute inset-x-0 top-0 flex items-start justify-between bg-gradient-to-b from-black/70 to-transparent p-3 pb-8">
+              <div className="flex gap-2">
+                <Chip size="sm" variant="soft" color={camera.online ? "success" : "danger"} className="px-2.5 bg-black/45 text-white backdrop-blur-md">
+                  {camera.online && <span className="mr-1.5 inline-block size-1.5 rounded-full bg-white shadow-[0_0_8px_2px_rgba(255,255,255,0.65)] motion-safe:animate-pulse" />}
+                  {camera.online ? "Online" : "Reconnecting"}
+                </Chip>
+                <Chip size="sm" variant="soft" className="px-2.5 bg-black/45 font-mono text-[10px] uppercase text-white backdrop-blur-md">{camera.quality || "HD"}</Chip>
+              </div>
+              <Dropdown>
+                <Dropdown.Trigger>
+                  <Button isIconOnly size="sm" variant="ghost" aria-label={`Actions for ${camera.name}`} className="bg-black/35 text-white backdrop-blur-md"><MoreVertical className="size-4" /></Button>
+                </Dropdown.Trigger>
+                <Dropdown.Popover placement="bottom end">
+                  <Dropdown.Menu onAction={(key) => {
+                    if (key === "up") onMove(camera.id, -1);
+                    if (key === "down") onMove(camera.id, 1);
+                    if (key === "transcode") void onTranscodeChange(camera, !camera.transcodeH264);
+                    if (key === "delete") void remove();
+                  }}>
+                    <Dropdown.Item id="up" textValue="Move up" isDisabled={index === 0}><ArrowUp className="mr-2 inline size-4" /><Label>Move earlier</Label></Dropdown.Item>
+                    <Dropdown.Item id="down" textValue="Move down" isDisabled={index === total - 1}><ArrowDown className="mr-2 inline size-4" /><Label>Move later</Label></Dropdown.Item>
+                    <Dropdown.Item id="transcode" textValue="Toggle H264 AAC transcoding"><Video className="mr-2 inline size-4" /><Label>H.264 / AAC transcoding</Label><Chip size="sm" variant="soft" color={camera.transcodeH264 ? "success" : "default"} className="ml-auto">{camera.transcodeH264 ? "On" : "Off"}</Chip></Dropdown.Item>
+                    <Dropdown.Item id="delete" textValue="Delete camera" variant="danger"><Trash2 className="mr-2 inline size-4" /><Label>Delete camera</Label></Dropdown.Item>
+                  </Dropdown.Menu>
+                </Dropdown.Popover>
+              </Dropdown>
             </div>
+            <Button variant="primary" size="md" onPress={() => onPlay(camera)} className="absolute bottom-3 left-3 rounded-full shadow-lg"><Play className="size-4 fill-current" /> Open live view</Button>
           </div>
+        </Card.Content>
 
-          {/* Play Overlay Button */}
-          <Button
-            isIconOnly
-            size="md"
-            variant="primary"
-            onPress={() => onPlay(camera)}
-            className="absolute z-20 rounded-full shadow-lg hover:scale-110 transition-transform"
-            aria-label="Play Live Stream"
-          >
-            <Play className="size-5 fill-current ml-0.5" />
-          </Button>
-        </div>
+        <Card.Header className="items-start justify-between gap-3 px-4 pb-2 pt-4">
+          <div className="min-w-0"><Card.Title className="truncate text-base font-semibold">{camera.name}</Card.Title><Card.Description className="truncate font-mono text-[11px]">{camera.did}</Card.Description></div>
+          <Chip size="sm" variant="soft" className="shrink-0 font-mono text-[10px]">:{camera.rtspPort || 8655}</Chip>
+        </Card.Header>
 
-        {/* Info & RTSP Snippet */}
-        <div className="p-4 space-y-3">
-          <div className="flex items-start justify-between gap-2">
-            <div className="overflow-hidden">
-              <h3 className="font-bold text-foreground text-sm tracking-tight truncate">
-                {camera.name}
-              </h3>
-              <p className="text-[11px] text-muted-foreground font-mono truncate">
-                {camera.did}
-              </p>
-            </div>
-            <Chip size="sm" variant="soft" className="text-[11px] font-mono font-semibold shrink-0">
-              :{camera.rtspPort || 8655}
-            </Chip>
-          </div>
-
-          {/* RTSP Stream Link Bar */}
-          <Surface className="flex items-center justify-between gap-2 p-2 rounded-xl">
-            <span className="text-[11px] font-mono truncate text-muted-foreground">
-              {rtspUrl}
-            </span>
-            <Button
-              isIconOnly
-              size="sm"
-              variant="ghost"
-              onPress={() => handleCopy(rtspUrl)}
-              className="size-6 min-w-6 rounded-lg text-muted-foreground hover:text-foreground"
-            >
-              {copied ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
-            </Button>
+        <Card.Footer className="grid gap-2 px-4 pb-4 pt-1">
+          <Surface className="flex min-w-0 items-center gap-2 rounded-xl border border-default-200/70 bg-default-50/60 p-2">
+            <div className="min-w-0 flex-1"><p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">RTSP stream</p><p className="truncate font-mono text-[11px]">{rtsp}</p></div>
+            <Button isIconOnly size="sm" variant="ghost" aria-label="Copy RTSP URL" onPress={() => void copy("rtsp", rtsp)}>{copied === "rtsp" ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}</Button>
           </Surface>
-
-          {h264Url && (
-            <Surface className="flex items-center justify-between gap-2 p-2 rounded-xl bg-purple-500/10">
-              <span className="text-[11px] font-mono truncate text-purple-400">
-                {h264Url}
-              </span>
-              <Button
-                isIconOnly
-                size="sm"
-                variant="ghost"
-                onPress={() => handleCopy(h264Url)}
-                className="size-6 min-w-6 rounded-lg text-purple-400"
-              >
-                <Copy className="size-3" />
-              </Button>
-            </Surface>
-          )}
-
-          {/* Quick Footer Controls */}
-          <div className="flex items-center justify-between pt-1">
-            <ButtonGroup size="sm" variant="secondary">
-              <Button isIconOnly onPress={() => onPtz(camera.id, "left")} aria-label="Left">
-                <Navigation className="size-3.5 -rotate-90" />
-              </Button>
-              <Button isIconOnly onPress={() => onPtz(camera.id, "up")} aria-label="Up">
-                <ButtonGroup.Separator />
-                <Navigation className="size-3.5" />
-              </Button>
-              <Button isIconOnly onPress={() => onPtz(camera.id, "down")} aria-label="Down">
-                <ButtonGroup.Separator />
-                <Navigation className="size-3.5 rotate-180" />
-              </Button>
-              <Button isIconOnly onPress={() => onPtz(camera.id, "right")} aria-label="Right">
-                <ButtonGroup.Separator />
-                <Navigation className="size-3.5 rotate-90" />
-              </Button>
-            </ButtonGroup>
-
-            <Button
-              isIconOnly
-              size="sm"
-              variant="ghost"
-              onPress={handleDelete}
-              className="text-muted-foreground hover:text-danger"
-              aria-label="Delete Camera"
-            >
-              <Trash2 className="size-4" />
-            </Button>
-          </div>
-        </div>
-      </Surface>
+          <Surface className="flex min-w-0 items-center gap-2 rounded-xl border border-default-200/70 bg-default-50/60 p-2">
+            <div className="min-w-0 flex-1"><p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Live snapshot URL</p><p className="truncate font-mono text-[11px]">{snapshot}</p></div>
+            <Button isIconOnly size="sm" variant="ghost" aria-label="Copy snapshot URL" onPress={() => void copy("snapshot", snapshot)}>{copied === "snapshot" ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}</Button>
+            <Button isIconOnly size="sm" variant="ghost" aria-label="Refresh preview" onPress={() => { setImgError(false); setSnapshotKey(Date.now()); }}><RefreshCw className="size-4" /></Button>
+          </Surface>
+        </Card.Footer>
+      </Card>
     </motion.div>
   );
 };

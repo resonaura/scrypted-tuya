@@ -109,16 +109,27 @@ export class FrameSnapshotter extends EventEmitter {
         "error",
         "-rtsp_transport",
         "tcp",
+        "-fflags",
+        "+discardcorrupt+genpts",
+        "-err_detect",
+        "ignore_err",
         "-analyzeduration",
-        "1000000",
+        "1500000",
         "-probesize",
-        "1000000",
+        "1500000",
         "-i",
         this.rtspUrl,
+        // Do not encode the first cached decode result. Waiting briefly lets
+        // FFmpeg reach a complete fresh GOP instead of saving damaged slices.
+        "-ss",
+        "0.75",
+        "-an",
+        "-vf",
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
         "-frames:v",
         "1",
         "-q:v",
-        "2",
+        "3",
         "-y",
         tempPath,
       ];
@@ -141,7 +152,7 @@ export class FrameSnapshotter extends EventEmitter {
             proc.kill("SIGKILL");
           } catch {}
         }
-      }, 5000);
+      }, 8000);
 
       proc.on("exit", (code) => {
         clearTimeout(killTimer);

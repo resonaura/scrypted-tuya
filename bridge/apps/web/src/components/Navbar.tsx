@@ -69,7 +69,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             Tuya RTSP Bridge
           </h1>
           <p className="text-[11px] text-muted-foreground font-mono leading-none">
-            {isWsConnected ? "P2P Gateway Active" : "Connecting..."}
+            {isWsConnected ? "Realtime channel connected" : "Reconnecting events…"}
           </p>
         </div>
       </div>
@@ -131,7 +131,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Dropdown.Menu
                 onAction={(key) => {
                   if (key === "add") onAddClick();
-                  if (key === "sync") onRefreshClick();
                   if (key === "logout") onLogoutClick();
                 }}
               >
@@ -141,11 +140,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </Dropdown.Item>
                 <Dropdown.Item id="region" textValue="Region">
                   <Globe className="size-3.5 mr-2 inline" />
-                  <Label>Region: {authState?.region?.toUpperCase() || "EU"}</Label>
+                  <Label>Region: {authState?.region?.toUpperCase() || "US"}</Label>
                 </Dropdown.Item>
-                <Dropdown.Item id="add" textValue="Add Camera">
+                <Dropdown.Item id="add" textValue="Add profile">
                   <Plus className="size-3.5 mr-2 inline text-primary" />
-                  <Label>Add Camera / Link</Label>
+                  <Label>Add profile</Label>
                 </Dropdown.Item>
                 <Dropdown.Item id="logout" textValue="Sign Out" variant="danger">
                   <LogOut className="size-3.5 mr-2 inline text-danger" />
