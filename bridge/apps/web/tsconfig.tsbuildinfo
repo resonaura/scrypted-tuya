@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/api/client.ts","./src/components/addcameramodal.tsx","./src/components/cameracard.tsx","./src/components/navbar.tsx","./src/components/statsbanner.tsx","./src/components/videoplayermodal.tsx","./src/types/index.ts"],"version":"5.9.3"}

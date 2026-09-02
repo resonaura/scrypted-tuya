@@ -1,0 +1,68 @@
+[
+{
+  "directory": "/Users/resonaura/scrypted-tuya/bridge/apps/native/build",
+  "command": "/Library/Developer/CommandLineTools/usr/bin/c++  -I/Users/resonaura/scrypted-tuya/bridge/apps/native/src -isystem /Users/resonaura/scrypted-tuya/bridge/apps/native/build/_deps/glaze-src/include -std=c++2b -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk -O3 -Wall -Wextra -Wpedantic -pthread -Wno-missing-braces -o CMakeFiles/tuya-streamer.dir/src/crypto/aes.cpp.o -c /Users/resonaura/scrypted-tuya/bridge/apps/native/src/crypto/aes.cpp",
+  "file": "/Users/resonaura/scrypted-tuya/bridge/apps/native/src/crypto/aes.cpp",
+  "output": "CMakeFiles/tuya-streamer.dir/src/crypto/aes.cpp.o"
+},
+{
+  "directory": "/Users/resonaura/scrypted-tuya/bridge/apps/native/build",
+  "command": "/Library/Developer/CommandLineTools/usr/bin/c++  -I/Users/resonaura/scrypted-tuya/bridge/apps/native/src -isystem /Users/resonaura/scrypted-tuya/bridge/apps/native/build/_deps/glaze-src/include -std=c++2b -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk -O3 -Wall -Wextra -Wpedantic -pthread -Wno-missing-braces -o CMakeFiles/tuya-streamer.dir/src/media/reassembler.cpp.o -c /Users/resonaura/scrypted-tuya/bridge/apps/native/src/media/reassembler.cpp",
+  "file": "/Users/resonaura/scrypted-tuya/bridge/apps/native/src/media/reassembler.cpp",
+  "output": "CMakeFiles/tuya-streamer.dir/src/media/reassembler.cpp.o"
+},
+{
+  "directory": "/Users/resonaura/scrypted-tuya/bridge/apps/native/build",
+  "command": "/Library/Developer/CommandLineTools/usr/bin/c++  -I/Users/resonaura/scrypted-tuya/bridge/apps/native/src -isystem /Users/resonaura/scrypted-tuya/bridge/apps/native/build/_deps/glaze-src/include -std=c++2b -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk -O3 -Wall -Wextra -Wpedantic -pthread -Wno-missing-braces -o CMakeFiles/tuya-streamer.dir/src/rtsp/server.cpp.o -c /Users/resonaura/scrypted-tuya/bridge/apps/native/src/rtsp/server.cpp",
+  "file": "/Users/resonaura/scrypted-tuya/bridge/apps/native/src/rtsp/server.cpp",
+  "output": "CMakeFiles/tuya-streamer.dir/src/rtsp/server.cpp.o"
+},
+{
+  "directory": "/Users/resonaura/scrypted-tuya/bridge/apps/native/build",
+  "command": "/Library/Developer/CommandLineTools/usr/bin/c++  -I/Users/resonaura/scrypted-tuya/bridge/apps/native/src -isystem /Users/resonaura/scrypted-tuya/bridge/apps/native/build/_deps/glaze-src/include -std=c++2b -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk -O3 -Wall -Wextra -Wpedantic -pthread -Wno-missing-braces -o CMakeFiles/tuya-streamer.dir/src/p2p/cipher.cpp.o -c /Users/resonaura/scrypted-tuya/bridge/apps/native/src/p2p/cipher.cpp",
+  "file": "/Users/resonaura/scrypted-tuya/bridge/apps/native/src/p2p/cipher.cpp",
+  "output": "CMakeFiles/tuya-streamer.dir/src/p2p/cipher.cpp.o"
+},
+{
+  "directory": "/Users/resonaura/scrypted-tuya/bridge/apps/native/build",
+  "command": "/Library/Developer/CommandLineTools/usr/bin/c++  -I/Users/resonaura/scrypted-tuya/bridge/apps/native/src -isystem /Users/resonaura/scrypted-tuya/bridge/apps/native/build/_deps/glaze-src/include -std=c++2b -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk -O3 -Wall -Wextra -Wpedantic -pthread -Wno-missing-braces -o CMakeFiles/tuya-streamer.dir/src/p2p/client.cpp.o -c /Users/resonaura/scrypted-tuya/bridge/apps/native/src/p2p/client.cpp",
+  "file": "/Users/resonaura/scrypted-tuya/bridge/apps/native/src/p2p/client.cpp",
+  "output": "CMakeFiles/tuya-streamer.dir/src/p2p/client.cpp.o"
+},
+{
+  "directory": "/Users/resonaura/scrypted-tuya/bridge/apps/native/build",
+  "command": "/Library/Developer/CommandLineTools/usr/bin/c++  -I/Users/resonaura/scrypted-tuya/bridge/apps/native/src -isystem /Users/resonaura/scrypted-tuya/bridge/apps/native/build/_deps/glaze-src/include -std=c++2b -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk -O3 -Wall -Wextra -Wpedantic -pthread -Wno-missing-braces -o CMakeFiles/tuya-streamer.dir/src/ipc/server.cpp.o -c /Users/resonaura/scrypted-tuya/bridge/apps/native/src/ipc/server.cpp",
+  "file": "/Users/resonaura/scrypted-tuya/bridge/apps/native/src/ipc/server.cpp",
+  "output": "CMakeFiles/tuya-streamer.dir/src/ipc/server.cpp.o"
+},
+{
+  "directory": "/Users/resonaura/scrypted-tuya/bridge/apps/native/build",
+  "command": "/Library/Developer/CommandLineTools/usr/bin/c++  -I/Users/resonaura/scrypted-tuya/bridge/apps/native/src -isystem /Users/resonaura/scrypted-tuya/bridge/apps/native/build/_deps/glaze-src/include -std=c++2b -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk -O3 -Wall -Wextra -Wpedantic -pthread -Wno-missing-braces -o CMakeFiles/tuya-streamer.dir/src/session.cpp.o -c /Users/resonaura/scrypted-tuya/bridge/apps/native/src/session.cpp",
+  "file": "/Users/resonaura/scrypted-tuya/bridge/apps/native/src/session.cpp",
+  "output": "CMakeFiles/tuya-streamer.dir/src/session.cpp.o"
+},
+{
+  "directory": "/Users/resonaura/scrypted-tuya/bridge/apps/native/build",
+  "command": "/Library/Developer/CommandLineTools/usr/bin/c++  -I/Users/resonaura/scrypted-tuya/bridge/apps/native/src -isystem /Users/resonaura/scrypted-tuya/bridge/apps/native/build/_deps/glaze-src/include -std=c++2b -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk -O3 -Wall -Wextra -Wpedantic -pthread -Wno-missing-braces -o CMakeFiles/tuya-streamer.dir/src/main.cpp.o -c /Users/resonaura/scrypted-tuya/bridge/apps/native/src/main.cpp",
+  "file": "/Users/resonaura/scrypted-tuya/bridge/apps/native/src/main.cpp",
+  "output": "CMakeFiles/tuya-streamer.dir/src/main.cpp.o"
+},
+{
+  "directory": "/Users/resonaura/scrypted-tuya/bridge/apps/native/build",
+  "command": "/Library/Developer/CommandLineTools/usr/bin/c++  -I/Users/resonaura/scrypted-tuya/bridge/apps/native/src -I/Users/resonaura/scrypted-tuya/bridge/apps/native/build/_deps/glaze-src/include -std=c++2b -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk -O3 -Wall -Wextra -Wpedantic -pthread -o CMakeFiles/tuya-reassembler-test.dir/tests/reassembler_test.cpp.o -c /Users/resonaura/scrypted-tuya/bridge/apps/native/tests/reassembler_test.cpp",
+  "file": "/Users/resonaura/scrypted-tuya/bridge/apps/native/tests/reassembler_test.cpp",
+  "output": "CMakeFiles/tuya-reassembler-test.dir/tests/reassembler_test.cpp.o"
+},
+{
+  "directory": "/Users/resonaura/scrypted-tuya/bridge/apps/native/build",
+  "command": "/Library/Developer/CommandLineTools/usr/bin/c++  -I/Users/resonaura/scrypted-tuya/bridge/apps/native/src -I/Users/resonaura/scrypted-tuya/bridge/apps/native/build/_deps/glaze-src/include -std=c++2b -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk -O3 -Wall -Wextra -Wpedantic -pthread -o CMakeFiles/tuya-reassembler-test.dir/src/crypto/aes.cpp.o -c /Users/resonaura/scrypted-tuya/bridge/apps/native/src/crypto/aes.cpp",
+  "file": "/Users/resonaura/scrypted-tuya/bridge/apps/native/src/crypto/aes.cpp",
+  "output": "CMakeFiles/tuya-reassembler-test.dir/src/crypto/aes.cpp.o"
+},
+{
+  "directory": "/Users/resonaura/scrypted-tuya/bridge/apps/native/build",
+  "command": "/Library/Developer/CommandLineTools/usr/bin/c++  -I/Users/resonaura/scrypted-tuya/bridge/apps/native/src -I/Users/resonaura/scrypted-tuya/bridge/apps/native/build/_deps/glaze-src/include -std=c++2b -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk -O3 -Wall -Wextra -Wpedantic -pthread -o CMakeFiles/tuya-reassembler-test.dir/src/media/reassembler.cpp.o -c /Users/resonaura/scrypted-tuya/bridge/apps/native/src/media/reassembler.cpp",
+  "file": "/Users/resonaura/scrypted-tuya/bridge/apps/native/src/media/reassembler.cpp",
+  "output": "CMakeFiles/tuya-reassembler-test.dir/src/media/reassembler.cpp.o"
+}
+]

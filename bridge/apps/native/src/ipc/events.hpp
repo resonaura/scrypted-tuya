@@ -1,0 +1,96 @@
+#pragma once
+
+#include <string>
+#include <glaze/glaze.hpp>
+
+namespace tuya {
+
+struct EventReady {
+    std::string event = "ready";
+};
+
+struct EventPong {
+    std::string event = "pong";
+};
+
+struct EventP2PConnected {
+    std::string event = "p2p_connected";
+    std::string did;
+    std::string ip;
+    int port = 0;
+};
+
+struct EventSessionReady {
+    std::string event = "session_ready";
+    std::string did;
+};
+
+struct EventSessionStarted {
+    std::string event = "session_started";
+    std::string did;
+    int rtsp_port = 0;
+};
+
+struct EventSessionStopped {
+    std::string event = "session_stopped";
+    std::string did;
+};
+
+struct EventKeyframeRequested {
+    std::string event = "request_keyframe";
+    std::string did;
+};
+
+struct EventQualitySet {
+    std::string event = "quality_set";
+    std::string did;
+    int channel = 0;
+};
+
+struct EventPTZExecuted {
+    std::string event = "ptz_executed";
+    std::string did;
+};
+
+struct EventUnhealthy {
+    std::string event = "unhealthy";
+    std::string did;
+};
+
+struct EventWebRTCOffer {
+    std::string event = "webrtc_offer";
+    std::string did;
+    std::string sdp;
+};
+
+struct EventICECandidate {
+    std::string event = "ice_candidate";
+    std::string did;
+    std::string candidate;
+    std::string mid;
+};
+
+struct EventWebRTCConnected {
+    std::string event = "webrtc_connected";
+    std::string did;
+};
+
+struct EventWebRTCDisconnected {
+    std::string event = "webrtc_disconnected";
+    std::string did;
+};
+
+struct EventError {
+    std::string event = "error";
+    std::string did;
+    std::string message;
+};
+
+template<typename T>
+std::string to_json(const T& val) {
+    std::string out;
+    [[maybe_unused]] auto _ = glz::write_json(val, out);
+    return out;
+}
+
+}  // namespace tuya

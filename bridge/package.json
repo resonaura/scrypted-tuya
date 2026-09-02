@@ -1,0 +1,26 @@
+{
+  "name": "@tuya-bridge/monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "turbo run build",
+    "build:native": "pnpm --filter @tuya-bridge/native build",
+    "test:native": "pnpm --filter @tuya-bridge/native test",
+    "dev": "pnpm --filter @tuya-bridge/server --filter @tuya-bridge/web --parallel dev",
+    "dev:server": "pnpm --filter @tuya-bridge/server dev",
+    "dev:web": "pnpm --filter @tuya-bridge/web dev",
+    "start": "turbo run start",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write \"apps/**/*.{ts,tsx,js,json}\" && pnpm --filter @tuya-bridge/native format",
+    "format:native": "pnpm --filter @tuya-bridge/native format"
+  },
+  "devDependencies": {
+    "clang-format": "^1.8.0",
+    "prettier": "^3.5.0",
+    "serve": "^14.2.6",
+    "turbo": "^2.10.12",
+    "typescript": "^5.8.0"
+  },
+  "packageManager": "pnpm@10.5.2"
+}

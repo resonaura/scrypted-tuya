@@ -1,0 +1,6 @@
+CompileFlags:
+  CompilationDatabase: bridge/apps/native/build
+  Add:
+    - -Ibridge/apps/native/src
+    - -Ibridge/apps/native/build/_deps/glaze-src/include
+    - -std=c++23

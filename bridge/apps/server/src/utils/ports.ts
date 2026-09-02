@@ -1,0 +1,104 @@
+import * as net from "node:net";
+
+/**
+ * RTSP port allocation helpers (1-in-1 from aqara-g5pro-mqtt, starting base shifted +100 to 8655).
+ *
+ * Ports must be four-digit, sequential across cameras ("walk one after another"), and must avoid:
+ *   - well-known ports (< 1024)
+ *   - the 3000-3999 and 5000-5999 ranges (explicitly excluded by design)
+ * If the preferred base (or any port in the chosen block) is already taken,
+ * we scan forward for the next free *contiguous* run of ports so the cameras
+ * always end up on a tidy sequential block.
+ */
+
+export const RTSP_PORT_MIN = 1024;
+export const RTSP_PORT_MAX = 9999;
+const FORBIDDEN_RANGES: [number, number][] = [
+  [3000, 3999],
+  [5000, 5999],
+  [6766, 6767],
+];
+
+export function isPortAllowed(port: number): boolean {
+  if (!Number.isInteger(port)) return false;
+  if (port < RTSP_PORT_MIN || port > RTSP_PORT_MAX) return false;
+  for (const [a, b] of FORBIDDEN_RANGES) {
+    if (port >= a && port <= b) return false;
+  }
+  return true;
+}
+
+/** Probe whether a TCP port is free on localhost (nothing listening). */
+export function probePortFree(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (free: boolean) => {
+      if (settled) return;
+      settled = true;
+      sock.destroy();
+      resolve(free);
+    };
+    const sock = net.connect(port, "127.0.0.1");
+    sock.setTimeout(500);
+    // Something accepted the connection → port is occupied.
+    sock.once("connect", () => finish(false));
+    // Connection refused → nothing listening → free.
+    sock.once("error", () => finish(true));
+    sock.once("timeout", () => finish(true));
+  });
+}
+
+/**
+ * Find a contiguous block of `count` free, allowed ports starting near `base` (default 8655).
+ * Returns the concrete list of ports, or throws if no such block exists in the allowed range.
+ */
+export async function findFreePortRange(
+  count: number,
+  base = 8655,
+): Promise<number[]> {
+  if (count <= 0) return [];
+
+  // Normalize base into the allowed range.
+  let start = Math.max(base, RTSP_PORT_MIN);
+  while (!isPortAllowed(start)) start++;
+
+  const maxStart = RTSP_PORT_MAX - count + 1;
+  let guard = 0;
+  while (start <= maxStart && guard++ < 20000) {
+    if (!isPortAllowed(start) || !isPortAllowed(start + count - 1)) {
+      start++;
+      continue;
+    }
+    const candidates: number[] = [];
+    for (let i = 0; i < count; i++) candidates.push(start + i);
+    const free = await Promise.all(candidates.map((p) => probePortFree(p)));
+    if (free.every((f) => f)) return candidates;
+    // Jump past the first occupied port in the window and retry.
+    const firstBad = free.findIndex((f) => !f);
+    start = start + (firstBad === -1 ? 1 : firstBad) + 1;
+  }
+  throw new Error(
+    `Could not find a free contiguous RTSP port block of size ${count} starting near ${base}`,
+  );
+}
+
+/** Find a single free allowed TCP port starting near `base` (default 8680). */
+export async function findFreePort(base = 8680): Promise<number> {
+  const [port] = await findFreePortRange(1, base);
+  return port;
+}
+
+export interface RTSPPortEntry {
+  port: number;
+  did: string;
+  slug: string;
+}
+
+export interface RTSPPortMap {
+  base: number;
+  updatedAt: number;
+  cameras: Record<string, RTSPPortEntry>;
+}
+
+export type RtspPortEntry = RTSPPortEntry;
+export type RtspPortMap = RTSPPortMap;

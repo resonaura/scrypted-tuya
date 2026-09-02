@@ -16,3 +16,4 @@ coverage/
 .tmp/
 tmp/
 chat.json
+.turbo

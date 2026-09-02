@@ -1,30 +1,30 @@
-name: "Tuya RTSP Bridge"
-version: "1.2.9"
-slug: bridge
-description: "Turn Tuya / Smart Life cameras into plain RTSP for Frigate, go2rtc, Agent DVR."
-url: "https://github.com/resonaura/scrypted-tuya"
+name: "Tuya RTSP & P2P Camera Bridge"
+slug: "tuya_rtsp_bridge"
+description: "High-performance Tuya & Smart Life Camera RTSP Bridge with live P2P streaming and Web UI"
+version: "1.0.0"
 arch:
-  - amd64
   - aarch64
+  - amd64
+  - armhf
   - armv7
+  - i386
 init: false
-startup: application
+startup: services
 boot: auto
 host_network: true
-ports:
-  8787/tcp: 8787
-  8600/tcp: 8600
-ports_description:
-  8787/tcp: Web UI / API (Create QR, camera list)
-  8600/tcp: RTSP for NVR clients
-map:
-  - addon_config:rw
-  - data:rw
-options: {}
-schema: {}
-panel_icon: mdi:cctv
-panel_title: Tuya RTSP
-webui: "http://[HOST]:[PORT:8787]"
-homeassistant_api: false
-hassio_api: false
 apparmor: true
+ingress: true
+ingress_port: 6767
+map:
+  - config:rw
+  - share:rw
+options:
+  api_port: 6766
+  web_port: 6767
+  rtsp_port: 8655
+  log_level: "info"
+schema:
+  api_port: port?
+  web_port: port?
+  rtsp_port: port?
+  log_level: list(debug|info|warn|error)?

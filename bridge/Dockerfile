@@ -1,57 +1,69 @@
-# Home Assistant Supervisor builds with context = this directory only.
-# Pull app sources from GitHub at build time (or override REPO_REF).
 # syntax=docker/dockerfile:1
 
-ARG BUILD_ARCH=amd64
-ARG BUILD_FROM=ghcr.io/home-assistant/${BUILD_ARCH}-base-debian:bookworm
-ARG REPO_URL=https://github.com/DanEng1982/tuya-rtsp-bridge.git
-ARG REPO_REF=v1.2.4
-
-FROM golang:1.23-bookworm AS engine
-ARG REPO_URL
-ARG REPO_REF
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+# Stage 1: Build C++ Native Streaming Engine
+FROM debian:bookworm-slim AS native-builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
-RUN git clone --depth 1 --branch "${REPO_REF}" "${REPO_URL}" repo \
-    && cd repo/vendor/tuya-ipc-terminal \
-    && find . -type f -name "*.go" -exec sed -i 's/8554/8600/g' {} + \
-    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/tuya-ipc-terminal .
+COPY apps/native ./
+RUN mkdir -p build && cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j$(nproc)
 
+# Stage 2: Build Web Frontend & NestJS Backend
+FROM node:22-bookworm-slim AS node-builder
+RUN npm install -g pnpm@10.5.2
+WORKDIR /build
+
+COPY package.json pnpm-workspace.yaml ./
+COPY apps/server/package.json ./apps/server/
+COPY apps/web/package.json ./apps/web/
+
+RUN pnpm install --frozen-lockfile || pnpm install
+
+COPY apps/server ./apps/server
+COPY apps/web ./apps/web
+
+RUN pnpm --filter @tuya-bridge/web build
+RUN pnpm --filter @tuya-bridge/server build
+
+# Stage 3: Final Production Runtime
+ARG BUILD_ARCH=amd64
+ARG BUILD_FROM=ghcr.io/home-assistant/${BUILD_ARCH}-base-debian:bookworm
 FROM ${BUILD_FROM}
-ARG REPO_URL
-ARG REPO_REF
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates curl ffmpeg git python3 python3-pip \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates libstdc++6 ffmpeg jq \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    && npm install -g pnpm@10.5.2 serve \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-RUN git clone --depth 1 --branch "${REPO_REF}" "${REPO_URL}" /tmp/repo \
-    && cp /tmp/repo/requirements-docker.txt /app/requirements-docker.txt \
-    && cp -a /tmp/repo/src /app/src \
-    && cp -a /tmp/repo/web /app/web \
-    && find /app/src /app/web -type f -exec sed -i 's/8554/8600/g' {} + \
-    && rm -rf /tmp/repo
 
-RUN pip3 install --break-system-packages --no-cache-dir -r /app/requirements-docker.txt \
-    || pip3 install --no-cache-dir -r /app/requirements-docker.txt
+# Copy built native binary
+COPY --from=native-builder /src/build/tuya-streamer /app/bin/tuya-streamer
 
-COPY --from=engine /out/tuya-ipc-terminal /app/bin/tuya-ipc-terminal
+# Copy production node_modules & server dist
+COPY package.json pnpm-workspace.yaml ./
+COPY apps/server/package.json ./apps/server/
+COPY apps/web/package.json ./apps/web/
+RUN pnpm install --prod
+
+COPY --from=node-builder /build/apps/server/dist ./apps/server/dist
+COPY --from=node-builder /build/apps/web/dist ./apps/web/dist
+
 COPY run.sh /run.sh
-RUN chmod 755 /app/bin/tuya-ipc-terminal /run.sh \
-    && mkdir -p /data/bridge /config/bridge
+RUN chmod +x /run.sh /app/bin/tuya-streamer \
+    && mkdir -p /data/tuya-bridge /data/frames /config/tuya-bridge
 
-ENV TUYA_BRIDGE_ROOT=/app \
-    PYTHONPATH=/app/src \
-    PYTHONUNBUFFERED=1 \
-    XDG_DATA_HOME=/data \
-    XDG_CONFIG_HOME=/config \
+ENV NODE_ENV=production \
+    PORT=6766 \
+    WEB_PORT=6767 \
+    RTSP_BASE_PORT=8655 \
+    SQLITE_PATH=/data/tuya-bridge/storage.sqlite \
+    NATIVE_BIN_PATH=/app/bin/tuya-streamer \
     PATH="/app/bin:${PATH}"
 
-EXPOSE 8787 8600
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/api/state', timeout=3).read()" || exit 1
-WORKDIR /data/bridge
+EXPOSE 6766 6767 8554
+WORKDIR /app
 CMD ["/run.sh"]

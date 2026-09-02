@@ -1,0 +1,9 @@
+node_modules/
+dist/
+build/
+data/
+*.sqlite*
+.DS_Store
+.cache
+compile_commands.json
+.tuya-data
