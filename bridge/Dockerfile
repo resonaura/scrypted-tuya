@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1
 
+# Global ARGs must be declared before any FROM to be usable in FROM instructions.
+# BUILD_FROM can be passed explicitly (e.g. by HA supervisor) or defaults to amd64.
+ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base-debian:bookworm
+
 # Stage 1: Build C++ Native Streaming Engine
 FROM debian:bookworm-slim AS native-builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -33,8 +37,8 @@ RUN pnpm --filter @tuya-bridge/web build
 RUN pnpm --filter @tuya-bridge/server build
 
 # Stage 3: Final Production Runtime
-ARG BUILD_ARCH=amd64
-ARG BUILD_FROM=ghcr.io/home-assistant/${BUILD_ARCH}-base-debian:bookworm
+# Re-declare ARG so it is in scope for this stage's FROM
+ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
