@@ -4,6 +4,7 @@ import * as crypto from "node:crypto";
 import QRCode from "qrcode";
 import { SettingEntity } from "../db/entities/setting.entity.js";
 import { CameraEntity } from "../db/entities/camera.entity.js";
+import { cameraRtspPath } from "../utils/camera-slug.js";
 
 export interface TuyaRegion {
   key: string;
@@ -565,12 +566,6 @@ export class TuyaProtectService implements OnModuleInit {
         const cleanName = (dev.deviceName || dev.name || did)
           .replace(/[\t\r\n]+/g, " ")
           .trim();
-        const safeSlug =
-          cleanName
-            .toLowerCase()
-            .replace(/[^a-z0-9_-]+/g, "_")
-            .replace(/^_+|_+$/g, "") || did;
-
         let cam = await CameraEntity.findOne({ where: { did } });
         if (!cam) {
           cam = new CameraEntity();
@@ -585,7 +580,7 @@ export class TuyaProtectService implements OnModuleInit {
         cam.skill = skill;
         cam.localKey = localKey || cam.localKey;
         cam.p2pConfig = p2pConfigStr;
-        cam.rtspPath = `live/${safeSlug}`;
+        cam.rtspPath = cameraRtspPath(cleanName, did, "h265");
         cam.online = true;
         cam.lastSeen = new Date();
 

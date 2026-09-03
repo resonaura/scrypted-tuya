@@ -11,8 +11,10 @@
 
 namespace tuya {
 
-RTSPServer::RTSPServer(int port, const std::string& path, KeyframeCallback kf_cb, bool is_hevc)
-    : port_(port), path_(path), kf_req_cb_(std::move(kf_cb)), is_hevc_(is_hevc) {}
+RTSPServer::RTSPServer(int port, const std::string& path, KeyframeCallback kf_cb, bool is_hevc,
+                       bool audio_is_aac)
+    : port_(port), path_(path), kf_req_cb_(std::move(kf_cb)), is_hevc_(is_hevc),
+      audio_is_aac_(audio_is_aac) {}
 
 RTSPServer::~RTSPServer() {
     stop();
@@ -140,35 +142,52 @@ bool RTSPServer::start() {
     return true;
 }
 
-bool RTSPServer::start_udp_ingest(int port) {
-    if (!running_ || udp_fd_ >= 0) return false;
-    udp_fd_ = socket(AF_INET, SOCK_DGRAM, 0);
-    if (udp_fd_ < 0) return false;
+static int bind_udp_ingest_socket(int port) {
+    const int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) return -1;
 
     int opt = 1;
-    setsockopt(udp_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     addr.sin_port = htons(port);
-    if (bind(udp_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-        close(udp_fd_);
-        udp_fd_ = -1;
-        return false;
+    if (bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+        close(fd);
+        return -1;
     }
-    udp_thread_ = std::thread(&RTSPServer::udp_ingest_loop, this);
+    return fd;
+}
+
+bool RTSPServer::start_udp_ingest(int video_port, int audio_port) {
+    if (!running_ || udp_fd_ >= 0 || audio_udp_fd_ >= 0) return false;
+    udp_fd_ = bind_udp_ingest_socket(video_port);
+    if (udp_fd_ < 0) return false;
+
+    if (audio_port > 0) {
+        audio_udp_fd_ = bind_udp_ingest_socket(audio_port);
+        if (audio_udp_fd_ < 0) {
+            close(udp_fd_);
+            udp_fd_ = -1;
+            return false;
+        }
+    }
+
+    udp_thread_ = std::thread(&RTSPServer::udp_ingest_loop, this, udp_fd_, true);
+    if (audio_udp_fd_ >= 0)
+        audio_udp_thread_ = std::thread(&RTSPServer::udp_ingest_loop, this, audio_udp_fd_, false);
     return true;
 }
 
-void RTSPServer::udp_ingest_loop() {
+void RTSPServer::udp_ingest_loop(int socket_fd, bool is_video) {
     std::array<uint8_t, 2048> packet{};
     while (running_) {
-        const ssize_t len = recv(udp_fd_, packet.data(), packet.size(), 0);
+        const ssize_t len = recv(socket_fd, packet.data(), packet.size(), 0);
         if (len <= 0) {
             if (running_) usleep(1000);
             continue;
         }
-        feed_raw_rtp(packet.data(), static_cast<size_t>(len), true);
+        feed_raw_rtp(packet.data(), static_cast<size_t>(len), is_video);
     }
 }
 
@@ -197,12 +216,18 @@ void RTSPServer::stop() {
         close(udp_fd_);
         udp_fd_ = -1;
     }
+    if (audio_udp_fd_ >= 0) {
+        shutdown(audio_udp_fd_, SHUT_RDWR);
+        close(audio_udp_fd_);
+        audio_udp_fd_ = -1;
+    }
     {
         std::lock_guard<std::mutex> lock(clients_mutex_);
         for (auto& [fd, session] : clients_) shutdown(fd, SHUT_RDWR);
     }
     if (accept_thread_.joinable()) accept_thread_.join();
     if (udp_thread_.joinable()) udp_thread_.join();
+    if (audio_udp_thread_.joinable()) audio_udp_thread_.join();
     {
         std::lock_guard<std::mutex> lock(client_threads_mutex_);
         for (auto& thread : client_threads_) {
@@ -330,7 +355,12 @@ void RTSPServer::handle_rtsp_request(int client_fd, const std::string& req, RTSP
                 << "a=fmtp:96 packetization-mode=1;profile-level-id=42001f\r\n";
         }
         sdp << "a=control:track0\r\n";
-        if (is_hevc_) {
+        if (audio_is_aac_) {
+            sdp << "m=audio 0 RTP/AVP 97\r\n"
+                << "a=rtpmap:97 MPEG4-GENERIC/16000/1\r\n"
+                << "a=fmtp:97 streamtype=5; profile-level-id=1; mode=AAC-hbr; config=1408; SizeLength=13; IndexLength=3; IndexDeltaLength=3\r\n"
+                << "a=control:track1\r\n";
+        } else {
             sdp << "m=audio 0 RTP/AVP 0\r\n"
                 << "a=rtpmap:0 PCMU/8000\r\n"
                 << "a=control:track1\r\n";
@@ -589,10 +619,52 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
     if (!data || len < 14) return;
 
     if (!is_video) {
+        const size_t csrc_count = data[0] & 0x0F;
+        size_t payload_offset = 12 + csrc_count * 4;
+        if (payload_offset > len) return;
+        if ((data[0] & 0x10) != 0) {
+            if (payload_offset + 4 > len) return;
+            const size_t extension_words = (static_cast<size_t>(data[payload_offset + 2]) << 8) |
+                                           data[payload_offset + 3];
+            payload_offset += 4 + extension_words * 4;
+            if (payload_offset > len) return;
+        }
+
+        std::vector<uint8_t> packet;
+        if (is_hevc_ && (data[1] & 0x7F) == 0 && ((len - payload_offset) % 2) == 0) {
+            // Tuya advertises PCMU but sends signed 16-bit network-order PCM.
+            // Convert it to actual G.711 mu-law while preserving the camera RTP clock.
+            const size_t sample_count = (len - payload_offset) / 2;
+            packet.assign(data, data + payload_offset);
+            packet[1] = static_cast<uint8_t>((packet[1] & 0x80) | 0);
+            packet.reserve(payload_offset + sample_count);
+
+            auto linear_to_mulaw = [](int16_t sample) {
+                constexpr int bias = 0x84;
+                constexpr int clip = 32635;
+                int value = sample;
+                const uint8_t sign = value < 0 ? 0x80 : 0;
+                if (value < 0) value = -value;
+                value = std::min(value, clip) + bias;
+                int exponent = 7;
+                for (int mask = 0x4000; exponent > 0 && (value & mask) == 0; mask >>= 1) --exponent;
+                const int mantissa = (value >> (exponent + 3)) & 0x0F;
+                return static_cast<uint8_t>(~(sign | (exponent << 4) | mantissa));
+            };
+
+            for (size_t i = payload_offset; i + 1 < len; i += 2) {
+                const auto sample = static_cast<int16_t>((static_cast<uint16_t>(data[i]) << 8) |
+                                                         static_cast<uint16_t>(data[i + 1]));
+                packet.push_back(linear_to_mulaw(sample));
+            }
+        } else {
+            packet.assign(data, data + len);
+        }
+
         std::lock_guard<std::mutex> lock(clients_mutex_);
         for (auto& [fd, session] : clients_) {
             if (!session.is_playing) continue;
-            send_interleaved_packet(fd, session.audio_rtp_channel, data, len);
+            send_interleaved_packet(fd, session.audio_rtp_channel, packet.data(), packet.size());
         }
         return;
     }

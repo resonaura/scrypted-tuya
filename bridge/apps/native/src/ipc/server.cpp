@@ -52,6 +52,7 @@ struct IpcCommandDto {
     int camera_port = 0;
     int rtsp_port = 8554;
     int rtp_port = 0;
+    int audio_rtp_port = 0;
     std::string rtsp_path;
     int p2p_quality_channel = 0;
     std::vector<IceServerDto> ice_servers;
@@ -156,8 +157,8 @@ void IpcServer::handle_command(const std::string& line) {
         }
         std::lock_guard<std::mutex> lock(sessions_mutex_);
         relays_.erase(cmd_dto.did);
-        auto relay = std::make_shared<RTSPServer>(cmd_dto.rtsp_port, cmd_dto.rtsp_path, nullptr, false);
-        if (!relay->start() || !relay->start_udp_ingest(cmd_dto.rtp_port)) {
+        auto relay = std::make_shared<RTSPServer>(cmd_dto.rtsp_port, cmd_dto.rtsp_path, nullptr, false, true);
+        if (!relay->start() || !relay->start_udp_ingest(cmd_dto.rtp_port, cmd_dto.audio_rtp_port)) {
             relay->stop();
             send_event(to_json(EventError{.did = cmd_dto.did, .message = "Failed to start H264 relay"}));
             return;

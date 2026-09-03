@@ -18,6 +18,7 @@ BrowserPeer::BrowserPeer(std::string viewer_id, std::string did, EventCallback e
       ice_servers_(std::move(ice_servers)) {
     const auto seed = std::hash<std::string>{}(viewer_id_);
     ssrc_ = static_cast<uint32_t>((seed & 0x7fffffffU) | 0x10000000U);
+    audio_ssrc_ = ssrc_ ^ 0x5a5a5a5aU;
 }
 
 BrowserPeer::~BrowserPeer() {
@@ -28,29 +29,39 @@ bool BrowserPeer::start(const std::string& remote_offer) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (running_) return true;
 
-    socket_fd_ = socket(AF_INET, SOCK_DGRAM, 0);
-    if (socket_fd_ < 0) return false;
+    auto bind_receiver = [](int& socket_fd, int& port) {
+        socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (socket_fd < 0) return false;
 
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = 0;
-    if (bind(socket_fd_, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) < 0) {
-        close(socket_fd_);
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port = 0;
+        if (bind(socket_fd, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) < 0) {
+            close(socket_fd);
+            socket_fd = -1;
+            return false;
+        }
+
+        socklen_t addr_len = sizeof(addr);
+        if (getsockname(socket_fd, reinterpret_cast<sockaddr*>(&addr), &addr_len) != 0) {
+            close(socket_fd);
+            socket_fd = -1;
+            return false;
+        }
+        port = ntohs(addr.sin_port);
+        int recv_buffer = 2 * 1024 * 1024;
+        setsockopt(socket_fd, SOL_SOCKET, SO_RCVBUF, &recv_buffer, sizeof(recv_buffer));
+        return true;
+    };
+
+    if (!bind_receiver(socket_fd_, rtp_port_) || !bind_receiver(audio_socket_fd_, audio_rtp_port_)) {
+        if (socket_fd_ >= 0) close(socket_fd_);
+        if (audio_socket_fd_ >= 0) close(audio_socket_fd_);
         socket_fd_ = -1;
+        audio_socket_fd_ = -1;
         return false;
     }
-
-    socklen_t addr_len = sizeof(addr);
-    if (getsockname(socket_fd_, reinterpret_cast<sockaddr*>(&addr), &addr_len) != 0) {
-        close(socket_fd_);
-        socket_fd_ = -1;
-        return false;
-    }
-    rtp_port_ = ntohs(addr.sin_port);
-
-    int recv_buffer = 2 * 1024 * 1024;
-    setsockopt(socket_fd_, SOL_SOCKET, SO_RCVBUF, &recv_buffer, sizeof(recv_buffer));
 
     rtc::Configuration config;
     config.bindAddress = "0.0.0.0";
@@ -79,11 +90,13 @@ bool BrowserPeer::start(const std::string& remote_offer) {
             .did = did_,
             .sdp = std::string(*description),
             .rtp_port = rtp_port_,
+            .audio_rtp_port = audio_rtp_port_,
         }));
     });
 
     running_ = true;
-    receiver_thread_ = std::thread(&BrowserPeer::receive_loop, this);
+    receiver_thread_ = std::thread(&BrowserPeer::receive_loop, this, socket_fd_, true);
+    audio_receiver_thread_ = std::thread(&BrowserPeer::receive_loop, this, audio_socket_fd_, false);
     try {
         pc_->setRemoteDescription(rtc::Description(remote_offer, "offer"));
 
@@ -91,6 +104,11 @@ bool BrowserPeer::start(const std::string& remote_offer) {
         video.addH264Codec(96, "packetization-mode=1;profile-level-id=42e01f;level-asymmetry-allowed=1");
         video.addSSRC(ssrc_, "tuya-browser-video");
         video_track_ = pc_->addTrack(video);
+
+        rtc::Description::Audio audio("1", rtc::Description::Direction::SendOnly);
+        audio.addOpusCodec(111);
+        audio.addSSRC(audio_ssrc_, "tuya-browser-audio");
+        audio_track_ = pc_->addTrack(audio);
 
         pc_->setLocalDescription();
     } catch (const std::exception& e) {
@@ -101,10 +119,10 @@ bool BrowserPeer::start(const std::string& remote_offer) {
     return true;
 }
 
-void BrowserPeer::receive_loop() {
+void BrowserPeer::receive_loop(int socket_fd, bool is_video) {
     std::array<std::byte, 2048> buffer{};
     while (running_) {
-        const auto len = recv(socket_fd_, buffer.data(), buffer.size(), 0);
+        const auto len = recv(socket_fd, buffer.data(), buffer.size(), 0);
         if (len <= 0) {
             if (running_) std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
@@ -113,10 +131,10 @@ void BrowserPeer::receive_loop() {
 
         auto* header = reinterpret_cast<rtc::RtpHeader*>(buffer.data());
         if (header->version() != 2) continue;
-        header->setPayloadType(96);
-        header->setSsrc(ssrc_);
+        header->setPayloadType(is_video ? 96 : 111);
+        header->setSsrc(is_video ? ssrc_ : audio_ssrc_);
 
-        auto track = video_track_;
+        auto track = is_video ? video_track_ : audio_track_;
         if (!track || !track->isOpen()) continue;
         try {
             track->send(buffer.data(), static_cast<size_t>(len));
@@ -132,12 +150,22 @@ void BrowserPeer::stop() {
         close(socket_fd_);
         socket_fd_ = -1;
     }
+    if (audio_socket_fd_ >= 0) {
+        shutdown(audio_socket_fd_, SHUT_RDWR);
+        close(audio_socket_fd_);
+        audio_socket_fd_ = -1;
+    }
     if (receiver_thread_.joinable()) receiver_thread_.join();
+    if (audio_receiver_thread_.joinable()) audio_receiver_thread_.join();
 
     std::lock_guard<std::mutex> lock(mutex_);
     if (video_track_) {
         try { video_track_->close(); } catch (...) {}
         video_track_.reset();
+    }
+    if (audio_track_) {
+        try { audio_track_->close(); } catch (...) {}
+        audio_track_.reset();
     }
     if (pc_) {
         try { pc_->close(); } catch (...) {}

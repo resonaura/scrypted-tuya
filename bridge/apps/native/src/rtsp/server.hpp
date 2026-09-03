@@ -30,11 +30,12 @@ class RTSPServer {
 public:
     using KeyframeCallback = std::function<void()>;
 
-    RTSPServer(int port, const std::string& path, KeyframeCallback kf_cb = nullptr, bool is_hevc = true);
+    RTSPServer(int port, const std::string& path, KeyframeCallback kf_cb = nullptr, bool is_hevc = true,
+               bool audio_is_aac = false);
     ~RTSPServer();
 
     bool start();
-    bool start_udp_ingest(int port);
+    bool start_udp_ingest(int video_port, int audio_port = 0);
     void stop();
     void notify_video_discontinuity();
 
@@ -49,7 +50,7 @@ public:
 
 private:
     void accept_loop();
-    void udp_ingest_loop();
+    void udp_ingest_loop(int socket_fd, bool is_video);
     void client_loop(int client_fd);
     void handle_rtsp_request(int client_fd, const std::string& req, RTSPClientSession& session);
 
@@ -62,11 +63,14 @@ private:
     std::string path_;
     KeyframeCallback kf_req_cb_;
     bool is_hevc_ = true;
+    bool audio_is_aac_ = false;
     int server_fd_ = -1;
     int udp_fd_ = -1;
+    int audio_udp_fd_ = -1;
     std::atomic<bool> running_{false};
     std::thread accept_thread_;
     std::thread udp_thread_;
+    std::thread audio_udp_thread_;
     std::mutex client_threads_mutex_;
     std::vector<std::thread> client_threads_;
 

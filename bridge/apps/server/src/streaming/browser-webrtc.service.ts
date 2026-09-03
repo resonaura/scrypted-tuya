@@ -10,6 +10,7 @@ interface ViewerSession {
   did: string;
   rtspUrl: string;
   rtpPort?: number;
+  audioRtpPort?: number;
   ffmpeg?: ChildProcess;
   createdAt: number;
   cleanupTimer: NodeJS.Timeout;
@@ -40,17 +41,23 @@ export class BrowserWebRtcService implements OnModuleDestroy {
     cleanupTimer.unref();
     this.sessions.set(id, { id, did: cam.did, rtspUrl, createdAt: Date.now(), cleanupTimer, generation });
 
-    const offer = await new Promise<{ sdp: string; rtpPort: number }>((resolve, reject) => {
+    const offer = await new Promise<{ sdp: string; rtpPort: number; audioRtpPort: number }>((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
         reject(new Error("Timed out waiting for native WebRTC answer"));
       }, 8000);
       timeout.unref();
 
-      const onOffer = (viewerId: string, _cameraDid: string, sdp: string, rtpPort: number) => {
+      const onOffer = (
+        viewerId: string,
+        _cameraDid: string,
+        sdp: string,
+        rtpPort: number,
+        audioRtpPort: number,
+      ) => {
         if (viewerId !== id) return;
         cleanup();
-        resolve({ sdp, rtpPort });
+        resolve({ sdp, rtpPort, audioRtpPort });
       };
       const cleanup = () => {
         clearTimeout(timeout);
@@ -66,6 +73,7 @@ export class BrowserWebRtcService implements OnModuleDestroy {
     const session = this.sessions.get(id);
     if (!session || session.generation !== generation) throw new Error("Viewer session was cancelled");
     session.rtpPort = offer.rtpPort;
+    session.audioRtpPort = offer.audioRtpPort;
     this.startFfmpeg(session);
     return { sessionId: id, answer: { type: "answer", sdp: offer.sdp } };
   }
@@ -96,14 +104,12 @@ export class BrowserWebRtcService implements OnModuleDestroy {
     const args = [
       "-hide_banner", "-loglevel", "warning",
       "-rtsp_transport", "tcp",
-      "-use_wallclock_as_timestamps", "1",
       "-fflags", "nobuffer+discardcorrupt",
       "-flags", "low_delay",
       "-analyzeduration", "500000",
       "-probesize", "500000",
       "-i", session.rtspUrl,
       "-map", "0:v:0",
-      "-an",
       "-vf", "fps=15",
       "-r", "15",
       "-fps_mode", "cfr",
@@ -120,6 +126,16 @@ export class BrowserWebRtcService implements OnModuleDestroy {
       "-f", "rtp",
       "-payload_type", "96",
       `rtp://127.0.0.1:${session.rtpPort}?pkt_size=1200`,
+      "-map", "0:a:0",
+      "-c:a", "libopus",
+      "-application", "lowdelay",
+      "-frame_duration", "20",
+      "-ar", "48000",
+      "-ac", "1",
+      "-b:a", "32k",
+      "-f", "rtp",
+      "-payload_type", "111",
+      `rtp://127.0.0.1:${session.audioRtpPort}?pkt_size=1200`,
     ];
 
     const proc = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });

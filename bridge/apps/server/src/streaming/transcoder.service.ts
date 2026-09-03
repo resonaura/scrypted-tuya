@@ -10,6 +10,7 @@ export interface TranscodeSession {
   process: ChildProcess | null;
   startTimer: NodeJS.Timeout | null;
   rtpPort: number;
+  audioRtpPort: number;
   startedAt: number;
 }
 
@@ -37,13 +38,20 @@ export class TranscoderService implements OnModuleDestroy {
     this.stopTranscode(options.did);
 
     const sourceRtspUrl = `rtsp://127.0.0.1:${options.sourceRtspPort}/${options.sourceRtspPath}`;
-    const targetPath = `live/${options.slug}_h264`;
+    const targetPath = `live/${options.slug}-h264`;
     const rtpPort = options.targetRtspPort + 1000;
+    const audioRtpPort = rtpPort + 1;
     this.logger.log(
       `[Transcoder] Starting H264 relay for ${options.did} (${sourceRtspUrl} -> rtsp://127.0.0.1:${options.targetRtspPort}/${targetPath})`,
     );
 
-    this.engine.startH264Relay(options.did, options.targetRtspPort, targetPath, rtpPort);
+    this.engine.startH264Relay(
+      options.did,
+      options.targetRtspPort,
+      targetPath,
+      rtpPort,
+      audioRtpPort,
+    );
     const session: TranscodeSession = {
       did: options.did,
       slug: options.slug,
@@ -52,6 +60,7 @@ export class TranscoderService implements OnModuleDestroy {
       process: null,
       startTimer: null,
       rtpPort,
+      audioRtpPort,
       startedAt: Date.now(),
     };
     this.sessions.set(options.did, session);
@@ -62,12 +71,11 @@ export class TranscoderService implements OnModuleDestroy {
       const args = [
         "-hide_banner", "-loglevel", "warning",
         "-rtsp_transport", "tcp",
-        "-use_wallclock_as_timestamps", "1",
         "-fflags", "nobuffer+discardcorrupt",
         "-flags", "low_delay",
         "-err_detect", "ignore_err",
         "-i", sourceRtspUrl,
-        "-map", "0:v:0", "-an",
+        "-map", "0:v:0",
         "-vf", "fps=15",
         "-r", "15",
         "-fps_mode", "cfr",
@@ -81,6 +89,15 @@ export class TranscoderService implements OnModuleDestroy {
         "-x264-params", "repeat-headers=1:scenecut=0",
         "-f", "rtp", "-payload_type", "96",
         `rtp://127.0.0.1:${rtpPort}?pkt_size=1200`,
+        "-map", "0:a:0?",
+        "-c:a", "aac",
+        "-profile:a", "aac_low",
+        "-ar", "16000",
+        "-ac", "1",
+        "-b:a", "48k",
+        "-f", "rtp", "-payload_type", "97",
+        `rtp://127.0.0.1:${audioRtpPort}?pkt_size=1200`,
+
       ];
 
       try {

@@ -152,7 +152,14 @@ export class NativeMediaEngine extends EventEmitter {
     } else if (msg.event === "unhealthy") {
       this.emit("unhealthy", msg.did);
     } else if (msg.event === "viewer_offer") {
-      this.emit("viewer_offer", msg.viewer_id, msg.did, msg.sdp, msg.rtp_port);
+      this.emit(
+        "viewer_offer",
+        msg.viewer_id,
+        msg.did,
+        msg.sdp,
+        msg.rtp_port,
+        msg.audio_rtp_port,
+      );
     } else if (msg.event === "viewer_state") {
       this.emit("viewer_state", msg.viewer_id, msg.did, msg.state);
     } else if (msg.event === "snapshot") {
@@ -187,6 +194,16 @@ export class NativeMediaEngine extends EventEmitter {
     } catch (err: any) {
       if (err?.code !== "EPIPE" && err?.code !== "ERR_STREAM_DESTROYED") throw err;
     }
+  }
+
+  private sendWhenReady(payload: object): void {
+    const line = JSON.stringify(payload);
+    if (this.isReady) {
+      this.sendLine(line);
+      return;
+    }
+    this.pendingCommands.push(line);
+    if (!this.process) this.start();
   }
 
   public startP2P(config: NativeSessionConfig): void {
@@ -258,8 +275,21 @@ export class NativeMediaEngine extends EventEmitter {
     });
   }
 
-  public startH264Relay(did: string, rtspPort: number, rtspPath: string, rtpPort: number): void {
-    this.sendLine({ cmd: "start_relay", did, rtsp_port: rtspPort, rtsp_path: rtspPath, rtp_port: rtpPort });
+  public startH264Relay(
+    did: string,
+    rtspPort: number,
+    rtspPath: string,
+    rtpPort: number,
+    audioRtpPort: number,
+  ): void {
+    this.sendWhenReady({
+      cmd: "start_relay",
+      did,
+      rtsp_port: rtspPort,
+      rtsp_path: rtspPath,
+      rtp_port: rtpPort,
+      audio_rtp_port: audioRtpPort,
+    });
   }
 
   public stopH264Relay(did: string): void {
@@ -267,7 +297,7 @@ export class NativeMediaEngine extends EventEmitter {
   }
 
   public startViewer(viewerId: string, did: string, sdp: string): void {
-    this.sendLine({ cmd: "start_viewer", viewer_id: viewerId, did, sdp });
+    this.sendWhenReady({ cmd: "start_viewer", viewer_id: viewerId, did, sdp });
   }
 
   public stopViewer(viewerId: string, did: string): void {

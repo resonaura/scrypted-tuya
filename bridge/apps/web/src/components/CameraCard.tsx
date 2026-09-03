@@ -20,8 +20,8 @@ export const CameraCard: React.FC<CameraCardProps> = ({ camera, index, total, on
   const reduceMotion = useReducedMotion();
   const [snapshotKey, setSnapshotKey] = React.useState(Date.now());
   const [imgError, setImgError] = React.useState(false);
-  const [copied, setCopied] = React.useState<"rtsp" | "snapshot" | null>(null);
-  const { rtsp, snapshot } = getCameraUrls(camera);
+  const [copied, setCopied] = React.useState<"rtsp" | "h264" | "snapshot" | null>(null);
+  const { rtsp, h264Rtsp, snapshot } = getCameraUrls(camera);
 
   React.useEffect(() => {
     const refresh = () => {
@@ -35,11 +35,11 @@ export const CameraCard: React.FC<CameraCardProps> = ({ camera, index, total, on
     };
   }, [camera.id, camera.online]);
 
-  const copy = async (kind: "rtsp" | "snapshot", value: string) => {
+  const copy = async (kind: "rtsp" | "h264" | "snapshot", value: string) => {
     try {
       await copyText(value);
       setCopied(kind);
-      toast.success(kind === "rtsp" ? "RTSP URL copied" : "Snapshot URL copied");
+      toast.success(kind === "snapshot" ? "Snapshot URL copied" : "RTSP URL copied");
       window.setTimeout(() => setCopied(null), 1600);
     } catch {
       toast.error("Could not copy the URL");
@@ -89,7 +89,7 @@ export const CameraCard: React.FC<CameraCardProps> = ({ camera, index, total, on
                   }}>
                     <Dropdown.Item id="up" textValue="Move up" isDisabled={index === 0}><ArrowUp className="mr-2 inline size-4" /><Label>Move earlier</Label></Dropdown.Item>
                     <Dropdown.Item id="down" textValue="Move down" isDisabled={index === total - 1}><ArrowDown className="mr-2 inline size-4" /><Label>Move later</Label></Dropdown.Item>
-                    <Dropdown.Item id="transcode" textValue="Toggle H264 AAC transcoding"><Video className="mr-2 inline size-4" /><Label>H.264 / AAC transcoding</Label><Chip size="sm" variant="soft" color={camera.transcodeH264 ? "success" : "default"} className="ml-auto">{camera.transcodeH264 ? "On" : "Off"}</Chip></Dropdown.Item>
+                    <Dropdown.Item id="transcode" textValue="Toggle H264 transcoding"><Video className="mr-2 inline size-4" /><Label>H.264 transcoding</Label><Chip size="sm" variant="soft" color={camera.transcodeH264 ? "success" : "default"} className="ml-auto">{camera.transcodeH264 ? "On" : "Off"}</Chip></Dropdown.Item>
                     <Dropdown.Item id="delete" textValue="Delete camera" variant="danger"><Trash2 className="mr-2 inline size-4" /><Label>Delete camera</Label></Dropdown.Item>
                   </Dropdown.Menu>
                 </Dropdown.Popover>
@@ -106,9 +106,13 @@ export const CameraCard: React.FC<CameraCardProps> = ({ camera, index, total, on
 
         <Card.Footer className="grid gap-2 px-4 pb-4 pt-1">
           <Surface className="flex min-w-0 items-center gap-2 rounded-xl border border-default-200/70 bg-default-50/60 p-2">
-            <div className="min-w-0 flex-1"><p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">RTSP stream</p><p className="truncate font-mono text-[11px]">{rtsp}</p></div>
+            <div className="min-w-0 flex-1"><p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">RTSP stream (H.265 + PCMU)</p><p className="truncate font-mono text-[11px]">{rtsp}</p></div>
             <Button isIconOnly size="sm" variant="ghost" aria-label="Copy RTSP URL" onPress={() => void copy("rtsp", rtsp)}>{copied === "rtsp" ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}</Button>
           </Surface>
+          {h264Rtsp && <Surface className="flex min-w-0 items-center gap-2 rounded-xl border border-success/30 bg-success/5 p-2">
+            <div className="min-w-0 flex-1"><p className="text-[9px] font-semibold uppercase tracking-wider text-success">Scrypted / HomeKit (H.264 + AAC)</p><p className="truncate font-mono text-[11px]">{h264Rtsp}</p></div>
+            <Button isIconOnly size="sm" variant="ghost" aria-label="Copy H.264 RTSP URL" onPress={() => void copy("h264", h264Rtsp)}>{copied === "h264" ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}</Button>
+          </Surface>}
           <Surface className="flex min-w-0 items-center gap-2 rounded-xl border border-default-200/70 bg-default-50/60 p-2">
             <div className="min-w-0 flex-1"><p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Live snapshot URL</p><p className="truncate font-mono text-[11px]">{snapshot}</p></div>
             <Button isIconOnly size="sm" variant="ghost" aria-label="Copy snapshot URL" onPress={() => void copy("snapshot", snapshot)}>{copied === "snapshot" ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}</Button>

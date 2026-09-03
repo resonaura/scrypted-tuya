@@ -86,6 +86,7 @@ struct EventViewerOffer {
     std::string did;
     std::string sdp;
     int rtp_port = 0;
+    int audio_rtp_port = 0;
 };
 
 struct EventViewerState {

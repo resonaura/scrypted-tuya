@@ -17,6 +17,7 @@ import {
   getDataDir,
 } from "./offline-card.js";
 import { findFreePortRange, isPortAllowed } from "../utils/ports.js";
+import { cameraRtspPath, cameraSlug } from "../utils/camera-slug.js";
 import { env } from "../config/env.js";
 import * as path from "node:path";
 import * as fsPromises from "node:fs/promises";
@@ -186,20 +187,8 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     this.engine.stop();
   }
 
-  public getSlug(cam: {
-    name: string;
-    did: string;
-    rtspPath?: string;
-  }): string {
-    if (cam.rtspPath && cam.rtspPath.startsWith("live/")) {
-      return cam.rtspPath.replace("live/", "");
-    }
-    return (
-      cam.name
-        .toLowerCase()
-        .replace(/[^a-z0-9_-]+/g, "_")
-        .replace(/^_+|_+$/g, "") || cam.did
-    );
+  public getSlug(cam: { name: string; did: string }): string {
+    return cameraSlug(cam.name, cam.did);
   }
 
   public async autoStartCameras() {
@@ -208,8 +197,7 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
 
     for (const cam of cameras) {
       cam.rtspPort = env.RTSP_BASE_PORT;
-      const cleanSlug = this.getSlug(cam);
-      cam.rtspPath = cleanSlug;
+      cam.rtspPath = cameraRtspPath(cam.name, cam.did, "h265");
       await cam.save();
       await this.startStream(cam);
     }
@@ -230,8 +218,7 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     const cameras = await this.tuyaProtect.discoverCameras();
     for (const cam of cameras) {
       cam.rtspPort = env.RTSP_BASE_PORT;
-      const cleanSlug = this.getSlug(cam);
-      cam.rtspPath = cleanSlug;
+      cam.rtspPath = cameraRtspPath(cam.name, cam.did, "h265");
       await cam.save();
       await this.startStream(cam);
     }
@@ -272,10 +259,7 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
       cam.h264Port = h264Port;
     }
 
-    if (!cam.rtspPath) {
-      const safeSlug = this.getSlug(cam);
-      cam.rtspPath = `live/${safeSlug}`;
-    }
+    cam.rtspPath = cameraRtspPath(cam.name, cam.did, "h265");
 
     await cam.save();
     if (!cam.transcodeH264) this.transcoder.stopTranscode(cam.did);
