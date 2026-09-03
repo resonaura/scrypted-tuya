@@ -34,6 +34,7 @@ export class TranscoderService implements OnModuleDestroy {
     sourceRtspPort: number;
     sourceRtspPath: string;
     targetRtspPort: number;
+    cloudRtspUrl?: string;
   }): void {
     this.stopTranscode(options.did);
 
@@ -41,8 +42,9 @@ export class TranscoderService implements OnModuleDestroy {
     const targetPath = `live/${options.slug}-h264`;
     const rtpPort = options.targetRtspPort + 1000;
     const audioRtpPort = rtpPort + 1;
+    const hasCloudAudio = Boolean(options.cloudRtspUrl);
     this.logger.log(
-      `[Transcoder] Starting H264 relay for ${options.did} (${sourceRtspUrl} -> rtsp://127.0.0.1:${options.targetRtspPort}/${targetPath})`,
+      `[Transcoder] Starting H264 relay for ${options.did} (${sourceRtspUrl} -> rtsp://127.0.0.1:${options.targetRtspPort}/${targetPath}, cloudAudio=${hasCloudAudio})`,
     );
 
     this.engine.startH264Relay(
@@ -68,12 +70,14 @@ export class TranscoderService implements OnModuleDestroy {
     session.startTimer = setTimeout(() => {
       session.startTimer = null;
       if (this.sessions.get(options.did) !== session) return;
+
       const args = [
         "-hide_banner", "-loglevel", "warning",
         "-rtsp_transport", "tcp",
         "-fflags", "nobuffer+discardcorrupt",
         "-flags", "low_delay",
-        "-err_detect", "ignore_err",
+        "-analyzeduration", "1000000",
+        "-probesize", "1000000",
         "-i", sourceRtspUrl,
         "-map", "0:v:0",
         "-vf", "fps=15",
@@ -90,14 +94,14 @@ export class TranscoderService implements OnModuleDestroy {
         "-f", "rtp", "-payload_type", "96",
         `rtp://127.0.0.1:${rtpPort}?pkt_size=1200`,
         "-map", "0:a:0?",
+        "-af", "aresample=async=1000",
         "-c:a", "aac",
         "-profile:a", "aac_low",
         "-ar", "16000",
         "-ac", "1",
-        "-b:a", "48k",
+        "-b:a", "64k",
         "-f", "rtp", "-payload_type", "97",
         `rtp://127.0.0.1:${audioRtpPort}?pkt_size=1200`,
-
       ];
 
       try {
@@ -147,8 +151,53 @@ export class TranscoderService implements OnModuleDestroy {
     }
   }
 
+  private nativeAudioFeeders: Map<string, ChildProcess> = new Map();
+
+  public startNativeCloudAudio(did: string, cloudRtspUrl: string, audioPort: number): void {
+    this.stopNativeCloudAudio(did);
+
+    this.engine.startAudioIngest(did, audioPort);
+
+    const args = [
+      "-hide_banner", "-loglevel", "warning",
+      "-rtsp_transport", "tcp",
+      "-fflags", "nobuffer+discardcorrupt",
+      "-flags", "low_delay",
+      "-i", cloudRtspUrl,
+      "-vn",
+      "-c:a", "copy",
+      "-f", "rtp",
+      `rtp://127.0.0.1:${audioPort}?pkt_size=1200`,
+    ];
+
+    try {
+      const proc = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
+      this.nativeAudioFeeders.set(did, proc);
+      this.logger.log(`[Transcoder] Started native Cloud Audio feeder for ${did} -> rtp port ${audioPort}`);
+      proc.once("exit", () => {
+        if (this.nativeAudioFeeders.get(did) === proc) {
+          this.nativeAudioFeeders.delete(did);
+        }
+      });
+    } catch (err: any) {
+      this.logger.error(`Failed to spawn native Cloud Audio feeder for ${did}: ${err.message}`);
+    }
+  }
+
+  public stopNativeCloudAudio(did: string): void {
+    const proc = this.nativeAudioFeeders.get(did);
+    if (proc) {
+      this.logger.log(`Stopping native Cloud Audio feeder for ${did}`);
+      try { proc.kill("SIGTERM"); } catch {}
+      this.nativeAudioFeeders.delete(did);
+    }
+  }
+
   public stopAll(): void {
-    for (const did of this.sessions.keys()) {
+    for (const did of Array.from(this.nativeAudioFeeders.keys())) {
+      this.stopNativeCloudAudio(did);
+    }
+    for (const did of Array.from(this.sessions.keys())) {
       this.stopTranscode(did);
     }
   }

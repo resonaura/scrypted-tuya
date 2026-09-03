@@ -66,6 +66,12 @@ export class CameraEntity extends BaseEntity {
   @Column({ type: "boolean", default: true })
   audioEnabled!: boolean;
 
+  @Column({ type: "boolean", default: true })
+  useCloudAudio!: boolean;
+
+  @Column({ type: "text", nullable: true })
+  cloudRtspUrl?: string;
+
   @Column({ type: "datetime", nullable: true })
   lastSeen?: Date;
 

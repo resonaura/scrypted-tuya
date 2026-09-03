@@ -296,6 +296,10 @@ export class NativeMediaEngine extends EventEmitter {
     this.sendLine({ cmd: "stop_relay", did });
   }
 
+  public startAudioIngest(did: string, audioPort: number): void {
+    this.sendWhenReady({ cmd: "start_audio_ingest", did, audio_rtp_port: audioPort });
+  }
+
   public startViewer(viewerId: string, did: string, sdp: string): void {
     this.sendWhenReady({ cmd: "start_viewer", viewer_id: viewerId, did, sdp });
   }

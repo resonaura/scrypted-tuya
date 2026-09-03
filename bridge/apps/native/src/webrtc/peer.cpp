@@ -84,8 +84,9 @@ void WebRTCPeer::handle_video_packet(const rtc::binary& packet) {
 }
 
 void WebRTCPeer::handle_audio_packet(const rtc::binary& packet) {
-    if (packet.empty()) return;
-    handle_rtp_packet(packet, false);
+    if (!local_audio_enabled_.load()) return;
+    if (packet.size() < 12 || !rtsp_server_) return;
+    rtsp_server_->feed_raw_rtp(reinterpret_cast<const uint8_t*>(packet.data()), packet.size(), false);
 }
 
 void WebRTCPeer::handle_rtp_packet(const rtc::binary& packet, bool is_video) {
@@ -130,7 +131,8 @@ bool WebRTCPeer::flush_reordered_packets(bool is_video, std::vector<std::vector<
 
     // Absorb short out-of-order bursts from Tuya/SRTP without allowing a
     // genuinely lost packet to stall the stream forever.
-    if (state.pending.size() >= 8) {
+    const size_t max_pending = is_video ? 8 : 2;
+    if (state.pending.size() >= max_pending) {
         uint16_t nearest = state.pending.begin()->first;
         uint16_t nearest_distance = static_cast<uint16_t>(nearest - state.expected_seq);
         for (const auto& entry : state.pending) {
@@ -221,6 +223,7 @@ void WebRTCPeer::setup_peer_connection() {
 
         if (desc.type() == "video") {
             video_track_ = track;
+            track->setMediaHandler(std::make_shared<rtc::RtcpReceivingSession>());
             track->onMessage([this](rtc::message_variant msg) {
                 if (std::holds_alternative<rtc::binary>(msg)) {
                     const auto& bin = std::get<rtc::binary>(msg);
@@ -229,6 +232,7 @@ void WebRTCPeer::setup_peer_connection() {
             });
         } else if (desc.type() == "audio") {
             audio_track_ = track;
+            track->setMediaHandler(std::make_shared<rtc::RtcpReceivingSession>());
             track->onMessage([this](rtc::message_variant msg) {
                 if (std::holds_alternative<rtc::binary>(msg)) {
                     const auto& bin = std::get<rtc::binary>(msg);

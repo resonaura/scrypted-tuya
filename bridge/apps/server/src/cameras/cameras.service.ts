@@ -10,6 +10,7 @@ import { CameraEntity } from "../db/entities/index.js";
 import { NativeMediaEngine } from "../engine/native-engine.js";
 import { TuyaProtectService } from "../auth/tuya-protect.service.js";
 import { TuyaMqttService } from "../auth/tuya-mqtt.service.js";
+import { TuyaSharingService } from "../auth/tuya-sharing.service.js";
 import { TranscoderService } from "../streaming/transcoder.service.js";
 import {
   OfflineCardManager,
@@ -38,6 +39,7 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     @Inject(forwardRef(() => TuyaMqttService))
     private readonly tuyaMqtt: TuyaMqttService,
     @Inject(TranscoderService) private readonly transcoder: TranscoderService,
+    @Inject(TuyaSharingService) private readonly tuyaSharing: TuyaSharingService,
   ) {}
 
   async onModuleInit() {
@@ -69,6 +71,23 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
 
         this.ensureSnapshotter(cam);
 
+        // Fetch clean cloud audio URL if configured
+        let cloudRtspUrl: string | undefined;
+        if (cam.useCloudAudio && this.tuyaSharing.isConfigured()) {
+          try {
+            cloudRtspUrl = (await this.tuyaSharing.getRTSP(cam.did)) ?? undefined;
+            if (cloudRtspUrl) {
+              cam.cloudRtspUrl = cloudRtspUrl;
+              await cam.save();
+              // Feed Cloud Audio into the native 265 RTSP stream
+              const nativeAudioPort = cam.rtspPort + 2000;
+              this.transcoder.startNativeCloudAudio(cam.did, cloudRtspUrl, nativeAudioPort);
+            }
+          } catch (e: any) {
+            this.logger.warn(`[${cam.did}] Cloud RTSP allocation failed, using P2P audio: ${e.message}`);
+          }
+        }
+
         if (cam.transcodeH264 && cam.h264Port) {
           this.transcoder.startH264Transcode({
             did: cam.did,
@@ -76,6 +95,7 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
             sourceRtspPort: cam.rtspPort,
             sourceRtspPath: cam.rtspPath || `live/${slug}`,
             targetRtspPort: cam.h264Port,
+            cloudRtspUrl,
           });
         }
       }
@@ -265,6 +285,75 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     if (!cam.transcodeH264) this.transcoder.stopTranscode(cam.did);
     await this.startStream(cam);
     return cam;
+  }
+
+  async update(id: string, patch: Partial<CameraEntity>): Promise<CameraEntity> {
+    const cam = await this.getById(id);
+    if (!cam) throw new Error(`Camera ${id} not found`);
+
+    if (patch.name !== undefined) cam.name = patch.name;
+    if (patch.quality !== undefined) cam.quality = (patch.quality.toLowerCase() as "hd" | "sd");
+    if (patch.useCloudAudio !== undefined) cam.useCloudAudio = Boolean(patch.useCloudAudio);
+    if (patch.audioEnabled !== undefined) cam.audioEnabled = Boolean(patch.audioEnabled);
+
+    if (patch.transcodeH264 !== undefined) {
+      const enabling = Boolean(patch.transcodeH264);
+      cam.transcodeH264 = enabling;
+      if (enabling) {
+        if (!cam.h264Port || !isPortAllowed(cam.h264Port)) {
+          const [h264Port] = await findFreePortRange(1, cam.rtspPort + 100);
+          cam.h264Port = h264Port;
+        }
+        if (cam.online || this.activeStreams.has(cam.did) || (cam.rtspPort && cam.rtspPort > 0)) {
+          const slug = this.getSlug(cam);
+          let cloudRtspUrl = cam.cloudRtspUrl;
+          if (cam.useCloudAudio && this.tuyaSharing.isConfigured() && !cloudRtspUrl) {
+            try {
+              cloudRtspUrl = (await this.tuyaSharing.getRTSP(cam.did)) ?? undefined;
+              if (cloudRtspUrl) {
+                cam.cloudRtspUrl = cloudRtspUrl;
+              }
+            } catch {}
+          }
+          this.transcoder.startH264Transcode({
+            did: cam.did,
+            slug,
+            sourceRtspPort: cam.rtspPort,
+            sourceRtspPath: cam.rtspPath || `live/${slug}`,
+            targetRtspPort: cam.h264Port,
+            cloudRtspUrl,
+          });
+        }
+      } else {
+        this.transcoder.stopTranscode(cam.did);
+      }
+    }
+
+    await cam.save();
+    return cam;
+  }
+
+  async logoutProfile(): Promise<void> {
+    this.logger.log("Logging out profile and stopping all camera streams...");
+    for (const did of Array.from(this.activeStreams)) {
+      this.stopSnapshotter(did);
+      this.transcoder.stopTranscode(did);
+      this.transcoder.stopNativeCloudAudio(did);
+      this.engine.stopP2P(did);
+    }
+    this.activeStreams.clear();
+    this.recoveryAttempts.clear();
+    for (const timer of this.recoveryTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.recoveryTimers.clear();
+
+    const cameras = await CameraEntity.find();
+    for (const cam of cameras) {
+      const slug = this.getSlug(cam);
+      OfflineCardManager.getInstance().setOnline(slug);
+      await cam.remove();
+    }
   }
 
   async delete(id: string): Promise<boolean> {

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Param,
   Body,
@@ -37,6 +38,11 @@ export class CamerasController {
       throw new BadRequestException(parse.error.format());
     }
     return this.camerasService.createOrUpdate(parse.data);
+  }
+
+  @Patch(":id")
+  async update(@Param("id") id: string, @Body() body: unknown) {
+    return this.camerasService.update(id, body as any);
   }
 
   @Delete(":id")

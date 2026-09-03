@@ -42,6 +42,7 @@ public:
     void request_keyframe();
     void set_quality(int channel);
     void ptz(int action, int speed);
+    void set_local_audio_enabled(bool enabled) { local_audio_enabled_ = enabled; }
 
 private:
     void setup_peer_connection();
@@ -65,6 +66,7 @@ private:
 
     std::atomic<bool> running_{false};
     std::atomic<bool> connected_{false};
+    std::atomic<bool> local_audio_enabled_{true};
     std::atomic<bool> unhealthy_sent_{false};
     std::atomic<int64_t> last_video_packet_ms_{0};
     std::thread keyframe_thread_;

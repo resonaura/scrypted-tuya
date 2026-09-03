@@ -48,4 +48,5 @@ export interface AuthState {
   qrToken?: string | null;
   qrDataUrl?: string | null;
   error?: string | null;
+  sharingConfigured?: boolean;
 }
