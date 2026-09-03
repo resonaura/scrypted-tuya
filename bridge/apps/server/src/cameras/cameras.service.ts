@@ -81,7 +81,12 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
               await cam.save();
               // Feed Cloud Audio into the native 265 RTSP stream
               const nativeAudioPort = cam.rtspPort + 2000;
-              this.transcoder.startNativeCloudAudio(cam.did, cloudRtspUrl, nativeAudioPort);
+              this.transcoder.startNativeCloudAudio(
+                cam.did,
+                cloudRtspUrl,
+                nativeAudioPort,
+                async () => (await this.tuyaSharing.getRTSP(cam.did)) ?? null,
+              );
             }
           } catch (e: any) {
             this.logger.warn(`[${cam.did}] Cloud RTSP allocation failed, using P2P audio: ${e.message}`);
@@ -293,8 +298,35 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
 
     if (patch.name !== undefined) cam.name = patch.name;
     if (patch.quality !== undefined) cam.quality = (patch.quality.toLowerCase() as "hd" | "sd");
-    if (patch.useCloudAudio !== undefined) cam.useCloudAudio = Boolean(patch.useCloudAudio);
     if (patch.audioEnabled !== undefined) cam.audioEnabled = Boolean(patch.audioEnabled);
+
+    if (patch.useCloudAudio !== undefined) {
+      cam.useCloudAudio = Boolean(patch.useCloudAudio);
+      if (cam.useCloudAudio) {
+        if (this.tuyaSharing.isConfigured() && (cam.online || this.activeStreams.has(cam.did))) {
+          void (async () => {
+            try {
+              const url = (await this.tuyaSharing.getRTSP(cam.did)) ?? undefined;
+              if (url) {
+                cam.cloudRtspUrl = url;
+                await cam.save();
+                const nativeAudioPort = cam.rtspPort + 2000;
+                this.transcoder.startNativeCloudAudio(
+                  cam.did,
+                  url,
+                  nativeAudioPort,
+                  async () => (await this.tuyaSharing.getRTSP(cam.did)) ?? null,
+                );
+              }
+            } catch (e: any) {
+              this.logger.warn(`Failed to start cloud audio: ${e.message}`);
+            }
+          })();
+        }
+      } else {
+        this.transcoder.stopNativeCloudAudio(cam.did);
+      }
+    }
 
     if (patch.transcodeH264 !== undefined) {
       const enabling = Boolean(patch.transcodeH264);

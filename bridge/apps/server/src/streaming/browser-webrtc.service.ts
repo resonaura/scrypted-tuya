@@ -127,7 +127,7 @@ export class BrowserWebRtcService implements OnModuleDestroy {
       "-payload_type", "96",
       `rtp://127.0.0.1:${session.rtpPort}?pkt_size=1200`,
       "-map", "0:a:0?",
-      "-af", "aresample=async=1000:first_pts=0",
+      "-af", "aresample=async=1000",
       "-c:a", "libopus",
       "-application", "lowdelay",
       "-frame_duration", "20",

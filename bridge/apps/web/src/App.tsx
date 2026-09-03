@@ -43,7 +43,12 @@ export function App() {
     if (!quiet) setIsRefreshing(true);
     try {
       const list = await fetchCameras();
-      setCameras(list);
+      setCameras((prev) => list.map((cam) => {
+        const existing = prev.find((p) => p.id === cam.id);
+        // Keep local transcodeH264 / h264Port if server hasn't updated yet
+        if (!existing) return cam;
+        return { ...cam, transcodeH264: existing.transcodeH264, h264Port: existing.h264Port ?? cam.h264Port };
+      }));
       setCameraOrder((current) => [...current.filter((id) => list.some((camera) => camera.id === id)), ...list.map((camera) => camera.id).filter((id) => !current.includes(id))]);
       setLoadError(null);
     } catch (error: any) {

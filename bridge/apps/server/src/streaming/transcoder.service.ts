@@ -9,9 +9,19 @@ export interface TranscodeSession {
   targetRtspPort: number;
   process: ChildProcess | null;
   startTimer: NodeJS.Timeout | null;
+  retryTimer?: NodeJS.Timeout | null;
   rtpPort: number;
   audioRtpPort: number;
   startedAt: number;
+  stopped?: boolean;
+}
+
+interface AudioFeederSession {
+  proc: ChildProcess | null;
+  audioPort: number;
+  getFreshUrl?: () => Promise<string | null>;
+  retryTimer?: NodeJS.Timeout;
+  stopped: boolean;
 }
 
 @Injectable()
@@ -19,6 +29,7 @@ export class TranscoderService implements OnModuleDestroy {
   private readonly logger = new Logger(TranscoderService.name);
   private readonly engine = NativeMediaEngine.getInstance();
   private sessions: Map<string, TranscodeSession> = new Map();
+  private nativeAudioFeeders: Map<string, AudioFeederSession> = new Map();
 
   onModuleDestroy() {
     this.stopAll();
@@ -64,12 +75,13 @@ export class TranscoderService implements OnModuleDestroy {
       rtpPort,
       audioRtpPort,
       startedAt: Date.now(),
+      stopped: false,
     };
     this.sessions.set(options.did, session);
 
     session.startTimer = setTimeout(() => {
       session.startTimer = null;
-      if (this.sessions.get(options.did) !== session) return;
+      if (session.stopped || this.sessions.get(options.did) !== session) return;
 
       const args = [
         "-hide_banner", "-loglevel", "warning",
@@ -114,18 +126,20 @@ export class TranscoderService implements OnModuleDestroy {
           }
         });
         proc.once("error", (err) => {
-          if (this.sessions.get(options.did) !== session) return;
+          if (session.stopped || this.sessions.get(options.did) !== session) return;
           this.logger.error(`H264 transcoder failed for ${options.did}: ${err.message}`);
-          this.stopTranscode(options.did);
         });
         proc.once("exit", (code, signal) => {
-          if (this.sessions.get(options.did) !== session) return;
-          this.logger.warn(`H264 transcoder for ${options.did} exited (code=${code}, signal=${signal})`);
-          this.stopTranscode(options.did);
+          if (session.stopped || this.sessions.get(options.did) !== session) return;
+          this.logger.warn(`H264 transcoder for ${options.did} exited (code=${code}, signal=${signal}), restarting in 2s...`);
+          session.retryTimer = setTimeout(() => {
+            if (session.stopped || this.sessions.get(options.did) !== session) return;
+            this.startH264Transcode(options);
+          }, 2000);
+          session.retryTimer.unref();
         });
       } catch (err: any) {
         this.logger.error(`Failed to spawn H264 transcoder for ${options.did}: ${err.message}`);
-        this.stopTranscode(options.did);
       }
     }, 300);
     session.startTimer.unref();
@@ -134,16 +148,17 @@ export class TranscoderService implements OnModuleDestroy {
   public stopTranscode(did: string): void {
     const session = this.sessions.get(did);
     if (session) {
-      this.logger.log(`Stopping x264 transcoder for ${did}`);
+      session.stopped = true;
       if (session.startTimer) clearTimeout(session.startTimer);
+      if (session.retryTimer) clearTimeout(session.retryTimer);
       if (session.process) {
+        session.process.removeAllListeners();
         try {
           session.process.kill("SIGTERM");
+          const proc = session.process;
           setTimeout(() => {
-            try {
-              session.process?.kill("SIGKILL");
-            } catch {}
-          }, 2000).unref();
+            try { proc.kill("SIGKILL"); } catch {}
+          }, 1500).unref();
         } catch {}
       }
       this.sessions.delete(did);
@@ -151,44 +166,74 @@ export class TranscoderService implements OnModuleDestroy {
     }
   }
 
-  private nativeAudioFeeders: Map<string, ChildProcess> = new Map();
-
-  public startNativeCloudAudio(did: string, cloudRtspUrl: string, audioPort: number): void {
+  public startNativeCloudAudio(
+    did: string,
+    cloudRtspUrl: string,
+    audioPort: number,
+    getFreshUrl?: () => Promise<string | null>,
+  ): void {
     this.stopNativeCloudAudio(did);
 
     this.engine.startAudioIngest(did, audioPort);
 
-    const args = [
-      "-hide_banner", "-loglevel", "warning",
-      "-rtsp_transport", "tcp",
-      "-fflags", "nobuffer+discardcorrupt",
-      "-flags", "low_delay",
-      "-i", cloudRtspUrl,
-      "-vn",
-      "-c:a", "copy",
-      "-f", "rtp",
-      `rtp://127.0.0.1:${audioPort}?pkt_size=1200`,
-    ];
+    const feeder: AudioFeederSession = {
+      proc: null,
+      audioPort,
+      getFreshUrl,
+      stopped: false,
+    };
+    this.nativeAudioFeeders.set(did, feeder);
 
-    try {
-      const proc = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
-      this.nativeAudioFeeders.set(did, proc);
-      this.logger.log(`[Transcoder] Started native Cloud Audio feeder for ${did} -> rtp port ${audioPort}`);
-      proc.once("exit", () => {
-        if (this.nativeAudioFeeders.get(did) === proc) {
-          this.nativeAudioFeeders.delete(did);
-        }
-      });
-    } catch (err: any) {
-      this.logger.error(`Failed to spawn native Cloud Audio feeder for ${did}: ${err.message}`);
-    }
+    const spawnFeeder = (url: string) => {
+      if (feeder.stopped) return;
+      const args = [
+        "-hide_banner", "-loglevel", "warning",
+        "-rtsp_transport", "tcp",
+        "-fflags", "nobuffer+discardcorrupt",
+        "-flags", "low_delay",
+        "-i", url,
+        "-vn",
+        "-c:a", "copy",
+        "-f", "rtp",
+        "-payload_type", "0",
+        `rtp://127.0.0.1:${audioPort}?pkt_size=1200`,
+      ];
+
+      try {
+        const proc = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
+        feeder.proc = proc;
+        this.logger.log(`[Transcoder] Started native Cloud Audio feeder for ${did} -> rtp port ${audioPort}`);
+        proc.once("exit", (code, signal) => {
+          if (feeder.stopped || this.nativeAudioFeeders.get(did) !== feeder) return;
+          this.logger.warn(`[Transcoder] Native Cloud Audio feeder for ${did} exited (code=${code}, signal=${signal}), reconnecting in 2s...`);
+          feeder.retryTimer = setTimeout(async () => {
+            if (feeder.stopped) return;
+            try {
+              const freshUrl = feeder.getFreshUrl ? await feeder.getFreshUrl() : url;
+              if (freshUrl) spawnFeeder(freshUrl);
+            } catch (err: any) {
+              this.logger.error(`Failed to refresh Cloud Audio URL for ${did}: ${err.message}`);
+            }
+          }, 2000);
+          feeder.retryTimer.unref();
+        });
+      } catch (err: any) {
+        this.logger.error(`Failed to spawn native Cloud Audio feeder for ${did}: ${err.message}`);
+      }
+    };
+
+    spawnFeeder(cloudRtspUrl);
   }
 
   public stopNativeCloudAudio(did: string): void {
-    const proc = this.nativeAudioFeeders.get(did);
-    if (proc) {
-      this.logger.log(`Stopping native Cloud Audio feeder for ${did}`);
-      try { proc.kill("SIGTERM"); } catch {}
+    const feeder = this.nativeAudioFeeders.get(did);
+    if (feeder) {
+      feeder.stopped = true;
+      if (feeder.retryTimer) clearTimeout(feeder.retryTimer);
+      if (feeder.proc) {
+        feeder.proc.removeAllListeners();
+        try { feeder.proc.kill("SIGTERM"); } catch {}
+      }
       this.nativeAudioFeeders.delete(did);
     }
   }

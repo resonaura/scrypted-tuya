@@ -365,13 +365,11 @@ void RTSPServer::handle_rtsp_request(int client_fd, const std::string& req, RTSP
         if (audio_is_aac_) {
             sdp << "m=audio 0 RTP/AVP 97\r\n"
                 << "a=rtpmap:97 MPEG4-GENERIC/16000/1\r\n"
-                << "a=fmtp:97 streamtype=5; profile-level-id=1; mode=AAC-hbr; config=1408; SizeLength=13; IndexLength=3; IndexDeltaLength=3\r\n"
+                << "a=fmtp:97 streamtype=5; profile-level-id=1; mode=AAC-hbr; config=1408; sizelength=13; indexlength=3; indexdeltalength=3\r\n"
                 << "a=control:track1\r\n";
         } else {
-            sdp << "m=audio 0 RTP/AVP 0 8 111\r\n"
+            sdp << "m=audio 0 RTP/AVP 0\r\n"
                 << "a=rtpmap:0 PCMU/8000\r\n"
-                << "a=rtpmap:8 PCMA/8000\r\n"
-                << "a=rtpmap:111 opus/48000/2\r\n"
                 << "a=control:track1\r\n";
         }
 
@@ -633,10 +631,18 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
     if (!data || len < 12) return;
 
     if (!is_video) {
+        const uint8_t expected_pt = audio_is_aac_ ? 97 : 0;
+        const uint8_t header_byte = (data[1] & 0x80) | expected_pt;
         std::lock_guard<std::mutex> lock(clients_mutex_);
         for (auto& [fd, session] : clients_) {
             if (!session.is_playing) continue;
-            send_interleaved_packet(fd, session.audio_rtp_channel, data, len);
+            if ((data[1] & 0x7F) != expected_pt) {
+                std::vector<uint8_t> patched(data, data + len);
+                patched[1] = header_byte;
+                send_interleaved_packet(fd, session.audio_rtp_channel, patched.data(), patched.size());
+            } else {
+                send_interleaved_packet(fd, session.audio_rtp_channel, data, len);
+            }
         }
         return;
     }
