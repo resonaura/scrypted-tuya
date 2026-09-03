@@ -64,6 +64,7 @@ export class BrowserWebRtcService implements OnModuleDestroy {
         this.engine.off("viewer_offer", onOffer);
       };
       this.engine.on("viewer_offer", onOffer);
+      this.logger.log(`[BrowserWebRtcService] Requesting native viewer for ${cam.did}, id=${id}`);
       this.engine.startViewer(id, cam.did, browserOffer);
     }).catch((error) => {
       this.stop(id);
@@ -139,12 +140,17 @@ export class BrowserWebRtcService implements OnModuleDestroy {
       `rtp://127.0.0.1:${session.audioRtpPort}?pkt_size=1200`,
     ];
 
+    this.logger.log(`Spawning browser transcoder for ${session.did} (rtp=${session.rtpPort}, audioRtp=${session.audioRtpPort}, url=${session.rtspUrl})`);
     const proc = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
     session.ffmpeg = proc;
     let lastError = "";
     proc.stderr?.on("data", (chunk: Buffer) => {
-      const lines = chunk.toString().trim().split(/\r?\n/).filter(Boolean);
-      if (lines.length) lastError = lines.at(-1)!;
+      const text = chunk.toString().trim();
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      if (lines.length) {
+        lastError = lines.at(-1)!;
+        this.logger.debug(`[BrowserFFmpeg ${session.did}] ${lastError}`);
+      }
     });
     proc.once("error", (error) => {
       if (this.sessions.get(session.id)?.generation !== session.generation) return;
@@ -152,9 +158,10 @@ export class BrowserWebRtcService implements OnModuleDestroy {
       this.stop(session.id);
     });
     proc.once("exit", (code, signal) => {
+      this.logger.log(`Browser transcoder exited for ${session.did} (code=${code}, signal=${signal})`);
       if (this.sessions.get(session.id)?.generation !== session.generation) return;
       if (code !== 0 && signal !== "SIGTERM") {
-        this.logger.warn(`Browser transcoder exited for ${session.did} (code=${code}, signal=${signal}): ${lastError}`);
+        this.logger.warn(`Browser transcoder error for ${session.did}: ${lastError}`);
       }
       this.stop(session.id);
     });

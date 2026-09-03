@@ -35,15 +35,21 @@ private:
     std::shared_ptr<rtc::Track> video_track_;
     std::shared_ptr<rtc::Track> audio_track_;
     std::atomic<bool> running_{false};
+    std::atomic<bool> answer_sent_{false};
     std::thread receiver_thread_;
     std::thread audio_receiver_thread_;
+    std::thread answer_timer_thread_;
     std::mutex mutex_;
+    std::mutex cand_mutex_;
+    std::vector<std::string> local_candidates_;
     int socket_fd_ = -1;
     int audio_socket_fd_ = -1;
     int rtp_port_ = 0;
     int audio_rtp_port_ = 0;
     uint32_t ssrc_ = 0;
     uint32_t audio_ssrc_ = 0;
+    uint8_t video_pt_ = 102;
+    uint8_t audio_pt_ = 111;
 };
 
 }  // namespace tuya
