@@ -1,5 +1,11 @@
 # Tuya Camera Bridge — Changelog
 
+## 2.0.2
+
+- **Fix `better-sqlite3` native bindings loading (`Could not locate the bindings file`)**:
+  - Registered `better-sqlite3` in `onlyBuiltDependencies` in `pnpm-workspace.yaml` to authorize native lifecycle compilation under pnpm v10.
+  - Multi-stage Docker optimization: installed `build-essential` & `python3` in `node-builder`, compiled native `.node` addons, and copied prebuilt modules directly into production container with `pnpm prune --prod`.
+
 ## 2.0.1
 
 - **Fix Docker container startup**:
