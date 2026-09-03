@@ -2,7 +2,9 @@
 
 ## 2.0.1
 
-- **Fix Docker container startup error (`Cannot find module '/app/apps/server/dist/main.js'`)**:
+- **Fix Docker container startup errors**:
+  - Approve `better-sqlite3` native build via `onlyBuiltDependencies` in `pnpm-workspace.yaml` (pnpm v10 lifecycle scripts approval).
+  - Precompile `better-sqlite3` native bindings in build stage and copy into production runtime container.
   - Removed obsolete committed `tsconfig.build.tsbuildinfo` cache file that caused `tsc` to skip building server entrypoint `dist/main.js`.
   - Added clean step to remove `.tsbuildinfo` before building and added `*.tsbuildinfo` to `.gitignore`.
 - **Home Assistant Web UI in new tab**:

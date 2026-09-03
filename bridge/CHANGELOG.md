@@ -2,7 +2,10 @@
 
 ## 2.0.1
 
-- **Fix Docker container startup**: remove obsolete committed `tsconfig.build.tsbuildinfo` artifact that caused TypeScript compiler to skip generating `apps/server/dist/main.js` during container build.
+- **Fix Docker container startup**:
+  - Approve `better-sqlite3` native build via `onlyBuiltDependencies` in `pnpm-workspace.yaml`.
+  - Add `build-essential` and `python3` to build stage and copy precompiled `node_modules` with native bindings directly into the runtime container.
+  - Remove obsolete committed `tsconfig.build.tsbuildinfo` artifact that caused TypeScript compiler to skip generating `apps/server/dist/main.js` during container build.
 - **Open Web UI in new tab**: replaced Home Assistant ingress with standard `webui` link (`http://[HOST]:[PORT:6767]`) to open the dashboard directly in a new browser tab instead of an iframe.
 - **Fix compiler warnings**: resolved integer signedness comparison and missing struct field initializers in the native engine.
 

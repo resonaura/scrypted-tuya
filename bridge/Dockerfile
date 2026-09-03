@@ -19,8 +19,11 @@ RUN mkdir -p build \
              .. \
     && make -j$(nproc)
 
-# Stage 2: Build Web Frontend & NestJS Backend
+# Stage 2: Build Web Frontend & NestJS Backend (includes better-sqlite3 native compilation)
 FROM node:22-bookworm-slim AS node-builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential python3 \
+    && rm -rf /var/lib/apt/lists/*
 RUN npm install -g pnpm@10.5.2
 WORKDIR /build
 
@@ -54,11 +57,17 @@ WORKDIR /app
 COPY --from=native-builder /src/build/tuya-streamer /app/bin/tuya-streamer
 RUN chmod +x /app/bin/tuya-streamer
 
-# Install production server dependencies (server only; web is static)
+# Copy workspace package manifests
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/server/package.json ./apps/server/
 COPY apps/web/package.json ./apps/web/
-RUN pnpm install --prod --filter @tuya-bridge/server
+
+# Copy pre-installed and pre-compiled node_modules from node-builder
+COPY --from=node-builder /build/node_modules ./node_modules
+COPY --from=node-builder /build/apps/server/node_modules ./apps/server/node_modules
+
+# Prune devDependencies to keep image lean
+RUN pnpm prune --prod
 
 # Copy built artefacts from builder
 COPY --from=node-builder /build/apps/server/dist ./apps/server/dist
