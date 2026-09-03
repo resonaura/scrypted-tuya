@@ -59,6 +59,7 @@ export function App() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
   const wsEverConnectedRef = useRef(false);
+  const hasAutoOpenedModalRef = useRef(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -69,6 +70,15 @@ export function App() {
     () => localStorage.setItem(ORDER_KEY, JSON.stringify(cameraOrder)),
     [cameraOrder],
   );
+
+  useEffect(() => {
+    if (authState !== null && !hasAutoOpenedModalRef.current) {
+      hasAutoOpenedModalRef.current = true;
+      if (!authState.loggedIn) {
+        setIsAddModalOpen(true);
+      }
+    }
+  }, [authState]);
 
   const loadAuth = useCallback(async () => {
     try {

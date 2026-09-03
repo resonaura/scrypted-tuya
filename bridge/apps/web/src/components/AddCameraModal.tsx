@@ -18,6 +18,7 @@ import {
   refreshCameras,
   startQrFlow,
 } from "../api/client.js";
+import { StyledQrCode } from "./StyledQrCode.js";
 import { Button, Tabs } from "./ui/index.js";
 
 interface AddCameraModalProps {
@@ -50,6 +51,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
   // QR Flow State
   const [qrToken, setQrToken] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [qrPayload, setQrPayload] = useState<string | null>(null);
   const [isQrLoading, setIsQrLoading] = useState(false);
   const pollIntervalRef = useRef<any>(null);
 
@@ -84,10 +86,12 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
     setIsQrLoading(true);
     setQrToken(null);
     setQrDataUrl(null);
+    setQrPayload(null);
     try {
       const res = await startQrFlow(selectedRegion);
       setQrToken(res.token);
       setQrDataUrl(res.qrDataUrl);
+      setQrPayload(res.qrPayload || `tuyaSmart--qrLogin?token=${res.token}`);
     } catch (e: any) {
       toast.error(`Failed to generate QR: ${e.message}`);
     } finally {
@@ -267,18 +271,18 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                 <Surface className="bg-transparent flex flex-col items-center justify-center p-4 rounded-2xl">
                   {isQrLoading ? (
                     <div className="h-44 flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                      <Spinner size="md" />
+                      <Spinner color="current" size="md" />
                     </div>
-                  ) : qrDataUrl ? (
+                  ) : qrPayload || qrToken || qrDataUrl ? (
                     <div className="flex flex-col items-center gap-2">
-                      <div className="bg-white p-2.5 rounded-2xl shadow-sm">
-                        <img
-                          src={qrDataUrl}
-                          alt="Tuya Login QR"
-                          className="size-40 object-contain"
-                        />
-                      </div>
-                      <p className="mt-2 opacity-50 text-[11px] text-muted-foreground text-center">
+                      <StyledQrCode
+                        data={
+                          qrPayload ||
+                          (qrToken ? `tuyaSmart--qrLogin?token=${qrToken}` : "")
+                        }
+                        size={190}
+                      />
+                      <p className="mt-1 opacity-70 text-[11px] text-muted-foreground text-center">
                         Scan with <strong>Tuya Smart</strong> or{" "}
                         <strong>Smart Life</strong> app
                       </p>

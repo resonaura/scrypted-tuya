@@ -20,6 +20,7 @@
     "framer-motion": "^12.4.7",
     "hls.js": "^1.5.20",
     "lucide-react": "^0.475.0",
+    "qr-code-styling": "^1.9.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-progressive-blur": "^1.0.6",
