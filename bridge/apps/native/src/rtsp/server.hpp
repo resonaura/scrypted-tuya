@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <string>
 #include <vector>
 #include <memory>
@@ -28,12 +29,19 @@ struct RTSPClientSession {
     // Client-specific normalized sequence and timestamp tracking (anchored to RTP-Info)
     uint16_t out_video_seq = 0;
     uint16_t out_audio_seq = 0;
-    bool video_ts_initialized = false;
-    uint32_t in_base_video_ts = 0;
-    static constexpr uint32_t out_base_video_ts = 0x10000000;
 
-    bool audio_ts_initialized = false;
-    uint32_t in_base_audio_ts = 0;
+    std::chrono::steady_clock::time_point play_start_time{};
+    bool play_started = false;
+
+    // Video frame grouping (all RTP packets of the same video frame share the same timestamp)
+    bool has_last_in_video_ts = false;
+    uint32_t last_in_video_ts = 0;
+    uint32_t current_frame_video_ts = 0x10000000;
+
+    // Audio timestamp tracking
+    uint32_t last_audio_out_ts = 0x20000000;
+
+    static constexpr uint32_t out_base_video_ts = 0x10000000;
     static constexpr uint32_t out_base_audio_ts = 0x20000000;
 };
 

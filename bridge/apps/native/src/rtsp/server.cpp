@@ -433,8 +433,11 @@ void RTSPServer::handle_rtsp_request(int client_fd, const std::string& req, RTSP
         session.wait_idr = true; // Wait for clean keyframe start so zero image artifacts
         session.out_video_seq = 0;
         session.out_audio_seq = 0;
-        session.video_ts_initialized = false;
-        session.audio_ts_initialized = false;
+        session.play_started = true;
+        session.play_start_time = std::chrono::steady_clock::now();
+        session.has_last_in_video_ts = false;
+        session.current_frame_video_ts = session.out_base_video_ts;
+        session.last_audio_out_ts = session.out_base_audio_ts;
         {
             std::lock_guard<std::mutex> lock(clients_mutex_);
             clients_[client_fd] = session;
@@ -514,23 +517,43 @@ void RTSPServer::send_client_rtp_packet(int fd, RTSPClientSession& session, bool
                      (static_cast<uint32_t>(data[6]) << 8)  |
                       static_cast<uint32_t>(data[7]);
 
+    const auto now = std::chrono::steady_clock::now();
+    if (!session.play_started) {
+        session.play_started = true;
+        session.play_start_time = now;
+    }
+
+    int64_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - session.play_start_time).count();
+    if (elapsed_ms < 0) elapsed_ms = 0;
+
     uint16_t out_seq = 0;
     uint32_t out_ts = 0;
 
     if (is_video) {
-        if (!session.video_ts_initialized) {
-            session.video_ts_initialized = true;
-            session.in_base_video_ts = in_ts;
-        }
-        out_ts = session.out_base_video_ts + (in_ts - session.in_base_video_ts);
         out_seq = session.out_video_seq++;
-    } else {
-        if (!session.audio_ts_initialized) {
-            session.audio_ts_initialized = true;
-            session.in_base_audio_ts = in_ts;
+
+        // All RTP packets belonging to the same video frame share the exact same timestamp (RFC 6184)
+        if (!session.has_last_in_video_ts || in_ts != session.last_in_video_ts) {
+            session.has_last_in_video_ts = true;
+            session.last_in_video_ts = in_ts;
+
+            uint32_t calc_ts = session.out_base_video_ts + static_cast<uint32_t>(elapsed_ms * 90);
+            if (calc_ts <= session.current_frame_video_ts) {
+                calc_ts = session.current_frame_video_ts + 1;
+            }
+            session.current_frame_video_ts = calc_ts;
         }
-        out_ts = session.out_base_audio_ts + (in_ts - session.in_base_audio_ts);
+        out_ts = session.current_frame_video_ts;
+    } else {
         out_seq = session.out_audio_seq++;
+
+        const uint32_t clock_rate_khz = audio_is_aac_ ? 16 : 8;
+        uint32_t calc_ts = session.out_base_audio_ts + static_cast<uint32_t>(elapsed_ms * clock_rate_khz);
+        if (calc_ts <= session.last_audio_out_ts) {
+            calc_ts = session.last_audio_out_ts + 1;
+        }
+        session.last_audio_out_ts = calc_ts;
+        out_ts = calc_ts;
     }
 
     uint8_t buf[2048];
