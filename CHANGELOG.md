@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.1
+
+- **Fix Docker container startup error (`Cannot find module '/app/apps/server/dist/main.js'`)**:
+  - Removed obsolete committed `tsconfig.build.tsbuildinfo` cache file that caused `tsc` to skip building server entrypoint `dist/main.js`.
+  - Added clean step to remove `.tsbuildinfo` before building and added `*.tsbuildinfo` to `.gitignore`.
+- **Home Assistant Web UI in new tab**:
+  - Replaced `ingress: true` with `webui: "http://[HOST]:[PORT:6767]"` in `config.yaml` so the dashboard opens cleanly in its own browser tab.
+- **Compiler warning cleanup**:
+  - Fixed integer signedness comparison in `AVIOReassembler`.
+  - Fixed missing struct field initializers in `IpcServer`.
+
 ## 2.0.0
 
 ### Scrypted Plugin

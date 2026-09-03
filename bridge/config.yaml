@@ -1,7 +1,7 @@
 name: "Tuya Camera Bridge"
 slug: "tuya_rtsp_bridge"
 description: "Full-stack Tuya & Smart Life camera P2P/WebRTC-to-RTSP bridge with live Web UI and Scrypted integration"
-version: "2.0.0"
+version: "2.0.1"
 arch:
   - aarch64
   - amd64
@@ -13,8 +13,7 @@ startup: services
 boot: auto
 host_network: true
 apparmor: true
-ingress: true
-ingress_port: 6767
+webui: "http://[HOST]:[PORT:6767]"
 map:
   - config:rw
   - share:rw
