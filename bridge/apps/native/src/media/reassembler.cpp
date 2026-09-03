@@ -70,7 +70,7 @@ void AVIOReassembler::feed_packet(uint8_t channel, uint16_t /*seq*/, const uint8
     buf.data.insert(buf.data.end(), data, data + data_len);
     buf.received_bytes += data_len;
 
-    if (buf.data.size() >= buf.total_size || frag_idx + 1 == buf.expected_frags) {
+    if (buf.data.size() >= buf.total_size || static_cast<uint32_t>(frag_idx + 1) == buf.expected_frags) {
         process_frame(is_video, buf.is_keyframe, buf.timestamp_ms, buf.codec_fourcc, buf.data.data(), buf.data.size());
         buf.data.clear();
         buf.received_bytes = 0;

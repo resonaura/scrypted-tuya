@@ -97,7 +97,7 @@ void IpcServer::handle_command(const std::string& line) {
     IpcCommandDto cmd_dto;
     auto ec = glz::read_json(cmd_dto, line);
     if (ec) {
-        send_event(to_json(EventError{.message = "JSON parse error: " + glz::format_error(ec, line)}));
+        send_event(to_json(EventError{.did = "", .message = "JSON parse error: " + glz::format_error(ec, line)}));
         return;
     }
 
@@ -127,7 +127,7 @@ void IpcServer::handle_command(const std::string& line) {
         }
 
         if (cfg.did.empty()) {
-            send_event(to_json(EventError{.message = "Missing did in start_session"}));
+            send_event(to_json(EventError{.did = "", .message = "Missing did in start_session"}));
             return;
         }
 
