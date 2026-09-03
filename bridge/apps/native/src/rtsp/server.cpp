@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <algorithm>
+#include <array>
 
 namespace tuya {
 
@@ -15,6 +16,98 @@ RTSPServer::RTSPServer(int port, const std::string& path, KeyframeCallback kf_cb
 
 RTSPServer::~RTSPServer() {
     stop();
+}
+
+void RTSPServer::set_snapshot_callback(std::function<void(const std::vector<uint8_t>&)> cb) {
+    std::lock_guard<std::mutex> lock(snap_mutex_);
+    snap_cb_ = std::move(cb);
+}
+
+std::vector<uint8_t> RTSPServer::get_latest_annexb() const {
+    std::lock_guard<std::mutex> lock(snap_mutex_);
+    return snapshot_annexb_;
+}
+
+static void append_annexb_unit(std::vector<uint8_t>& out, const uint8_t* unit, size_t len) {
+    static const uint8_t start_code[4] = {0x00, 0x00, 0x00, 0x01};
+    out.insert(out.end(), start_code, start_code + 4);
+    out.insert(out.end(), unit, unit + len);
+}
+
+void RTSPServer::rebuild_snapshot_annexb() {
+    // Concatenate VPS+SPS+PPS (single-NAL RTP payloads) + reassembled IDR (RFC 7798 FU).
+    std::vector<uint8_t> annexb;
+    annexb.reserve(256 * 1024);
+
+    auto append_single_nal = [&](const std::vector<uint8_t>& pkt) {
+        // pkt = [12B RTP header][2B NAL header + payload]
+        if (pkt.size() < 14) return;
+        append_annexb_unit(annexb, pkt.data() + 12, pkt.size() - 12);
+    };
+
+    {
+        std::lock_guard<std::mutex> lock(param_mutex_);
+        append_single_nal(vps_pkt_);
+        append_single_nal(sps_pkt_);
+        append_single_nal(pps_pkt_);
+    }
+
+    bool nal_open = false;  // an FU reassembly is in progress
+    {
+        std::lock_guard<std::mutex> lock(idr_cache_mutex_);
+        for (const auto& pkt : idr_cache_pkts_) {
+            if (pkt.size() < 14) continue;
+            uint8_t h0 = pkt[12];
+            uint8_t nal_type = (h0 >> 1) & 0x3F;
+
+            if (nal_type == 32 || nal_type == 33 || nal_type == 34) {
+                if (nal_open) { nal_open = false; }
+                append_single_nal(pkt);
+                continue;
+            }
+
+            if ((h0 & 0xFE) == 0x62) {
+                // Fragmentation Unit
+                if (pkt.size() < 15) continue;
+                uint8_t fu = pkt[14];
+                bool start = (fu & 0x80) != 0;
+                bool end = (fu & 0x40) != 0;
+                uint8_t real_nal = fu & 0x3F;
+
+                if (start) {
+                    // Write Annex-B start code + reconstruct 2-byte HEVC NAL header
+                    uint16_t nal_header =
+                        static_cast<uint16_t>((real_nal << 9) | (0 << 3) | 1);  // nuh_layer_id=0, tid=1
+                    static const uint8_t sc[4] = {0x00, 0x00, 0x00, 0x01};
+                    annexb.insert(annexb.end(), sc, sc + 4);
+                    annexb.push_back(static_cast<uint8_t>(nal_header >> 8));
+                    annexb.push_back(static_cast<uint8_t>(nal_header & 0xFF));
+                    nal_open = true;
+                }
+                if (pkt.size() > 15) {
+                    annexb.insert(annexb.end(), pkt.begin() + 15, pkt.end());
+                }
+                if (end) {
+                    nal_open = false;
+                }
+            } else {
+                // Single NAL (unfragmented) — treat as Annex-B unit directly
+                if (nal_open) nal_open = false;
+                const uint8_t* unit = pkt.data() + 12;
+                size_t unit_len = pkt.size() - 12;
+                // Unit may be [2B NAL header + payload]
+                append_annexb_unit(annexb, unit, unit_len);
+            }
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(snap_mutex_);
+        if (!annexb.empty())
+            snapshot_annexb_.swap(annexb);
+        if (snap_cb_ && !snapshot_annexb_.empty())
+            snap_cb_(snapshot_annexb_);
+    }
 }
 
 bool RTSPServer::start() {
@@ -47,20 +140,77 @@ bool RTSPServer::start() {
     return true;
 }
 
+bool RTSPServer::start_udp_ingest(int port) {
+    if (!running_ || udp_fd_ >= 0) return false;
+    udp_fd_ = socket(AF_INET, SOCK_DGRAM, 0);
+    if (udp_fd_ < 0) return false;
+
+    int opt = 1;
+    setsockopt(udp_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(port);
+    if (bind(udp_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+        close(udp_fd_);
+        udp_fd_ = -1;
+        return false;
+    }
+    udp_thread_ = std::thread(&RTSPServer::udp_ingest_loop, this);
+    return true;
+}
+
+void RTSPServer::udp_ingest_loop() {
+    std::array<uint8_t, 2048> packet{};
+    while (running_) {
+        const ssize_t len = recv(udp_fd_, packet.data(), packet.size(), 0);
+        if (len <= 0) {
+            if (running_) usleep(1000);
+            continue;
+        }
+        feed_raw_rtp(packet.data(), static_cast<size_t>(len), true);
+    }
+}
+
+void RTSPServer::notify_video_discontinuity() {
+    {
+        std::lock_guard<std::mutex> lock(clients_mutex_);
+        for (auto& entry : clients_) entry.second.wait_idr = true;
+    }
+    {
+        std::lock_guard<std::mutex> lock(idr_cache_mutex_);
+        current_idr_pkts_.clear();
+        collecting_idr_ = false;
+    }
+    if (kf_req_cb_) kf_req_cb_();
+}
+
 void RTSPServer::stop() {
     running_ = false;
     if (server_fd_ >= 0) {
+        shutdown(server_fd_, SHUT_RDWR);
         close(server_fd_);
         server_fd_ = -1;
     }
-    if (accept_thread_.joinable()) {
-        accept_thread_.join();
+    if (udp_fd_ >= 0) {
+        shutdown(udp_fd_, SHUT_RDWR);
+        close(udp_fd_);
+        udp_fd_ = -1;
     }
-
+    {
+        std::lock_guard<std::mutex> lock(clients_mutex_);
+        for (auto& [fd, session] : clients_) shutdown(fd, SHUT_RDWR);
+    }
+    if (accept_thread_.joinable()) accept_thread_.join();
+    if (udp_thread_.joinable()) udp_thread_.join();
+    {
+        std::lock_guard<std::mutex> lock(client_threads_mutex_);
+        for (auto& thread : client_threads_) {
+            if (thread.joinable()) thread.join();
+        }
+        client_threads_.clear();
+    }
     std::lock_guard<std::mutex> lock(clients_mutex_);
-    for (auto& [fd, session] : clients_) {
-        close(fd);
-    }
     clients_.clear();
 }
 
@@ -76,7 +226,8 @@ void RTSPServer::accept_loop() {
             continue;
         }
 
-        std::thread([this, client_fd]() { client_loop(client_fd); }).detach();
+        std::lock_guard<std::mutex> lock(client_threads_mutex_);
+        client_threads_.emplace_back([this, client_fd]() { client_loop(client_fd); });
     }
 }
 
@@ -178,10 +329,12 @@ void RTSPServer::handle_rtsp_request(int client_fd, const std::string& req, RTSP
             sdp << "a=rtpmap:96 H264/90000\r\n"
                 << "a=fmtp:96 packetization-mode=1;profile-level-id=42001f\r\n";
         }
-        sdp << "a=control:track0\r\n"
-            << "m=audio 0 RTP/AVP 0\r\n"
-            << "a=rtpmap:0 PCMU/8000\r\n"
-            << "a=control:track1\r\n";
+        sdp << "a=control:track0\r\n";
+        if (is_hevc_) {
+            sdp << "m=audio 0 RTP/AVP 0\r\n"
+                << "a=rtpmap:0 PCMU/8000\r\n"
+                << "a=control:track1\r\n";
+        }
 
         std::string sdp_str = sdp.str();
         resp << "RTSP/1.0 200 OK\r\n"
@@ -445,6 +598,70 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
     }
 
     // Video packet processing
+    if (!is_hevc_) {
+        const uint8_t nal_type = data[12] & 0x1F;
+        const bool is_fu = nal_type == 28 && len >= 14;
+        const uint8_t fu_type = is_fu ? (data[13] & 0x1F) : 0;
+        const bool fu_start = is_fu && (data[13] & 0x80);
+        const bool fu_end = is_fu && (data[13] & 0x40);
+        bool is_sps = nal_type == 7;
+        bool is_pps = nal_type == 8;
+        bool stap_has_idr = false;
+        if (nal_type == 24) {
+            size_t offset = 13;
+            while (offset + 2 <= len) {
+                const size_t nalu_len = (static_cast<size_t>(data[offset]) << 8) | data[offset + 1];
+                offset += 2;
+                if (nalu_len == 0 || offset + nalu_len > len) break;
+                const uint8_t stap_type = data[offset] & 0x1F;
+                is_sps = is_sps || stap_type == 7;
+                is_pps = is_pps || stap_type == 8;
+                stap_has_idr = stap_has_idr || stap_type == 5;
+                offset += nalu_len;
+            }
+        }
+        const bool is_idr_start = nal_type == 5 || stap_has_idr || (fu_start && fu_type == 5);
+        const bool is_idr_packet = nal_type == 5 || stap_has_idr || (is_fu && fu_type == 5);
+        const bool is_idr_end = nal_type == 5 || stap_has_idr || (fu_end && fu_type == 5);
+        const bool is_parameter_packet = is_sps || is_pps;
+
+        {
+            std::lock_guard<std::mutex> lock(param_mutex_);
+            if (is_sps) sps_pkt_.assign(data, data + len);
+            if (is_pps && !is_sps) pps_pkt_.assign(data, data + len);
+            if (is_sps && is_pps) pps_pkt_.clear();
+        }
+        if (is_idr_start) {
+            collecting_idr_ = true;
+            current_idr_pkts_.clear();
+            std::lock_guard<std::mutex> lock(param_mutex_);
+            if (!sps_pkt_.empty()) current_idr_pkts_.push_back(sps_pkt_);
+            if (!pps_pkt_.empty()) current_idr_pkts_.push_back(pps_pkt_);
+        }
+        if (collecting_idr_ && is_idr_packet) {
+            current_idr_pkts_.emplace_back(data, data + len);
+            if (is_idr_end) {
+                collecting_idr_ = false;
+                std::lock_guard<std::mutex> lock(idr_cache_mutex_);
+                idr_cache_pkts_ = current_idr_pkts_;
+            }
+        }
+
+        std::lock_guard<std::mutex> lock(clients_mutex_);
+        for (auto& [fd, session] : clients_) {
+            if (!session.is_playing) continue;
+            if (session.wait_idr) {
+                if (is_parameter_packet || is_idr_packet) {
+                    send_interleaved_packet(fd, session.video_rtp_channel, data, len);
+                    if (is_idr_end) session.wait_idr = false;
+                }
+                continue;
+            }
+            send_interleaved_packet(fd, session.video_rtp_channel, data, len);
+        }
+        return;
+    }
+
     uint8_t nal_type = (data[12] >> 1) & 0x3F;
     std::vector<uint8_t> rtp_out;
 
@@ -473,6 +690,10 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
         bool end_bit = (fu_header & 0x40) != 0;
         uint8_t real_nal = (nal_type == 30) ? 19 : 1;
 
+        // Tuya FU layout differs slightly from RFC 7798. The first fragment
+        // carries the original second HEVC NAL-header byte at data[14], while
+        // continuation fragments begin payload at data[14]. We synthesize that
+        // second header byte below, so it must be skipped only on FU start.
         size_t payload_offset = start_bit ? 15 : 14;
         if (len > payload_offset) {
             size_t payload_len = len - payload_offset;
@@ -505,6 +726,11 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
     bool is_idr_frag = (nal_type == 30);
     bool is_idr_start = is_idr_frag && ((data[13] & 0x80) != 0);
     bool is_idr_end = is_idr_frag && ((data[13] & 0x40) != 0);
+
+    if (!collecting_idr_ && (is_idr_start || is_idr_end)) {
+        // Either the IDR just finished (already cached) or we are mid-GOP; refresh snapshot
+        if (is_idr_end) rebuild_snapshot_annexb();
+    }
 
     std::lock_guard<std::mutex> lock(clients_mutex_);
     for (auto& [fd, session] : clients_) {

@@ -34,7 +34,9 @@ public:
     ~RTSPServer();
 
     bool start();
+    bool start_udp_ingest(int port);
     void stop();
+    void notify_video_discontinuity();
 
     void feed_frame(const MediaFrame& frame);
     void feed_raw_rtp(const uint8_t* data, size_t len, bool is_video);
@@ -42,22 +44,31 @@ public:
     int get_port() const { return port_; }
     const std::string& get_path() const { return path_; }
 
+    void set_snapshot_callback(std::function<void(const std::vector<uint8_t>&)> cb);
+    std::vector<uint8_t> get_latest_annexb() const;
+
 private:
     void accept_loop();
+    void udp_ingest_loop();
     void client_loop(int client_fd);
     void handle_rtsp_request(int client_fd, const std::string& req, RTSPClientSession& session);
 
     void send_interleaved_packet(int fd, uint8_t channel, const uint8_t* rtp_data, size_t len);
     void packetize_and_send_video(const uint8_t* nalu, size_t len, uint32_t ts_90k, bool is_key);
     void packetize_and_send_audio(const uint8_t* data, size_t len, uint32_t ts_samples);
+    void rebuild_snapshot_annexb();
 
     int port_;
     std::string path_;
     KeyframeCallback kf_req_cb_;
     bool is_hevc_ = true;
     int server_fd_ = -1;
+    int udp_fd_ = -1;
     std::atomic<bool> running_{false};
     std::thread accept_thread_;
+    std::thread udp_thread_;
+    std::mutex client_threads_mutex_;
+    std::vector<std::thread> client_threads_;
 
     std::mutex clients_mutex_;
     std::unordered_map<int, RTSPClientSession> clients_;
@@ -78,6 +89,11 @@ private:
     std::vector<std::vector<uint8_t>> idr_cache_pkts_;
     std::vector<std::vector<uint8_t>> current_idr_pkts_;
     bool collecting_idr_ = false;
+
+    // Last decodable keyframe in Annex-B (HEVC) form for snapshots
+    mutable std::mutex snap_mutex_;
+    std::vector<uint8_t> snapshot_annexb_;
+    std::function<void(const std::vector<uint8_t>&)> snap_cb_;
 
     // GOP caching
     std::mutex gop_mutex_;

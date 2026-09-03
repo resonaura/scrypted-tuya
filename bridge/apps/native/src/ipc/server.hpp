@@ -25,6 +25,7 @@ private:
     std::mutex sessions_mutex_;
     std::unordered_map<std::string, std::unique_ptr<StreamSession>> sessions_;
     std::unordered_map<std::string, std::unique_ptr<BrowserPeer>> viewers_;
+    std::unordered_map<std::string, std::shared_ptr<RTSPServer>> relays_;
 };
 
 }  // namespace tuya

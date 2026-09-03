@@ -6,6 +6,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 #include <rtc/rtc.hpp>
 
 namespace tuya {
@@ -14,7 +15,8 @@ class BrowserPeer {
 public:
     using EventCallback = std::function<void(const std::string&)>;
 
-    BrowserPeer(std::string viewer_id, std::string did, EventCallback event_cb);
+    BrowserPeer(std::string viewer_id, std::string did, EventCallback event_cb,
+                std::vector<rtc::IceServer> ice_servers = {});
     ~BrowserPeer();
 
     bool start(const std::string& remote_offer);
@@ -27,6 +29,7 @@ private:
     std::string viewer_id_;
     std::string did_;
     EventCallback event_cb_;
+    std::vector<rtc::IceServer> ice_servers_;
     std::shared_ptr<rtc::PeerConnection> pc_;
     std::shared_ptr<rtc::Track> video_track_;
     std::atomic<bool> running_{false};

@@ -119,4 +119,10 @@ void StreamSession::ptz(int action, int speed) {
         p2p_client_->ptz(action, speed);
 }
 
+std::vector<uint8_t> StreamSession::get_snapshot_annexb() const {
+    if (rtsp_server_)
+        return rtsp_server_->get_latest_annexb();
+    return {};
+}
+
 }  // namespace tuya

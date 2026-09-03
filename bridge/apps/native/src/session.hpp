@@ -40,6 +40,8 @@ public:
     void set_quality(int channel);
     void ptz(int action, int speed = 50);
 
+    std::vector<uint8_t> get_snapshot_annexb() const;
+
     const std::string& get_did() const { return config_.did; }
 
 private:

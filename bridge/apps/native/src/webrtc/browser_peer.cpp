@@ -12,8 +12,10 @@
 
 namespace tuya {
 
-BrowserPeer::BrowserPeer(std::string viewer_id, std::string did, EventCallback event_cb)
-    : viewer_id_(std::move(viewer_id)), did_(std::move(did)), event_cb_(std::move(event_cb)) {
+BrowserPeer::BrowserPeer(std::string viewer_id, std::string did, EventCallback event_cb,
+                         std::vector<rtc::IceServer> ice_servers)
+    : viewer_id_(std::move(viewer_id)), did_(std::move(did)), event_cb_(std::move(event_cb)),
+      ice_servers_(std::move(ice_servers)) {
     const auto seed = std::hash<std::string>{}(viewer_id_);
     ssrc_ = static_cast<uint32_t>((seed & 0x7fffffffU) | 0x10000000U);
 }
@@ -52,7 +54,10 @@ bool BrowserPeer::start(const std::string& remote_offer) {
 
     rtc::Configuration config;
     config.bindAddress = "0.0.0.0";
-    config.disableAutoNegotiation = true;
+    config.disableAutoNegotiation = false;
+    for (const auto& ice : ice_servers_) {
+        config.iceServers.push_back(ice);
+    }
     pc_ = std::make_shared<rtc::PeerConnection>(config);
 
     pc_->onStateChange([this](rtc::PeerConnection::State state) {
@@ -77,15 +82,16 @@ bool BrowserPeer::start(const std::string& remote_offer) {
         }));
     });
 
-    rtc::Description::Video video("video", rtc::Description::Direction::SendOnly);
-    video.addH264Codec(96, "packetization-mode=1;profile-level-id=42e01f;level-asymmetry-allowed=1");
-    video.addSSRC(ssrc_, "tuya-browser-video");
-    video_track_ = pc_->addTrack(video);
-
     running_ = true;
     receiver_thread_ = std::thread(&BrowserPeer::receive_loop, this);
     try {
         pc_->setRemoteDescription(rtc::Description(remote_offer, "offer"));
+
+        rtc::Description::Video video("0", rtc::Description::Direction::SendOnly);
+        video.addH264Codec(96, "packetization-mode=1;profile-level-id=42e01f;level-asymmetry-allowed=1");
+        video.addSSRC(ssrc_, "tuya-browser-video");
+        video_track_ = pc_->addTrack(video);
+
         pc_->setLocalDescription();
     } catch (const std::exception& e) {
         running_ = false;

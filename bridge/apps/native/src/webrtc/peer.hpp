@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <rtc/rtc.hpp>
 #include "media/reassembler.hpp"
@@ -49,6 +50,9 @@ private:
     void send_data_channel_msg(const std::string& type, const std::string& msg = "");
     void keyframe_loop();
     void handle_video_packet(const rtc::binary& packet);
+    void handle_audio_packet(const rtc::binary& packet);
+    void handle_rtp_packet(const rtc::binary& packet, bool is_video);
+    bool flush_reordered_packets(bool is_video, std::vector<std::vector<uint8_t>>& ready);
 
     WebRTCConfig config_;
     std::shared_ptr<RTSPServer> rtsp_server_;
@@ -65,6 +69,15 @@ private:
     std::atomic<int64_t> last_video_packet_ms_{0};
     std::thread keyframe_thread_;
     std::mutex mutex_;
+
+    struct RtpReorderState {
+        bool initialized = false;
+        uint16_t expected_seq = 0;
+        std::map<uint16_t, std::vector<uint8_t>> pending;
+    };
+    std::mutex reorder_mutex_;
+    RtpReorderState video_reorder_;
+    RtpReorderState audio_reorder_;
 };
 
 }  // namespace tuya

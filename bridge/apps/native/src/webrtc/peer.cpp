@@ -80,9 +80,77 @@ void WebRTCPeer::handle_video_packet(const rtc::binary& packet) {
         std::chrono::steady_clock::now().time_since_epoch()).count();
     last_video_packet_ms_ = now;
     unhealthy_sent_ = false;
-    if (rtsp_server_) {
-        rtsp_server_->feed_raw_rtp(reinterpret_cast<const uint8_t*>(packet.data()), packet.size(), true);
+    handle_rtp_packet(packet, true);
+}
+
+void WebRTCPeer::handle_audio_packet(const rtc::binary& packet) {
+    if (packet.empty()) return;
+    handle_rtp_packet(packet, false);
+}
+
+void WebRTCPeer::handle_rtp_packet(const rtc::binary& packet, bool is_video) {
+    if (packet.size() < 12 || !rtsp_server_) return;
+
+    const auto* bytes = reinterpret_cast<const uint8_t*>(packet.data());
+    const uint16_t seq = static_cast<uint16_t>((bytes[2] << 8) | bytes[3]);
+    std::vector<std::vector<uint8_t>> ready;
+
+    bool discontinuity = false;
+    {
+        std::lock_guard<std::mutex> lock(reorder_mutex_);
+        auto& state = is_video ? video_reorder_ : audio_reorder_;
+        if (!state.initialized) {
+            state.initialized = true;
+            state.expected_seq = seq;
+        }
+
+        const int16_t distance = static_cast<int16_t>(seq - state.expected_seq);
+        if (distance < 0) return;
+
+        state.pending.try_emplace(seq, bytes, bytes + packet.size());
+        discontinuity = flush_reordered_packets(is_video, ready);
     }
+
+    if (is_video && discontinuity) rtsp_server_->notify_video_discontinuity();
+    for (const auto& ordered : ready) {
+        rtsp_server_->feed_raw_rtp(ordered.data(), ordered.size(), is_video);
+    }
+}
+
+bool WebRTCPeer::flush_reordered_packets(bool is_video, std::vector<std::vector<uint8_t>>& ready) {
+    bool discontinuity = false;
+    auto& state = is_video ? video_reorder_ : audio_reorder_;
+    while (true) {
+        auto it = state.pending.find(state.expected_seq);
+        if (it == state.pending.end()) break;
+        ready.push_back(std::move(it->second));
+        state.pending.erase(it);
+        state.expected_seq = static_cast<uint16_t>(state.expected_seq + 1);
+    }
+
+    // Absorb short out-of-order bursts from Tuya/SRTP without allowing a
+    // genuinely lost packet to stall the stream forever.
+    if (state.pending.size() >= 8) {
+        uint16_t nearest = state.pending.begin()->first;
+        uint16_t nearest_distance = static_cast<uint16_t>(nearest - state.expected_seq);
+        for (const auto& entry : state.pending) {
+            const uint16_t candidate_distance = static_cast<uint16_t>(entry.first - state.expected_seq);
+            if (candidate_distance < nearest_distance) {
+                nearest = entry.first;
+                nearest_distance = candidate_distance;
+            }
+        }
+        discontinuity = nearest_distance > 0;
+        state.expected_seq = nearest;
+        while (true) {
+            auto it = state.pending.find(state.expected_seq);
+            if (it == state.pending.end()) break;
+            ready.push_back(std::move(it->second));
+            state.pending.erase(it);
+            state.expected_seq = static_cast<uint16_t>(state.expected_seq + 1);
+        }
+    }
+    return discontinuity;
 }
 
 void WebRTCPeer::setup_peer_connection() {
@@ -164,9 +232,7 @@ void WebRTCPeer::setup_peer_connection() {
             track->onMessage([this](rtc::message_variant msg) {
                 if (std::holds_alternative<rtc::binary>(msg)) {
                     const auto& bin = std::get<rtc::binary>(msg);
-                    if (rtsp_server_ && !bin.empty()) {
-                        rtsp_server_->feed_raw_rtp(reinterpret_cast<const uint8_t*>(bin.data()), bin.size(), false);
-                    }
+                    handle_audio_packet(bin);
                 }
             });
         }
@@ -190,9 +256,7 @@ void WebRTCPeer::setup_tracks() {
     audio_track_->onMessage([this](rtc::message_variant msg) {
         if (std::holds_alternative<rtc::binary>(msg)) {
             const auto& bin = std::get<rtc::binary>(msg);
-            if (rtsp_server_ && !bin.empty()) {
-                rtsp_server_->feed_raw_rtp(reinterpret_cast<const uint8_t*>(bin.data()), bin.size(), false);
-            }
+            handle_audio_packet(bin);
         }
     });
 

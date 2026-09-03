@@ -46,6 +46,11 @@ export class NativeMediaEngine extends EventEmitter {
     return this.isReady;
   }
 
+  private pendingSnapshots: Map<
+    string,
+    { resolve: (b64: string) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
+  > = new Map();
+
   public start(): boolean {
     if (this.process) return true;
 
@@ -74,6 +79,12 @@ export class NativeMediaEngine extends EventEmitter {
           if (process.env.LOG_LEVEL === "debug") {
             console.debug(`[NativeEngine] ${line}`);
           }
+        }
+      });
+
+      this.process.stdin?.on("error", (err: NodeJS.ErrnoException) => {
+        if (err.code !== "EPIPE" && err.code !== "ERR_STREAM_DESTROYED") {
+          console.error(`❌ [NativeEngine] stdin error:`, err);
         }
       });
 
@@ -144,15 +155,38 @@ export class NativeMediaEngine extends EventEmitter {
       this.emit("viewer_offer", msg.viewer_id, msg.did, msg.sdp, msg.rtp_port);
     } else if (msg.event === "viewer_state") {
       this.emit("viewer_state", msg.viewer_id, msg.did, msg.state);
+    } else if (msg.event === "snapshot") {
+      const pending = this.pendingSnapshots.get(msg.did);
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.pendingSnapshots.delete(msg.did);
+        pending.resolve(typeof msg.data_base64 === "string" ? msg.data_base64 : "");
+      }
+    } else if (msg.event === "error") {
+      const pending = this.pendingSnapshots.get(msg.did);
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.pendingSnapshots.delete(msg.did);
+        pending.reject(new Error(String(msg.message ?? "native error")));
+      }
     } else {
       this.emit(msg.event || "message", msg);
     }
   }
 
   public sendLine(line: string | object): void {
-    if (!this.process || !this.process.stdin) return;
+    const stdin = this.process?.stdin;
+    if (!stdin || stdin.destroyed || stdin.writableEnded) return;
     const str = typeof line === "string" ? line : JSON.stringify(line);
-    this.process.stdin.write(str + "\n");
+    try {
+      stdin.write(str + "\n", (err) => {
+        if (err && (err as NodeJS.ErrnoException).code !== "EPIPE") {
+          console.error(`❌ [NativeEngine] command write failed:`, err);
+        }
+      });
+    } catch (err: any) {
+      if (err?.code !== "EPIPE" && err?.code !== "ERR_STREAM_DESTROYED") throw err;
+    }
   }
 
   public startP2P(config: NativeSessionConfig): void {
@@ -211,6 +245,27 @@ export class NativeMediaEngine extends EventEmitter {
     }
   }
 
+  public getSnapshot(did: string, timeoutMs = 4000): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const existing = this.pendingSnapshots.get(did);
+      if (existing) clearTimeout(existing.timer);
+      const timer = setTimeout(() => {
+        this.pendingSnapshots.delete(did);
+        reject(new Error("snapshot request timed out"));
+      }, timeoutMs);
+      this.pendingSnapshots.set(did, { resolve, reject, timer });
+      this.sendLine({ cmd: "get_snapshot", did });
+    });
+  }
+
+  public startH264Relay(did: string, rtspPort: number, rtspPath: string, rtpPort: number): void {
+    this.sendLine({ cmd: "start_relay", did, rtsp_port: rtspPort, rtsp_path: rtspPath, rtp_port: rtpPort });
+  }
+
+  public stopH264Relay(did: string): void {
+    this.sendLine({ cmd: "stop_relay", did });
+  }
+
   public startViewer(viewerId: string, did: string, sdp: string): void {
     this.sendLine({ cmd: "start_viewer", viewer_id: viewerId, did, sdp });
   }
@@ -225,13 +280,21 @@ export class NativeMediaEngine extends EventEmitter {
       this.rl = null;
     }
     if (this.process) {
-      try {
-        this.sendLine(JSON.stringify({ cmd: "exit" }));
-        this.process.stdin?.end();
-        this.process.kill("SIGTERM");
-      } catch {}
+      const proc = this.process;
       this.process = null;
       this.isReady = false;
+      try {
+        const stdin = proc.stdin;
+        if (stdin && !stdin.destroyed && !stdin.writableEnded) {
+          stdin.end(`${JSON.stringify({ cmd: "exit" })}\n`);
+        }
+        const killTimer = setTimeout(() => {
+          try { proc.kill("SIGTERM"); } catch {}
+        }, 750);
+        killTimer.unref();
+      } catch {
+        try { proc.kill("SIGTERM"); } catch {}
+      }
     }
   }
 }

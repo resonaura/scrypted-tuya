@@ -6,6 +6,35 @@
 
 namespace tuya {
 
+static std::string base64_encode(const uint8_t* data, size_t len) {
+    static const char* tbl = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    out.reserve(((len + 2) / 3) * 4);
+    size_t i = 0;
+    while (i + 2 < len) {
+        uint32_t n = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
+        out.push_back(tbl[(n >> 18) & 0x3F]);
+        out.push_back(tbl[(n >> 12) & 0x3F]);
+        out.push_back(tbl[(n >> 6) & 0x3F]);
+        out.push_back(tbl[n & 0x3F]);
+        i += 3;
+    }
+    if (i + 1 == len) {
+        uint32_t n = data[i] << 16;
+        out.push_back(tbl[(n >> 18) & 0x3F]);
+        out.push_back(tbl[(n >> 12) & 0x3F]);
+        out.push_back('=');
+        out.push_back('=');
+    } else if (i + 2 == len) {
+        uint32_t n = (data[i] << 16) | (data[i + 1] << 8);
+        out.push_back(tbl[(n >> 18) & 0x3F]);
+        out.push_back(tbl[(n >> 12) & 0x3F]);
+        out.push_back(tbl[(n >> 6) & 0x3F]);
+        out.push_back('=');
+    }
+    return out;
+}
+
 struct IceServerDto {
     std::string url;
     std::string username;
@@ -22,6 +51,7 @@ struct IpcCommandDto {
     std::string camera_ip;
     int camera_port = 0;
     int rtsp_port = 8554;
+    int rtp_port = 0;
     std::string rtsp_path;
     int p2p_quality_channel = 0;
     std::vector<IceServerDto> ice_servers;
@@ -42,6 +72,7 @@ IpcServer::~IpcServer() {
     running_ = false;
     std::lock_guard<std::mutex> lock(sessions_mutex_);
     viewers_.clear();
+    relays_.clear();
     sessions_.clear();
 }
 
@@ -118,6 +149,23 @@ void IpcServer::handle_command(const std::string& line) {
         } else {
             send_event(to_json(EventError{.did = cfg.did, .message = "Failed to start session"}));
         }
+    } else if (cmd == "start_relay") {
+        if (cmd_dto.did.empty() || cmd_dto.rtsp_port <= 0 || cmd_dto.rtp_port <= 0) {
+            send_event(to_json(EventError{.did = cmd_dto.did, .message = "Invalid relay configuration"}));
+            return;
+        }
+        std::lock_guard<std::mutex> lock(sessions_mutex_);
+        relays_.erase(cmd_dto.did);
+        auto relay = std::make_shared<RTSPServer>(cmd_dto.rtsp_port, cmd_dto.rtsp_path, nullptr, false);
+        if (!relay->start() || !relay->start_udp_ingest(cmd_dto.rtp_port)) {
+            relay->stop();
+            send_event(to_json(EventError{.did = cmd_dto.did, .message = "Failed to start H264 relay"}));
+            return;
+        }
+        relays_[cmd_dto.did] = std::move(relay);
+    } else if (cmd == "stop_relay") {
+        std::lock_guard<std::mutex> lock(sessions_mutex_);
+        relays_.erase(cmd_dto.did);
     } else if (cmd == "start_viewer") {
         if (cmd_dto.viewer_id.empty() || cmd_dto.did.empty() || cmd_dto.sdp.empty()) {
             send_event(to_json(EventError{.did = cmd_dto.did, .message = "Missing viewer_id, did, or browser offer"}));
@@ -125,10 +173,20 @@ void IpcServer::handle_command(const std::string& line) {
         }
         std::lock_guard<std::mutex> lock(sessions_mutex_);
         viewers_.erase(cmd_dto.viewer_id);
+        std::vector<rtc::IceServer> ice_servers;
+        for (const auto& ice : cmd_dto.ice_servers) {
+            rtc::IceServer srv(ice.url);
+            if (!ice.username.empty()) {
+                srv.username = ice.username;
+                srv.password = ice.password;
+            }
+            ice_servers.push_back(srv);
+        }
         auto viewer = std::make_unique<BrowserPeer>(
             cmd_dto.viewer_id,
             cmd_dto.did,
-            [this](const std::string& evt) { send_event(evt); });
+            [this](const std::string& evt) { send_event(evt); },
+            ice_servers);
         if (!viewer->start(cmd_dto.sdp)) {
             send_event(to_json(EventError{.did = cmd_dto.did, .message = "Failed to start browser WebRTC viewer"}));
             return;
@@ -188,6 +246,20 @@ void IpcServer::handle_command(const std::string& line) {
         std::lock_guard<std::mutex> lock(sessions_mutex_);
         sessions_.erase(cmd_dto.did);
         send_event(to_json(EventSessionStopped{.did = cmd_dto.did}));
+    } else if (cmd == "get_snapshot") {
+        std::lock_guard<std::mutex> lock(sessions_mutex_);
+        auto it = sessions_.find(cmd_dto.did);
+        if (it != sessions_.end()) {
+            auto annexb = it->second->get_snapshot_annexb();
+            if (!annexb.empty()) {
+                std::string b64 = base64_encode(annexb.data(), annexb.size());
+                send_event(to_json(EventSnapshot{.did = cmd_dto.did, .data_base64 = b64}));
+            } else {
+                send_event(to_json(EventError{.did = cmd_dto.did, .message = "snapshot annexb not ready"}));
+            }
+        } else {
+            send_event(to_json(EventError{.did = cmd_dto.did, .message = "no active session"}));
+        }
     } else if (cmd == "exit") {
         running_ = false;
     }

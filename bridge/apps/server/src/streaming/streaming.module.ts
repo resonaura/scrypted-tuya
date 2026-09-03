@@ -8,6 +8,6 @@ import { BrowserWebRtcController } from "./browser-webrtc.controller.js";
 @Module({
   providers: [StreamingService, TranscoderService, BrowserWebRtcService],
   controllers: [StreamingController, BrowserWebRtcController],
-  exports: [StreamingService, TranscoderService],
+  exports: [StreamingService, TranscoderService, BrowserWebRtcService],
 })
 export class StreamingModule {}

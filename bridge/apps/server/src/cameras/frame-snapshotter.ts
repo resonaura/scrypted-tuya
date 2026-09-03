@@ -10,6 +10,7 @@ export interface FrameSnapshotterOptions {
   dataDir: string;
   intervalMs?: number;
   maxConsecutiveFailures?: number;
+  getSnapshot?: (did: string, timeoutMs?: number) => Promise<string>;
 }
 
 export class FrameSnapshotter extends EventEmitter {
@@ -28,6 +29,7 @@ export class FrameSnapshotter extends EventEmitter {
   public readonly dataDir: string;
   public readonly intervalMs: number;
   public readonly maxConsecutiveFailures: number;
+  private readonly getSnapshot?: (did: string, timeoutMs?: number) => Promise<string>;
 
   constructor(options: FrameSnapshotterOptions) {
     super();
@@ -37,6 +39,7 @@ export class FrameSnapshotter extends EventEmitter {
     this.dataDir = options.dataDir;
     this.intervalMs = options.intervalMs ?? 6000;
     this.maxConsecutiveFailures = options.maxConsecutiveFailures ?? 3;
+    this.getSnapshot = options.getSnapshot;
 
     const framesDir = path.join(this.dataDir, "frames");
     if (!fs.existsSync(framesDir)) {
@@ -100,6 +103,17 @@ export class FrameSnapshotter extends EventEmitter {
   public async grabOnce(): Promise<boolean> {
     if (this.stopped || this.inFlight) return false;
     this.inFlight = true;
+
+    if (this.getSnapshot) {
+      const ok = await this.grabFromKeyframe();
+      if (ok) {
+        this.inFlight = false;
+        this.consecutiveFailures = 0;
+        return true;
+      }
+      // Fall back to the live RTSP stream. A missing cached IDR must not mark
+      // the camera unhealthy or restart an otherwise working media session.
+    }
 
     return new Promise((resolve) => {
       const tempPath = `${this.currentPath}.${Date.now()}.tmp.jpg`;
@@ -189,6 +203,87 @@ export class FrameSnapshotter extends EventEmitter {
         this.inFlight = false;
         try { fs.unlinkSync(tempPath); } catch {}
         this.handleFailure();
+        resolve(false);
+      });
+    });
+  }
+
+  private async grabFromKeyframe(): Promise<boolean> {
+    try {
+      const b64 = await this.getSnapshot!(this.did, 4000);
+      if (!b64) return false;
+      const annexb = Buffer.from(b64, "base64");
+      if (annexb.length < 64) return false;
+
+      const tmpDir = this.currentPath.replace(/\.jpg$/, "");
+      fs.mkdirSync(tmpDir, { recursive: true });
+      const h265Path = path.join(tmpDir, `${Date.now()}.h265`);
+      const jpgPath = h265Path.replace(/\.h265$/, ".jpg");
+      fs.writeFileSync(h265Path, annexb);
+
+      const ok = await this.decodeH265ToJpeg(h265Path, jpgPath);
+      try { fs.unlinkSync(h265Path); } catch {}
+
+      if (!ok || !fs.existsSync(jpgPath)) {
+        try { fs.unlinkSync(jpgPath); } catch {}
+        return false;
+      }
+
+      try {
+        const buf = fs.readFileSync(jpgPath);
+        if (buf.length < 1000) {
+          try { fs.unlinkSync(jpgPath); } catch {}
+          return false;
+        }
+        // Atomically replace the served snapshot file
+        const swapPath = `${this.currentPath}.${Date.now()}.swap.jpg`;
+        fs.writeFileSync(swapPath, buf);
+        fs.renameSync(swapPath, this.currentPath);
+        this.lastBuffer = buf;
+        this.emit("frame", { slug: this.slug, did: this.did, buffer: buf });
+        return true;
+      } finally {
+        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  private decodeH265ToJpeg(h265Path: string, jpgPath: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const args = [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        h265Path,
+        "-an",
+        "-vf",
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
+        "-frames:v",
+        "1",
+        "-q:v",
+        "3",
+        "-y",
+        jpgPath,
+      ];
+      let proc: ChildProcess;
+      try {
+        proc = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
+      } catch {
+        resolve(false);
+        return;
+      }
+      const killTimer = setTimeout(() => {
+        try { proc.kill("SIGKILL"); } catch {}
+      }, 8000);
+      proc.on("exit", (code) => {
+        clearTimeout(killTimer);
+        resolve(code === 0);
+      });
+      proc.on("error", () => {
+        clearTimeout(killTimer);
         resolve(false);
       });
     });

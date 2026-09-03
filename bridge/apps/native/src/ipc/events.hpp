@@ -101,6 +101,12 @@ struct EventError {
     std::string message;
 };
 
+struct EventSnapshot {
+    std::string event = "snapshot";
+    std::string did;
+    std::string data_base64;
+};
+
 template<typename T>
 std::string to_json(const T& val) {
     std::string out;

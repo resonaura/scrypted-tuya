@@ -351,6 +351,7 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
       dataDir: getDataDir(),
       intervalMs: 10_000,
       maxConsecutiveFailures: 3,
+      getSnapshot: (did, timeoutMs) => this.engine.getSnapshot(did, timeoutMs),
     });
     snapshotter.on("frame", ({ buffer }: { buffer: Buffer }) => {
       OfflineCardManager.getInstance().setOnline(slug);
@@ -360,23 +361,14 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
       if (buffer.length > 0) this.logger.debug(`Snapshot refreshed for ${cam.name}`);
     });
     snapshotter.on("failure", ({ count, max }: { count: number; max: number }) => {
-      OfflineCardManager.getInstance().setOffline({
-        slug,
-        deviceName: cam.name,
-        deviceId: cam.did,
-        reason: `Snapshot unavailable · retry ${count}/${max}`,
-      });
+      this.logger.debug(`Snapshot unavailable for ${cam.name}, retry ${count}/${max}`);
+      if (count >= max) this.engine.requestKeyframe(cam.did);
     });
     snapshotter.on("unhealthy", () => {
-      if (this.snapshotters.get(cam.did) !== snapshotter) return;
-      this.stopSnapshotter(cam.did);
-      OfflineCardManager.getInstance().setOffline({
-        slug,
-        deviceName: cam.name,
-        deviceId: cam.did,
-        reason: "Snapshot unavailable · Reconnecting stream",
-      });
-      this.scheduleStreamRecovery(cam, 250);
+      // Snapshot generation is downstream of the live stream. Keep serving
+      // the last good frame and let the next interval retry without tearing
+      // down the camera's WebRTC session.
+      this.engine.requestKeyframe(cam.did);
     });
     this.snapshotters.set(cam.did, snapshotter);
     snapshotter.start();
