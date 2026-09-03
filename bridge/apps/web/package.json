@@ -13,6 +13,8 @@
   "dependencies": {
     "@heroui/react": "^3.2.4",
     "@heroui/styles": "3.2.4",
+    "@iconify-icon/react": "^3.0.3",
+    "@iconify-json/material-symbols": "^1.2.90",
     "@tailwindcss/vite": "^4",
     "clsx": "^2.1.1",
     "framer-motion": "^12.4.7",
@@ -20,6 +22,8 @@
     "lucide-react": "^0.475.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-progressive-blur": "^1.0.6",
+    "sass": "^1.103.1",
     "sonner": "^2.0.1",
     "tailwind-merge": "^3.0.2",
     "tailwindcss": "^4"

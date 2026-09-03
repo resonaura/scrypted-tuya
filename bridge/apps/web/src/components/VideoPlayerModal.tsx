@@ -1,20 +1,20 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Button, Chip, Modal, Surface } from "@heroui/react";
-import { Check, Copy, Maximize, Play, RefreshCw, Video, Volume2, VolumeX } from "lucide-react";
+import { Modal } from "@heroui/react";
+import { RefreshCw } from "lucide-react";
 import type { Camera } from "../types/index.js";
 import { createWebRtcViewer, stopWebRtcViewer } from "../api/client.js";
-import { copyText, getCameraUrls } from "../utils.js";
-import { toast } from "sonner";
+import { getCameraUrls } from "../utils.js";
+import { VideoPlayer } from "./VideoPlayer.js";
 
 export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClose: () => void }> = ({ camera, isOpen, onClose }) => {
   const [viewerKey, setViewerKey] = useState(0);
   const [status, setStatus] = useState<"connecting" | "live" | "error">("connecting");
   const [snapshotKey, setSnapshotKey] = useState(Date.now());
-  const [copied, setCopied] = useState<"rtsp" | "snapshot" | null>(null);
   const [isMuted, setIsMuted] = useState(true);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [volume, setVolume] = useState(1);
+  const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const { rtsp, snapshot } = getCameraUrls(camera);
+  const { snapshot } = getCameraUrls(camera);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -43,20 +43,14 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
         if (h264.length && "setCodecPreferences" in transceiver) transceiver.setCodecPreferences(h264);
         peer.ontrack = (event) => {
           if (event.track.kind === "video") {
-            if (!videoRef.current) return;
             const stream = new MediaStream([event.track]);
-            videoRef.current.srcObject = stream;
-            void videoRef.current.play().catch(() => {
-              if (videoRef.current) {
-                videoRef.current.muted = true;
-                setIsMuted(true);
-                void videoRef.current.play().catch(() => {});
-              }
-            });
+            setVideoStream(stream);
           } else if (event.track.kind === "audio") {
             if (audioRef.current) {
               const stream = new MediaStream([event.track]);
               audioRef.current.srcObject = stream;
+              audioRef.current.muted = isMuted;
+              audioRef.current.volume = volume;
               void audioRef.current.play().catch(() => {});
             }
           }
@@ -80,8 +74,8 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
         sessionId = created.sessionId;
         await peer.setRemoteDescription(created.answer);
         mediaTimer = window.setTimeout(() => {
-          if (disposed || !videoRef.current) return;
-          if (peer?.connectionState === "connected" || videoRef.current.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA || videoRef.current.currentTime > 0) {
+          if (disposed) return;
+          if (peer?.connectionState === "connected") {
             setStatus("live");
             return;
           }
@@ -98,7 +92,7 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
       disposed = true;
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
       if (mediaTimer) window.clearTimeout(mediaTimer);
-      if (videoRef.current) videoRef.current.srcObject = null;
+      setVideoStream(null);
       if (audioRef.current) audioRef.current.srcObject = null;
       peer?.close();
       if (sessionId) void stopWebRtcViewer(camera.did, sessionId);
@@ -111,55 +105,57 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
     return () => window.clearInterval(timer);
   }, [status]);
 
-  const copy = async (kind: "rtsp" | "snapshot", value: string) => {
-    try { await copyText(value); setCopied(kind); toast.success(kind === "snapshot" ? "Snapshot URL copied" : "RTSP URL copied"); window.setTimeout(() => setCopied(null), 1500); }
-    catch { toast.error("Could not copy the URL"); }
-  };
-
-  return <Modal.Backdrop isOpen={isOpen} onOpenChange={(open) => !open && onClose()} variant="blur">
-    <Modal.Container placement="center" size="lg"><Modal.Dialog className="sm:max-w-4xl"><Modal.CloseTrigger />
-      <Modal.Header><Modal.Icon className="bg-primary/10 text-primary"><Video className="size-5" /></Modal.Icon><div><div className="flex items-center gap-2"><Modal.Heading>{camera.name}</Modal.Heading><Chip size="sm" variant="soft" color={status === "live" ? "success" : status === "error" ? "danger" : "warning"}>{status === "live" ? "WebRTC live" : status === "error" ? "Recovering" : "Connecting"}</Chip></div><p className="font-mono text-[11px] text-muted-foreground">{camera.did}</p></div></Modal.Header>
-      <Modal.Body className="space-y-4 p-4">
-        <div className="relative aspect-video overflow-hidden rounded-2xl bg-zinc-950 shadow-inner">
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            controls
-            muted={isMuted}
-            onPlaying={() => setStatus("live")}
-            onLoadedData={() => setStatus("live")}
-            onTimeUpdate={() => {
-              if (videoRef.current && videoRef.current.currentTime > 0) {
-                setStatus("live");
-              }
+  return (
+    <Modal.Backdrop isOpen={isOpen} onOpenChange={(open) => !open && onClose()} variant="blur">
+      <Modal.Container placement="center" size="lg">
+        <Modal.Dialog className="relative sm:max-w-5xl overflow-hidden p-0 border-0 bg-transparent shadow-none">
+          <Modal.CloseTrigger className="absolute right-3 top-3 z-30 size-9 rounded-full bg-black/60 text-white shadow-lg backdrop-blur-md hover:bg-black/80 transition-colors" />
+          <div
+            className="relative aspect-video w-full overflow-hidden rounded-2xl bg-zinc-950 shadow-2xl [clip-path:inset(0_round_1rem)] [-webkit-mask-image:-webkit-radial-gradient(white,black)] [mask-image:radial-gradient(white,black)]"
+            style={{
+              WebkitMaskImage: "-webkit-radial-gradient(white, black)",
+              maskImage: "radial-gradient(white, black)",
+              clipPath: "inset(0 round 1rem)",
+              WebkitClipPath: "inset(0 round 1rem)",
             }}
-            onError={() => setStatus("error")}
-            className={`h-full w-full object-contain transition-opacity ${status === "live" ? "opacity-100" : "opacity-0"}`}
-          />
-          <audio ref={audioRef} autoPlay muted={isMuted} />
-          {status !== "live" && <img src={`${snapshot}?t=${snapshotKey}`} alt={`Snapshot from ${camera.name}`} className="absolute inset-0 h-full w-full object-contain opacity-60 blur-[1px]" />}
-          {status !== "live" && <div className="absolute inset-0 grid place-items-center bg-black/30"><div className="rounded-2xl bg-black/55 px-5 py-4 text-center text-white backdrop-blur-md"><RefreshCw className={`mx-auto mb-2 size-5 ${status === "connecting" ? "animate-spin" : ""}`} /><p className="text-sm font-semibold">{status === "error" ? "Restoring the stream" : "Opening RTSP through WebRTC"}</p><p className="mt-1 text-xs text-white/65">The latest backend snapshot remains available.</p></div></div>}
-          <div className="absolute bottom-3 right-3 flex items-center gap-2">
-            <Button isIconOnly size="sm" variant="secondary" className="bg-black/45 text-white backdrop-blur" aria-label={isMuted ? "Unmute" : "Mute"} onPress={() => {
-              setIsMuted((prev) => {
-                const next = !prev;
-                if (videoRef.current) videoRef.current.muted = next;
-                if (audioRef.current) audioRef.current.muted = next;
-                return next;
-              });
-            }}>{isMuted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}</Button>
-            <Button isIconOnly size="sm" variant="secondary" className="bg-black/45 text-white backdrop-blur" aria-label="Enter fullscreen" onPress={() => void videoRef.current?.requestFullscreen()}><Maximize className="size-4" /></Button>
+          >
+            <VideoPlayer
+              srcObject={videoStream}
+              isLive={true}
+              autoPlay={true}
+              fluid={true}
+              volume={volume}
+              muted={isMuted}
+              onVolumeChange={(v) => {
+                setVolume(v);
+                if (audioRef.current) audioRef.current.volume = v;
+              }}
+              onMuteChange={(m) => {
+                setIsMuted(m);
+                if (audioRef.current) {
+                  audioRef.current.muted = m;
+                  if (!m) void audioRef.current.play().catch(() => {});
+                }
+              }}
+              onPlaying={() => setStatus("live")}
+              onLoadedData={() => setStatus("live")}
+              onError={() => setStatus("error")}
+              poster={`${snapshot}?t=${snapshotKey}`}
+              className="h-full w-full"
+            />
+            <audio ref={audioRef} autoPlay muted={isMuted} />
+            {status !== "live" && (
+              <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/40 backdrop-blur-[2px]">
+                <div className="rounded-2xl bg-black/60 px-5 py-4 text-center text-white backdrop-blur-md">
+                  <RefreshCw className={`mx-auto mb-2 size-5 ${status === "connecting" ? "animate-spin" : ""}`} />
+                  <p className="text-sm font-semibold">{status === "error" ? "Restoring the stream" : "Opening RTSP through WebRTC"}</p>
+                  <p className="mt-1 text-xs text-white/65">The latest backend snapshot remains available.</p>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-        <div className="grid gap-2 md:grid-cols-2">
-          {[
-            { kind: "rtsp" as const, label: "RTSP stream (H.264 + AAC)", value: rtsp },
-            { kind: "snapshot" as const, label: "Stable snapshot URL", value: snapshot },
-          ].map((item) => <Surface key={item.kind} className="flex min-w-0 items-center gap-2 rounded-2xl border border-default-200/70 p-3"><div className="min-w-0 flex-1"><p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{item.label}</p><p className="truncate font-mono text-xs">{item.value}</p></div><Button isIconOnly size="sm" variant="ghost" aria-label={`Copy ${item.label}`} onPress={() => void copy(item.kind, item.value)}>{copied === item.kind ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}</Button></Surface>)}
-        </div>
-      </Modal.Body>
-      <Modal.Footer><Button variant="secondary" onPress={() => { setStatus("connecting"); setViewerKey((value) => value + 1); }}><Play className="size-4" /> Reconnect</Button><Button variant="primary" onPress={onClose}>Done</Button></Modal.Footer>
-    </Modal.Dialog></Modal.Container>
-  </Modal.Backdrop>;
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
+  );
 };
