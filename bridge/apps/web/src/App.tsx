@@ -340,7 +340,7 @@ export function App() {
             </div>
             <Button
               size="sm"
-              variant="secondary"
+              variant="danger-soft"
               onPress={() => void loadCameras()}
             >
               Retry
