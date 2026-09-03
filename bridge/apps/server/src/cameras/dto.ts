@@ -17,11 +17,7 @@ export const CreateCameraSchema = z
       .default("hd")
       .transform((v) => (v.toLowerCase() === "sd" ? "sd" : "hd")),
     audioEnabled: z.boolean().optional().default(true),
-    useCloudAudio: z.boolean().optional().default(true),
-    cloudRtspUrl: z.string().optional(),
-    transcodeH264: z.boolean().optional().default(false),
     rtspPort: z.coerce.number().optional(),
-    h264Port: z.coerce.number().optional(),
   })
   .passthrough();
 

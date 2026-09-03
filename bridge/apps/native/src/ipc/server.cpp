@@ -167,20 +167,6 @@ void IpcServer::handle_command(const std::string& line) {
     } else if (cmd == "stop_relay") {
         std::lock_guard<std::mutex> lock(sessions_mutex_);
         relays_.erase(cmd_dto.did);
-    } else if (cmd == "start_audio_ingest") {
-        if (cmd_dto.did.empty() || cmd_dto.audio_rtp_port <= 0) {
-            send_event(to_json(EventError{.did = cmd_dto.did, .message = "Invalid start_audio_ingest configuration"}));
-            return;
-        }
-        std::lock_guard<std::mutex> lock(sessions_mutex_);
-        auto it = sessions_.find(cmd_dto.did);
-        if (it != sessions_.end()) {
-            if (it->second->start_audio_ingest(cmd_dto.audio_rtp_port)) {
-                std::cout << "[IPC] Started audio ingest on port " << cmd_dto.audio_rtp_port << " for " << cmd_dto.did << std::endl;
-            } else {
-                send_event(to_json(EventError{.did = cmd_dto.did, .message = "Failed to start audio ingest"}));
-            }
-        }
     } else if (cmd == "start_viewer") {
         if (cmd_dto.viewer_id.empty() || cmd_dto.did.empty() || cmd_dto.sdp.empty()) {
             send_event(to_json(EventError{.did = cmd_dto.did, .message = "Missing viewer_id, did, or browser offer"}));

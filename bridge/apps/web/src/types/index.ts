@@ -15,8 +15,6 @@ export interface Camera {
   rtspPath: string;
   quality: "hd" | "sd";
   audioEnabled: boolean;
-  transcodeH264?: boolean;
-  h264Port?: number;
   lastSeen?: string;
   snapshot?: string;
   createdAt: string;
@@ -48,5 +46,4 @@ export interface AuthState {
   qrToken?: string | null;
   qrDataUrl?: string | null;
   error?: string | null;
-  sharingConfigured?: boolean;
 }

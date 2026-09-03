@@ -5,7 +5,7 @@ import { StatsBanner } from "./components/StatsBanner.js";
 import { CameraCard } from "./components/CameraCard.js";
 import { AddCameraModal } from "./components/AddCameraModal.js";
 import { VideoPlayerModal } from "./components/VideoPlayerModal.js";
-import { deleteCamera, fetchAuthState, fetchCameras, getWsUrl, logout, refreshCameras, updateCamera } from "./api/client.js";
+import { deleteCamera, fetchAuthState, fetchCameras, getWsUrl, logout, refreshCameras } from "./api/client.js";
 import type { AuthState, Camera } from "./types/index.js";
 import { Toaster, toast } from "sonner";
 import { AlertCircle, Camera as CameraIcon, Plus, WifiOff } from "lucide-react";
@@ -43,12 +43,7 @@ export function App() {
     if (!quiet) setIsRefreshing(true);
     try {
       const list = await fetchCameras();
-      setCameras((prev) => list.map((cam) => {
-        const existing = prev.find((p) => p.id === cam.id);
-        // Keep local transcodeH264 / h264Port if server hasn't updated yet
-        if (!existing) return cam;
-        return { ...cam, transcodeH264: existing.transcodeH264, h264Port: existing.h264Port ?? cam.h264Port };
-      }));
+      setCameras(list);
       setCameraOrder((current) => [...current.filter((id) => list.some((camera) => camera.id === id)), ...list.map((camera) => camera.id).filter((id) => !current.includes(id))]);
       setLoadError(null);
     } catch (error: any) {
@@ -139,9 +134,9 @@ export function App() {
       {isLoading ? <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{[0,1,2].map((item) => <Skeleton key={item} className="aspect-[4/3] rounded-3xl" />)}</div>
       : cameras.length === 0 ? <Surface className="rounded-3xl border border-dashed border-default-300 p-12 text-center"><div className="mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-primary/10 text-primary"><CameraIcon className="size-7" /></div><h3 className="text-lg font-semibold">No cameras yet</h3><p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">Connect Smart Life or Tuya Smart with QR, or add a camera manually.</p><Button className="mt-5" variant="primary" onPress={() => setIsAddModalOpen(true)}><Plus className="size-4" /> Add profile</Button></Surface>
       : displayedCameras.length === 0 ? <Surface className="rounded-3xl p-10 text-center"><WifiOff className="mx-auto mb-3 size-7 text-muted-foreground" /><h3 className="font-semibold">No matching cameras</h3><p className="text-sm text-muted-foreground">Change the search or status filter.</p><Button className="mt-4" size="sm" variant="secondary" onPress={() => { setQuery(""); setFilter("all"); }}>Clear filters</Button></Surface>
-      : <motion.div layout className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"><AnimatePresence mode="popLayout">{displayedCameras.map((camera, index) => <CameraCard key={camera.id} camera={camera} index={index} total={displayedCameras.length} onPlay={setSelectedCamera} onDelete={async (id) => { await deleteCamera(id); setCameras((current) => current.filter((camera) => camera.id !== id)); }} onMove={moveCamera} onTranscodeChange={async (target, enabled) => { try { const updated = await updateCamera(target, { transcodeH264: enabled }); setCameras((current) => current.map((camera) => camera.id === updated.id ? updated : camera)); toast.success(`H.264 / AAC transcoding ${enabled ? "enabled" : "disabled"}`); } catch (error: any) { toast.error(error?.message || "Could not update transcoding"); } }} />)}</AnimatePresence></motion.div>}
+      : <motion.div layout className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"><AnimatePresence mode="popLayout">{displayedCameras.map((camera, index) => <CameraCard key={camera.id} camera={camera} index={index} total={displayedCameras.length} onPlay={setSelectedCamera} onDelete={async (id) => { await deleteCamera(id); setCameras((current) => current.filter((camera) => camera.id !== id)); }} onMove={moveCamera} />)}</AnimatePresence></motion.div>}
     </main>
-    <AddCameraModal isOpen={isAddModalOpen} initialRegion={authState?.loggedIn ? authState.region : undefined} sharingConfigured={authState?.sharingConfigured ?? false} onClose={() => setIsAddModalOpen(false)} onAdded={() => { void loadAuth(); void loadCameras(true); }} />
+    <AddCameraModal isOpen={isAddModalOpen} initialRegion={authState?.loggedIn ? authState.region : undefined} onClose={() => setIsAddModalOpen(false)} onAdded={() => { void loadAuth(); void loadCameras(true); }} />
     {selectedCamera && <VideoPlayerModal camera={selectedCamera} isOpen onClose={() => setSelectedCamera(null)} />}
   </div>;
 }

@@ -9,28 +9,19 @@ import {
   forwardRef,
 } from "@nestjs/common";
 import { TuyaProtectService } from "./tuya-protect.service.js";
-import { TuyaSharingService } from "./tuya-sharing.service.js";
 import { CamerasService } from "../cameras/cameras.service.js";
-import { StartQrSchema, PasswordLoginSchema, PollQrSchema } from "./dto.js";
-import { z } from "zod";
-
-const SharingQrStartSchema = z.object({ userCode: z.string().min(1) });
-const SharingQrPollSchema = z.object({ qrcode: z.string().min(1), userCode: z.string().min(1) });
+import { StartQrSchema, PasswordLoginSchema } from "./dto.js";
 
 @Controller("api/auth")
 export class AuthController {
   constructor(
     @Inject(TuyaProtectService) private readonly tuyaProtect: TuyaProtectService,
-    @Inject(TuyaSharingService) private readonly tuyaSharing: TuyaSharingService,
     @Inject(forwardRef(() => CamerasService)) private readonly camerasService: CamerasService,
   ) {}
 
   @Get("state")
   async getState() {
-    return {
-      ...this.tuyaProtect.getState(),
-      sharingConfigured: this.tuyaSharing.isConfigured(),
-    };
+    return this.tuyaProtect.getState();
   }
 
   @Post("qr/start")
@@ -67,28 +58,6 @@ export class AuthController {
   async logout() {
     await this.camerasService.logoutProfile();
     await this.tuyaProtect.logout();
-    await this.tuyaSharing.logout();
     return { success: true };
-  }
-
-  // ---- Smart Life Sharing API (for cloud audio) ----
-
-  @Post("sharing/qr/start")
-  async startSharingQr(@Body() body: unknown) {
-    const parse = SharingQrStartSchema.safeParse(body);
-    if (!parse.success) throw new BadRequestException(parse.error.format());
-    const { userCode } = parse.data;
-    const result = await this.tuyaSharing.generateQRCode(userCode);
-    return { success: true, ...result };
-  }
-
-  @Post("sharing/qr/poll")
-  async pollSharingQr(@Body() body: unknown) {
-    const parse = SharingQrPollSchema.safeParse(body);
-    if (!parse.success) throw new BadRequestException(parse.error.format());
-    const { qrcode, userCode } = parse.data;
-    const token = await this.tuyaSharing.pollQRCode(qrcode, userCode);
-    if (!token) return { success: false, pending: true };
-    return { success: true, username: token.username };
   }
 }

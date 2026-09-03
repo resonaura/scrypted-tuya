@@ -580,7 +580,7 @@ export class TuyaProtectService implements OnModuleInit {
         cam.skill = skill;
         cam.localKey = localKey || cam.localKey;
         cam.p2pConfig = p2pConfigStr;
-        cam.rtspPath = cameraRtspPath(cleanName, did, "h265");
+        cam.rtspPath = cameraRtspPath(cleanName, did);
         cam.online = true;
         cam.lastSeen = new Date();
 

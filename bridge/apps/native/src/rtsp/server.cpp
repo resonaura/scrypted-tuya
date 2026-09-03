@@ -365,7 +365,7 @@ void RTSPServer::handle_rtsp_request(int client_fd, const std::string& req, RTSP
         if (audio_is_aac_) {
             sdp << "m=audio 0 RTP/AVP 97\r\n"
                 << "a=rtpmap:97 MPEG4-GENERIC/16000/1\r\n"
-                << "a=fmtp:97 streamtype=5; profile-level-id=1; mode=AAC-hbr; config=1408; sizelength=13; indexlength=3; indexdeltalength=3\r\n"
+                << "a=fmtp:97 profile-level-id=1;mode=AAC-hbr;sizelength=13;indexlength=3;indexdeltalength=3;config=140856E500\r\n"
                 << "a=control:track1\r\n";
         } else {
             sdp << "m=audio 0 RTP/AVP 0\r\n"

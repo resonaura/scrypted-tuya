@@ -8,13 +8,10 @@ export function getCameraUrls(camera: Camera) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "") || camera.did;
   const apiBase = getApiBase() || (typeof window !== "undefined" ? window.location.origin : "");
-  const snapshot = `${apiBase}/api/cameras/${encodeURIComponent(camera.id)}/snapshot`;
+  const snapshot = `${apiBase}/api/cameras/${encodeURIComponent(slug)}/snapshot`;
   const rtspHost = "localhost";
-  const rtsp = `rtsp://${rtspHost}:${camera.rtspPort || 8655}/${camera.rtspPath || `live/${slug}-h265`}`;
-  const h264Rtsp = camera.transcodeH264 && camera.h264Port
-    ? `rtsp://${rtspHost}:${camera.h264Port}/live/${slug}-h264`
-    : undefined;
-  return { rtsp, h264Rtsp, snapshot, preview: `${snapshot}?t=${Date.now()}` };
+  const rtsp = `rtsp://${rtspHost}:${camera.rtspPort || 8655}/${camera.rtspPath || `live/${slug}`}`;
+  return { rtsp, snapshot, preview: `${snapshot}?t=${Date.now()}` };
 }
 
 export async function copyText(value: string): Promise<void> {

@@ -10,7 +10,6 @@ import { CameraEntity } from "../db/entities/index.js";
 import { NativeMediaEngine } from "../engine/native-engine.js";
 import { TuyaProtectService } from "../auth/tuya-protect.service.js";
 import { TuyaMqttService } from "../auth/tuya-mqtt.service.js";
-import { TuyaSharingService } from "../auth/tuya-sharing.service.js";
 import { TranscoderService } from "../streaming/transcoder.service.js";
 import {
   OfflineCardManager,
@@ -39,7 +38,6 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     @Inject(forwardRef(() => TuyaMqttService))
     private readonly tuyaMqtt: TuyaMqttService,
     @Inject(TranscoderService) private readonly transcoder: TranscoderService,
-    @Inject(TuyaSharingService) private readonly tuyaSharing: TuyaSharingService,
   ) {}
 
   async onModuleInit() {
@@ -51,9 +49,9 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
       this.autoStartCameras();
     });
 
-    this.engine.on("session_started", async (did: string, rtspPort: number) => {
+    this.engine.on("session_started", async (did: string, internalPort: number) => {
       this.logger.log(
-        `Session started for camera ${did} on RTSP port ${rtspPort}`,
+        `Internal H.265 session started for camera ${did} on hidden port ${internalPort}`,
       );
       this.activeStreams.add(did);
       this.recoveryAttempts.delete(did);
@@ -63,46 +61,23 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
       const cam = await CameraEntity.findOne({ where: { did } });
       if (cam) {
         cam.online = true;
-        cam.rtspPort = rtspPort;
         cam.lastSeen = new Date();
-        await cam.save();
         const slug = this.getSlug(cam);
+        cam.rtspPath = cameraRtspPath(cam.name, cam.did);
+        await cam.save();
         OfflineCardManager.getInstance().setOnline(slug);
 
+        // Transcode H.265 internal stream into standard H.264 Baseline + AAC on the public port
+        this.transcoder.startH264Transcode({
+          did: cam.did,
+          slug,
+          sourceRtspPort: internalPort,
+          sourceRtspPath: `internal/${slug}`,
+          targetRtspPort: cam.rtspPort,
+          targetRtspPath: cam.rtspPath,
+        });
+
         this.ensureSnapshotter(cam);
-
-        // Fetch clean cloud audio URL if configured
-        let cloudRtspUrl: string | undefined;
-        if (cam.useCloudAudio && this.tuyaSharing.isConfigured()) {
-          try {
-            cloudRtspUrl = (await this.tuyaSharing.getRTSP(cam.did)) ?? undefined;
-            if (cloudRtspUrl) {
-              cam.cloudRtspUrl = cloudRtspUrl;
-              await cam.save();
-              // Feed Cloud Audio into the native 265 RTSP stream
-              const nativeAudioPort = cam.rtspPort + 2000;
-              this.transcoder.startNativeCloudAudio(
-                cam.did,
-                cloudRtspUrl,
-                nativeAudioPort,
-                async () => (await this.tuyaSharing.getRTSP(cam.did)) ?? null,
-              );
-            }
-          } catch (e: any) {
-            this.logger.warn(`[${cam.did}] Cloud RTSP allocation failed, using P2P audio: ${e.message}`);
-          }
-        }
-
-        if (cam.transcodeH264 && cam.h264Port) {
-          this.transcoder.startH264Transcode({
-            did: cam.did,
-            slug,
-            sourceRtspPort: cam.rtspPort,
-            sourceRtspPath: cam.rtspPath || `live/${slug}`,
-            targetRtspPort: cam.h264Port,
-            cloudRtspUrl,
-          });
-        }
       }
     });
 
@@ -221,8 +196,10 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     if (cameras.length === 0) return;
 
     for (const cam of cameras) {
-      cam.rtspPort = env.RTSP_BASE_PORT;
-      cam.rtspPath = cameraRtspPath(cam.name, cam.did, "h265");
+      if (!cam.rtspPort || !isPortAllowed(cam.rtspPort)) {
+        cam.rtspPort = env.RTSP_BASE_PORT;
+      }
+      cam.rtspPath = cameraRtspPath(cam.name, cam.did);
       await cam.save();
       await this.startStream(cam);
     }
@@ -232,8 +209,11 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     return CameraEntity.find({ order: { createdAt: "DESC" } });
   }
 
-  async getById(id: string): Promise<CameraEntity | null> {
-    return CameraEntity.findOne({ where: [{ id }, { did: id }] });
+  async getById(idOrSlug: string): Promise<CameraEntity | null> {
+    const cam = await CameraEntity.findOne({ where: [{ id: idOrSlug }, { did: idOrSlug }] });
+    if (cam) return cam;
+    const all = await CameraEntity.find();
+    return all.find((c) => this.getSlug(c) === idOrSlug) || null;
   }
 
   async refreshTuyaCameras(): Promise<CameraEntity[]> {
@@ -242,8 +222,10 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     }
     const cameras = await this.tuyaProtect.discoverCameras();
     for (const cam of cameras) {
-      cam.rtspPort = env.RTSP_BASE_PORT;
-      cam.rtspPath = cameraRtspPath(cam.name, cam.did, "h265");
+      if (!cam.rtspPort || !isPortAllowed(cam.rtspPort)) {
+        cam.rtspPort = env.RTSP_BASE_PORT;
+      }
+      cam.rtspPath = cameraRtspPath(cam.name, cam.did);
       await cam.save();
       await this.startStream(cam);
     }
@@ -267,10 +249,6 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     cam.uuid = dto.uuid || cam.uuid;
     cam.quality = dto.quality || "hd";
     cam.audioEnabled = dto.audioEnabled !== undefined ? dto.audioEnabled : true;
-    cam.transcodeH264 =
-      dto.transcodeH264 !== undefined
-        ? dto.transcodeH264
-        : cam.transcodeH264 || false;
 
     if (dto.rtspPort && isPortAllowed(dto.rtspPort)) {
       cam.rtspPort = dto.rtspPort;
@@ -279,15 +257,9 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
       cam.rtspPort = freePort;
     }
 
-    if (cam.transcodeH264 && (!cam.h264Port || !isPortAllowed(cam.h264Port))) {
-      const [h264Port] = await findFreePortRange(1, cam.rtspPort + 100);
-      cam.h264Port = h264Port;
-    }
-
-    cam.rtspPath = cameraRtspPath(cam.name, cam.did, "h265");
+    cam.rtspPath = cameraRtspPath(cam.name, cam.did);
 
     await cam.save();
-    if (!cam.transcodeH264) this.transcoder.stopTranscode(cam.did);
     await this.startStream(cam);
     return cam;
   }
@@ -299,68 +271,9 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     if (patch.name !== undefined) cam.name = patch.name;
     if (patch.quality !== undefined) cam.quality = (patch.quality.toLowerCase() as "hd" | "sd");
     if (patch.audioEnabled !== undefined) cam.audioEnabled = Boolean(patch.audioEnabled);
+    if (patch.rtspPort !== undefined && isPortAllowed(patch.rtspPort)) cam.rtspPort = patch.rtspPort;
 
-    if (patch.useCloudAudio !== undefined) {
-      cam.useCloudAudio = Boolean(patch.useCloudAudio);
-      if (cam.useCloudAudio) {
-        if (this.tuyaSharing.isConfigured() && (cam.online || this.activeStreams.has(cam.did))) {
-          void (async () => {
-            try {
-              const url = (await this.tuyaSharing.getRTSP(cam.did)) ?? undefined;
-              if (url) {
-                cam.cloudRtspUrl = url;
-                await cam.save();
-                const nativeAudioPort = cam.rtspPort + 2000;
-                this.transcoder.startNativeCloudAudio(
-                  cam.did,
-                  url,
-                  nativeAudioPort,
-                  async () => (await this.tuyaSharing.getRTSP(cam.did)) ?? null,
-                );
-              }
-            } catch (e: any) {
-              this.logger.warn(`Failed to start cloud audio: ${e.message}`);
-            }
-          })();
-        }
-      } else {
-        this.transcoder.stopNativeCloudAudio(cam.did);
-      }
-    }
-
-    if (patch.transcodeH264 !== undefined) {
-      const enabling = Boolean(patch.transcodeH264);
-      cam.transcodeH264 = enabling;
-      if (enabling) {
-        if (!cam.h264Port || !isPortAllowed(cam.h264Port)) {
-          const [h264Port] = await findFreePortRange(1, cam.rtspPort + 100);
-          cam.h264Port = h264Port;
-        }
-        if (cam.online || this.activeStreams.has(cam.did) || (cam.rtspPort && cam.rtspPort > 0)) {
-          const slug = this.getSlug(cam);
-          let cloudRtspUrl = cam.cloudRtspUrl;
-          if (cam.useCloudAudio && this.tuyaSharing.isConfigured() && !cloudRtspUrl) {
-            try {
-              cloudRtspUrl = (await this.tuyaSharing.getRTSP(cam.did)) ?? undefined;
-              if (cloudRtspUrl) {
-                cam.cloudRtspUrl = cloudRtspUrl;
-              }
-            } catch {}
-          }
-          this.transcoder.startH264Transcode({
-            did: cam.did,
-            slug,
-            sourceRtspPort: cam.rtspPort,
-            sourceRtspPath: cam.rtspPath || `live/${slug}`,
-            targetRtspPort: cam.h264Port,
-            cloudRtspUrl,
-          });
-        }
-      } else {
-        this.transcoder.stopTranscode(cam.did);
-      }
-    }
-
+    cam.rtspPath = cameraRtspPath(cam.name, cam.did);
     await cam.save();
     return cam;
   }
@@ -370,7 +283,6 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     for (const did of Array.from(this.activeStreams)) {
       this.stopSnapshotter(did);
       this.transcoder.stopTranscode(did);
-      this.transcoder.stopNativeCloudAudio(did);
       this.engine.stopP2P(did);
     }
     this.activeStreams.clear();
@@ -402,14 +314,15 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
   }
 
   async startStream(cam: CameraEntity): Promise<void> {
-    const rtspPort = cam.rtspPort || env.RTSP_BASE_PORT;
-    const rtspPath = cam.rtspPath || `live/${cam.did}`;
+    const slug = this.getSlug(cam);
+    const internalPort = (cam.rtspPort || env.RTSP_BASE_PORT) + 20000;
+    const internalPath = `internal/${slug}`;
 
     if (this.tuyaProtect.isLoggedIn()) {
       const started = await this.tuyaMqtt.startCameraSession(
         cam.did,
-        rtspPort,
-        rtspPath,
+        internalPort,
+        internalPath,
         (cam.quality as "hd" | "sd") || "hd",
       );
       if (!started) throw new Error("Tuya signaling session did not start");
@@ -420,8 +333,8 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
         camera_ip: cam.ip,
         camera_port: cam.port,
         local_key: cam.localKey,
-        rtsp_port: rtspPort,
-        rtsp_path: rtspPath,
+        rtsp_port: internalPort,
+        rtsp_path: internalPath,
         p2p_quality_channel: cam.quality === "sd" ? 1 : 0,
       });
     }

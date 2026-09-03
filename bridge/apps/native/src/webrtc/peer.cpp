@@ -84,7 +84,6 @@ void WebRTCPeer::handle_video_packet(const rtc::binary& packet) {
 }
 
 void WebRTCPeer::handle_audio_packet(const rtc::binary& packet) {
-    if (!local_audio_enabled_.load()) return;
     if (packet.size() < 12 || !rtsp_server_) return;
     rtsp_server_->feed_raw_rtp(reinterpret_cast<const uint8_t*>(packet.data()), packet.size(), false);
 }

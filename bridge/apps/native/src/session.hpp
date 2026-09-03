@@ -40,16 +40,6 @@ public:
     void set_quality(int channel);
     void ptz(int action, int speed = 50);
 
-    bool start_audio_ingest(int audio_port) {
-        if (webrtc_peer_) {
-            webrtc_peer_->set_local_audio_enabled(false);
-        }
-        if (rtsp_server_) {
-            return rtsp_server_->start_udp_ingest(0, audio_port);
-        }
-        return false;
-    }
-
     std::vector<uint8_t> get_snapshot_annexb() const;
 
     const std::string& get_did() const { return config_.did; }

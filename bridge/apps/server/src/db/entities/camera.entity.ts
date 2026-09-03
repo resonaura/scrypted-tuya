@@ -54,23 +54,11 @@ export class CameraEntity extends BaseEntity {
   @Column({ type: "varchar", length: 128, default: "" })
   rtspPath!: string;
 
-  @Column({ type: "boolean", default: false })
-  transcodeH264!: boolean;
-
-  @Column({ type: "integer", nullable: true })
-  h264Port?: number;
-
   @Column({ type: "varchar", length: 16, default: "hd" })
   quality!: string;
 
   @Column({ type: "boolean", default: true })
   audioEnabled!: boolean;
-
-  @Column({ type: "boolean", default: true })
-  useCloudAudio!: boolean;
-
-  @Column({ type: "text", nullable: true })
-  cloudRtspUrl?: string;
 
   @Column({ type: "datetime", nullable: true })
   lastSeen?: Date;

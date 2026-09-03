@@ -135,34 +135,6 @@ export async function logout(): Promise<void> {
   if (!res.ok) throw new Error("Failed to logout");
 }
 
-export async function startSharingQr(
-  userCode: string,
-): Promise<{ qrcode: string; qrDataUrl: string; userCode: string }> {
-  const res = await fetch(`${getApiBase()}/api/auth/sharing/qr/start`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userCode }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || "Failed to start Smart Life QR");
-  }
-  return res.json();
-}
-
-export async function pollSharingQr(
-  qrcode: string,
-  userCode: string,
-): Promise<{ success: boolean; pending?: boolean; username?: string }> {
-  const res = await fetch(`${getApiBase()}/api/auth/sharing/qr/poll`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ qrcode, userCode }),
-  });
-  if (!res.ok) throw new Error("Failed to poll Smart Life QR");
-  return res.json();
-}
-
 export interface SystemConfig {
   rtspBasePort: number;
   serverPort: number;

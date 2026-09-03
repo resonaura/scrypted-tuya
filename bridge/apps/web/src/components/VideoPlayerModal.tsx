@@ -10,10 +10,10 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
   const [viewerKey, setViewerKey] = useState(0);
   const [status, setStatus] = useState<"connecting" | "live" | "error">("connecting");
   const [snapshotKey, setSnapshotKey] = useState(Date.now());
-  const [copied, setCopied] = useState<"rtsp" | "h264" | "snapshot" | null>(null);
+  const [copied, setCopied] = useState<"rtsp" | "snapshot" | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const { rtsp, h264Rtsp, snapshot } = getCameraUrls(camera);
+  const { rtsp, snapshot } = getCameraUrls(camera);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -96,7 +96,7 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
     return () => window.clearInterval(timer);
   }, [status]);
 
-  const copy = async (kind: "rtsp" | "h264" | "snapshot", value: string) => {
+  const copy = async (kind: "rtsp" | "snapshot", value: string) => {
     try { await copyText(value); setCopied(kind); toast.success(kind === "snapshot" ? "Snapshot URL copied" : "RTSP URL copied"); window.setTimeout(() => setCopied(null), 1500); }
     catch { toast.error("Could not copy the URL"); }
   };
@@ -116,8 +116,7 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
         </div>
         <div className="grid gap-2 md:grid-cols-2">
           {[
-            { kind: "rtsp" as const, label: "RTSP stream (H.265 + PCMU)", value: rtsp },
-            ...(h264Rtsp ? [{ kind: "h264" as const, label: "Scrypted / HomeKit (H.264 + AAC)", value: h264Rtsp }] : []),
+            { kind: "rtsp" as const, label: "RTSP stream (H.264 + AAC)", value: rtsp },
             { kind: "snapshot" as const, label: "Stable snapshot URL", value: snapshot },
           ].map((item) => <Surface key={item.kind} className="flex min-w-0 items-center gap-2 rounded-2xl border border-default-200/70 p-3"><div className="min-w-0 flex-1"><p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{item.label}</p><p className="truncate font-mono text-xs">{item.value}</p></div><Button isIconOnly size="sm" variant="ghost" aria-label={`Copy ${item.label}`} onPress={() => void copy(item.kind, item.value)}>{copied === item.kind ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}</Button></Surface>)}
         </div>
