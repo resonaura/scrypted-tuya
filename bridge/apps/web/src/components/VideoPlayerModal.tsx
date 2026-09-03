@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Modal } from "@heroui/react";
-import { RefreshCw } from "lucide-react";
 import type { Camera } from "../types/index.js";
-import { createWebRtcViewer, stopWebRtcViewer } from "../api/client.js";
+import { createWebRtcViewer, preheatWebRtc, stopWebRtcViewer } from "../api/client.js";
 import { getCameraUrls } from "../utils.js";
 import { VideoPlayer } from "./VideoPlayer.js";
 
@@ -10,7 +9,7 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
   const [viewerKey, setViewerKey] = useState(0);
   const [status, setStatus] = useState<"connecting" | "live" | "error">("connecting");
   const [snapshotKey, setSnapshotKey] = useState(Date.now());
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -18,6 +17,7 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
 
   useEffect(() => {
     if (!isOpen) return;
+    void preheatWebRtc(camera.did);
     let disposed = false;
     let peer: RTCPeerConnection | undefined;
     let sessionId: string | undefined;
@@ -27,10 +27,22 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
 
     const waitForIce = (pc: RTCPeerConnection) => new Promise<void>((resolve) => {
       if (pc.iceGatheringState === "complete") return resolve();
-      const finish = () => { pc.removeEventListener("icegatheringstatechange", change); resolve(); };
-      const change = () => pc.iceGatheringState === "complete" && finish();
-      pc.addEventListener("icegatheringstatechange", change);
-      window.setTimeout(finish, 4000);
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        pc.removeEventListener("icegatheringstatechange", check);
+        pc.onicecandidate = null;
+        resolve();
+      };
+      const check = () => {
+        if (pc.iceGatheringState === "complete") finish();
+      };
+      pc.onicecandidate = (event) => {
+        if (event.candidate) window.setTimeout(finish, 30);
+      };
+      pc.addEventListener("icegatheringstatechange", check);
+      window.setTimeout(finish, 200);
     });
 
     const start = async () => {
@@ -39,17 +51,15 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
         const transceiver = peer.addTransceiver("video", { direction: "recvonly" });
         peer.addTransceiver("audio", { direction: "recvonly" });
         const capabilities = RTCRtpReceiver.getCapabilities("video");
-        const h264 = capabilities?.codecs.filter((codec) => codec.mimeType.toLowerCase() === "video/h264") || [];
+        const h264 = capabilities?.codecs.filter((c) => c.mimeType.toLowerCase() === "video/h264") || [];
         if (h264.length && "setCodecPreferences" in transceiver) transceiver.setCodecPreferences(h264);
         peer.ontrack = (event) => {
           if (event.track.kind === "video") {
-            const stream = new MediaStream([event.track]);
-            setVideoStream(stream);
+            setVideoStream(new MediaStream([event.track]));
           } else if (event.track.kind === "audio") {
             if (audioRef.current) {
-              const stream = new MediaStream([event.track]);
-              audioRef.current.srcObject = stream;
-              audioRef.current.muted = isMuted;
+              audioRef.current.srcObject = new MediaStream([event.track]);
+              audioRef.current.muted = false;
               audioRef.current.volume = volume;
               void audioRef.current.play().catch(() => {});
             }
@@ -61,7 +71,7 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
             setStatus("live");
           } else if (peer.connectionState === "failed" || peer.connectionState === "closed") {
             setStatus("error");
-            reconnectTimer = window.setTimeout(() => setViewerKey((value) => value + 1), 2000);
+            reconnectTimer = window.setTimeout(() => setViewerKey((v) => v + 1), 2000);
           } else if (peer.connectionState === "disconnected") {
             setStatus((prev) => (prev === "live" ? "live" : "connecting"));
           }
@@ -75,16 +85,16 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
         await peer.setRemoteDescription(created.answer);
         mediaTimer = window.setTimeout(() => {
           if (disposed) return;
-          if (peer?.connectionState === "connected") {
-            setStatus("live");
-            return;
-          }
+          if (peer?.connectionState === "connected") { setStatus("live"); return; }
           setStatus("error");
           peer?.close();
-          reconnectTimer = window.setTimeout(() => setViewerKey((value) => value + 1), 1000);
+          reconnectTimer = window.setTimeout(() => setViewerKey((v) => v + 1), 1000);
         }, 12_000);
       } catch {
-        if (!disposed) { setStatus("error"); reconnectTimer = window.setTimeout(() => setViewerKey((value) => value + 1), 3000); }
+        if (!disposed) {
+          setStatus("error");
+          reconnectTimer = window.setTimeout(() => setViewerKey((v) => v + 1), 3000);
+        }
       }
     };
     void start();
@@ -111,7 +121,7 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
         <Modal.Dialog className="relative sm:max-w-5xl overflow-hidden p-0 border-0 bg-transparent shadow-none">
           <Modal.CloseTrigger className="absolute right-3 top-3 z-30 size-9 rounded-full bg-black/60 text-white shadow-lg backdrop-blur-md hover:bg-black/80 transition-colors" />
           <div
-            className="relative aspect-video w-full overflow-hidden rounded-2xl bg-zinc-950 shadow-2xl [clip-path:inset(0_round_1rem)] [-webkit-mask-image:-webkit-radial-gradient(white,black)] [mask-image:radial-gradient(white,black)]"
+            className="relative aspect-video w-full overflow-hidden rounded-2xl bg-zinc-950 shadow-2xl"
             style={{
               WebkitMaskImage: "-webkit-radial-gradient(white, black)",
               maskImage: "radial-gradient(white, black)",
@@ -126,6 +136,7 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
               fluid={true}
               volume={volume}
               muted={isMuted}
+              isLoading={status === "connecting"}
               onVolumeChange={(v) => {
                 setVolume(v);
                 if (audioRef.current) audioRef.current.volume = v;
@@ -143,16 +154,7 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
               poster={`${snapshot}?t=${snapshotKey}`}
               className="h-full w-full"
             />
-            <audio ref={audioRef} autoPlay muted={isMuted} />
-            {status !== "live" && (
-              <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/40 backdrop-blur-[2px]">
-                <div className="rounded-2xl bg-black/60 px-5 py-4 text-center text-white backdrop-blur-md">
-                  <RefreshCw className={`mx-auto mb-2 size-5 ${status === "connecting" ? "animate-spin" : ""}`} />
-                  <p className="text-sm font-semibold">{status === "error" ? "Restoring the stream" : "Opening RTSP through WebRTC"}</p>
-                  <p className="mt-1 text-xs text-white/65">The latest backend snapshot remains available.</p>
-                </div>
-              </div>
-            )}
+            <audio ref={audioRef} autoPlay muted={false} />
           </div>
         </Modal.Dialog>
       </Modal.Container>

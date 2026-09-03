@@ -160,6 +160,13 @@ export async function createWebRtcViewer(did: string, offer: RTCSessionDescripti
   return res.json();
 }
 
+export async function preheatWebRtc(did: string): Promise<void> {
+  await fetch(`${getApiBase()}/api/streaming/${encodeURIComponent(did)}/preheat`, {
+    method: "POST",
+    keepalive: true,
+  }).catch(() => {});
+}
+
 export async function stopWebRtcViewer(did: string, sessionId: string): Promise<void> {
   await fetch(`${getApiBase()}/api/streaming/${encodeURIComponent(did)}/webrtc/${encodeURIComponent(sessionId)}`, {
     method: "DELETE",

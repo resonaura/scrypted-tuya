@@ -65,6 +65,7 @@ export class BrowserWebRtcService implements OnModuleDestroy {
       };
       this.engine.on("viewer_offer", onOffer);
       this.logger.log(`[BrowserWebRtcService] Requesting native viewer for ${cam.did}, id=${id}`);
+      this.engine.requestKeyframe(cam.did);
       this.engine.startViewer(id, cam.did, browserOffer);
     }).catch((error) => {
       this.stop(id);
@@ -76,7 +77,15 @@ export class BrowserWebRtcService implements OnModuleDestroy {
     session.rtpPort = offer.rtpPort;
     session.audioRtpPort = offer.audioRtpPort;
     this.startFfmpeg(session);
+    this.engine.requestKeyframe(cam.did);
     return { sessionId: id, answer: { type: "answer", sdp: offer.sdp } };
+  }
+
+  async preheat(did: string): Promise<void> {
+    const cam = await CameraEntity.findOne({ where: [{ id: did }, { did }] });
+    if (!cam) return;
+    this.logger.debug(`[BrowserWebRtcService] Preheating camera ${cam.did}`);
+    this.engine.requestKeyframe(cam.did);
   }
 
   stop(sessionId: string): void {
@@ -105,23 +114,21 @@ export class BrowserWebRtcService implements OnModuleDestroy {
     const args = [
       "-hide_banner", "-loglevel", "warning",
       "-rtsp_transport", "tcp",
-      "-fflags", "nobuffer+discardcorrupt",
+      "-fflags", "nobuffer+discardcorrupt+fastseek",
       "-flags", "low_delay",
-      "-analyzeduration", "500000",
-      "-probesize", "500000",
+      "-max_delay", "0",
+      "-analyzeduration", "100000",
+      "-probesize", "100000",
       "-i", session.rtspUrl,
       "-map", "0:v:0",
-      "-vf", "fps=15",
-      "-r", "15",
-      "-fps_mode", "cfr",
       "-c:v", "libx264",
       "-preset", "ultrafast",
       "-tune", "zerolatency",
       "-profile:v", "baseline",
       "-level:v", "4.1",
       "-pix_fmt", "yuv420p",
-      "-g", "30",
-      "-keyint_min", "30",
+      "-g", "15",
+      "-keyint_min", "15",
       "-bf", "0",
       "-x264-params", "repeat-headers=1:scenecut=0",
       "-f", "rtp",

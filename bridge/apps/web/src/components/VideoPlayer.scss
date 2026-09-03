@@ -118,7 +118,26 @@
   padding-top: 0.2rem;
   display: flex;
   align-items: center;
-  transform: scale(1.5);
+  justify-content: center;
+
+  .spinner {
+    width: 46px;
+    height: 46px;
+    border: 3.5px solid rgba(255, 255, 255, 0.22);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+    animation: video-player-spin 0.75s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+  }
+}
+
+@keyframes video-player-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .video-player-wrapper .video-player .video-controls .overlay.hidden {

@@ -444,6 +444,7 @@ export interface VideoPlayerProps {
   onVolumeChange?: (volume: number) => void;
   muted?: boolean;
   onMuteChange?: (muted: boolean) => void;
+  isLoading?: boolean;
   videoRef?: React.RefObject<HTMLVideoElement | null>;
   onPlaying?: () => void;
   onLoadedData?: () => void;
@@ -469,6 +470,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onVolumeChange,
   muted: propMuted,
   onMuteChange,
+  isLoading = false,
   videoRef: externalVideoRef,
   onPlaying,
   onLoadedData,
@@ -811,22 +813,22 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           {/* Overlay (play/pause / error / spinner) */}
           <div
             ref={overlayFocusRef}
-            className={`overlay ${(!playing && !disablePlaybackIcon) || buffering ? '' : 'hidden'}`}
-            onClick={onOverlayClick}
+            className={`overlay ${(!playing && !disablePlaybackIcon) || buffering || isLoading ? '' : 'hidden'}`}
+            onClick={!isLoading ? onOverlayClick : undefined}
             tabIndex={isFullscreen ? undefined : -1}
           >
             {!error && !disablePlaybackIcon && (
               <div
                 className="playback-icon"
                 title={
-                  buffering
+                  buffering || isLoading
                     ? undefined
                     : playing
                       ? translation.actions.pause
                       : translation.actions.play
                 }
               >
-                {!buffering && !error && !disablePlaybackIcon && (
+                {!buffering && !isLoading && !error && !disablePlaybackIcon && (
                   <MaterialIcon
                     size={80}
                     className="player-icon"
@@ -834,7 +836,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     icon={playing ? 'pause' : 'play-arrow'}
                   />
                 )}
-                {buffering && (
+                {(buffering || isLoading) && (
                   <div className="loading-animation" aria-hidden>
                     <div className="spinner" />
                   </div>

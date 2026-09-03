@@ -15,6 +15,12 @@ export class BrowserWebRtcController {
     }
   }
 
+  @Post(":did/preheat")
+  async preheat(@Param("did") did: string) {
+    await this.browserWebRtc.preheat(did);
+    return { ok: true };
+  }
+
   @Delete(":did/webrtc/:sessionId")
   stop(@Param("sessionId") sessionId: string) {
     this.browserWebRtc.stop(sessionId);

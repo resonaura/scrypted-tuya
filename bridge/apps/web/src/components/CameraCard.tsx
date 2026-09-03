@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, Check, Copy, MoreVertical, Play, RefreshCw, Trash2,
 import { motion, useReducedMotion } from "framer-motion";
 import type { Camera } from "../types/index.js";
 import { copyText, getCameraUrls } from "../utils.js";
+import { preheatWebRtc } from "../api/client.js";
 import { toast } from "sonner";
 
 interface CameraCardProps {
@@ -21,6 +22,15 @@ export const CameraCard: React.FC<CameraCardProps> = ({ camera, index, total, on
   const [imgError, setImgError] = React.useState(false);
   const [copied, setCopied] = React.useState<"rtsp" | "snapshot" | null>(null);
   const { rtsp, snapshot } = getCameraUrls(camera);
+  const lastPreheatRef = React.useRef(0);
+
+  const handlePreheat = React.useCallback(() => {
+    const now = Date.now();
+    if (now - lastPreheatRef.current > 6000) {
+      lastPreheatRef.current = now;
+      void preheatWebRtc(camera.did);
+    }
+  }, [camera.did]);
 
   React.useEffect(() => {
     const refresh = () => {
@@ -57,7 +67,7 @@ export const CameraCard: React.FC<CameraCardProps> = ({ camera, index, total, on
 
   return (
     <motion.div layout initial={reduceMotion ? false : { opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={reduceMotion ? undefined : { opacity: 0, scale: 0.97 }} transition={{ duration: 0.22 }}>
-      <Card className="group overflow-hidden rounded-3xl border border-default-200/70 bg-content1/90 shadow-sm transition-shadow hover:shadow-xl">
+      <Card onMouseEnter={handlePreheat} className="group overflow-hidden rounded-3xl border border-default-200/70 bg-content1/90 shadow-sm transition-shadow hover:shadow-xl">
         <Card.Content className="p-0">
           <div className="relative aspect-video overflow-hidden bg-zinc-950">
             {!imgError ? (
@@ -92,7 +102,7 @@ export const CameraCard: React.FC<CameraCardProps> = ({ camera, index, total, on
                 </Dropdown.Popover>
               </Dropdown>
             </div>
-            <Button variant="primary" size="md" onPress={() => onPlay(camera)} className="absolute bottom-3 left-3 rounded-full shadow-lg"><Play className="size-4 fill-current" /> Open live view</Button>
+            <Button variant="primary" size="md" onPointerEnter={handlePreheat} onPress={() => { handlePreheat(); onPlay(camera); }} className="absolute bottom-3 left-3 rounded-full shadow-lg"><Play className="size-4 fill-current" /> Open live view</Button>
           </div>
         </Card.Content>
 
