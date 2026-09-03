@@ -283,8 +283,7 @@ void WebRTCPeer::setup_data_channel() {
     if (!pc_) return;
 
     rtc::DataChannelInit dc_init;
-    dc_init.reliability.type = rtc::Reliability::Type::Rexmit;
-    dc_init.reliability.rexmit = 5;
+    dc_init.reliability.maxRetransmits = 5;
     dc_init.reliability.unordered = false;
 
     data_channel_ = pc_->createDataChannel("fmp4Stream", dc_init);
@@ -298,8 +297,8 @@ void WebRTCPeer::setup_data_channel() {
         std::cout << "[WebRTCPeer] DataChannel fmp4Stream CLOSED for " << config_.did << std::endl;
     });
 
-    data_channel_->onError([this](std::string err) {
-        std::cout << "[WebRTCPeer] DataChannel ERROR: " << err << std::endl;
+    data_channel_->onError([this](const std::string& err) {
+        std::cout << "[WebRTCPeer] DataChannel ERROR for " << config_.did << ": " << err << std::endl;
     });
 
     data_channel_->onMessage([this](rtc::message_variant msg) {

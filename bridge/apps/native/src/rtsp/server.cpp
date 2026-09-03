@@ -341,12 +341,15 @@ void RTSPServer::handle_rtsp_request(int client_fd, const std::string& req, RTSP
              << "CSeq: " << cseq << "\r\n"
              << "Public: OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN\r\n\r\n";
     } else if (method == "DESCRIBE") {
+        std::string content_base = url.empty() ? ("rtsp://0.0.0.0:" + std::to_string(port_) + "/" + path_ + "/")
+                                               : (url.back() == '/' ? url : (url + "/"));
         std::ostringstream sdp;
         sdp << "v=0\r\n"
             << "o=- " << session.session_id << " 1 IN IP4 127.0.0.1\r\n"
             << "s=Tuya Native Stream\r\n"
             << "t=0 0\r\n"
             << "a=control:*\r\n"
+            << "a=range:npt=0-\r\n"
             << "m=video 0 RTP/AVP 96\r\n";
         if (is_hevc_) {
             sdp << "a=rtpmap:96 H265/90000\r\n";
@@ -377,6 +380,7 @@ void RTSPServer::handle_rtsp_request(int client_fd, const std::string& req, RTSP
         resp << "RTSP/1.0 200 OK\r\n"
              << "CSeq: " << cseq << "\r\n"
              << "Content-Type: application/sdp\r\n"
+             << "Content-Base: " << content_base << "\r\n"
              << "Content-Length: " << sdp_str.length() << "\r\n\r\n"
              << sdp_str;
     } else if (method == "SETUP") {
@@ -427,16 +431,24 @@ void RTSPServer::handle_rtsp_request(int client_fd, const std::string& req, RTSP
     } else if (method == "PLAY") {
         session.is_playing = true;
         session.wait_idr = true; // Wait for clean keyframe start so zero image artifacts
+        session.out_video_seq = 0;
+        session.out_audio_seq = 0;
+        session.video_ts_initialized = false;
+        session.audio_ts_initialized = false;
         {
             std::lock_guard<std::mutex> lock(clients_mutex_);
             clients_[client_fd] = session;
         }
 
+        std::string content_base = url.empty() ? ("rtsp://0.0.0.0:" + std::to_string(port_) + "/" + path_ + "/")
+                                               : (url.back() == '/' ? url : (url + "/"));
+
         resp << "RTSP/1.0 200 OK\r\n"
              << "CSeq: " << cseq << "\r\n"
              << "Session: " << session.session_id << "\r\n"
              << "Range: npt=0.000-\r\n"
-             << "RTP-Info: url=" << url << "\r\n\r\n";
+             << "RTP-Info: url=" << content_base << "track0;seq=0;rtptime=" << session.out_base_video_ts
+             << ",url=" << content_base << "track1;seq=0;rtptime=" << session.out_base_audio_ts << "\r\n\r\n";
 
         std::string resp_str = resp.str();
         send(client_fd, resp_str.data(), resp_str.length(), 0);
@@ -453,7 +465,7 @@ void RTSPServer::handle_rtsp_request(int client_fd, const std::string& req, RTSP
             auto it = clients_.find(client_fd);
             if (it != clients_.end() && it->second.is_playing) {
                 for (const auto& packet : cached_idr) {
-                    send_interleaved_packet(client_fd, it->second.video_rtp_channel, packet.data(), packet.size());
+                    send_client_rtp_packet(client_fd, it->second, true, packet.data(), packet.size());
                 }
                 it->second.wait_idr = false;
             }
@@ -490,6 +502,60 @@ void RTSPServer::send_interleaved_packet(int fd, uint8_t channel, const uint8_t*
     msg.msg_iov = iov;
     msg.msg_iovlen = 2;
     sendmsg(fd, &msg, MSG_NOSIGNAL);
+}
+
+void RTSPServer::send_client_rtp_packet(int fd, RTSPClientSession& session, bool is_video, const uint8_t* data, size_t len) {
+    if (fd < 0 || !data || len < 12) return;
+
+    uint8_t channel = is_video ? session.video_rtp_channel : session.audio_rtp_channel;
+
+    uint32_t in_ts = (static_cast<uint32_t>(data[4]) << 24) |
+                     (static_cast<uint32_t>(data[5]) << 16) |
+                     (static_cast<uint32_t>(data[6]) << 8)  |
+                      static_cast<uint32_t>(data[7]);
+
+    uint16_t out_seq = 0;
+    uint32_t out_ts = 0;
+
+    if (is_video) {
+        if (!session.video_ts_initialized) {
+            session.video_ts_initialized = true;
+            session.in_base_video_ts = in_ts;
+        }
+        out_ts = session.out_base_video_ts + (in_ts - session.in_base_video_ts);
+        out_seq = session.out_video_seq++;
+    } else {
+        if (!session.audio_ts_initialized) {
+            session.audio_ts_initialized = true;
+            session.in_base_audio_ts = in_ts;
+        }
+        out_ts = session.out_base_audio_ts + (in_ts - session.in_base_audio_ts);
+        out_seq = session.out_audio_seq++;
+    }
+
+    uint8_t buf[2048];
+    std::vector<uint8_t> dynamic_buf;
+    uint8_t* target = buf;
+    if (len > sizeof(buf)) {
+        dynamic_buf.resize(len);
+        target = dynamic_buf.data();
+    }
+    std::memcpy(target, data, len);
+
+    // If audio, ensure payload type is correct
+    if (!is_video) {
+        const uint8_t expected_pt = audio_is_aac_ ? 97 : 0;
+        target[1] = (data[1] & 0x80) | expected_pt;
+    }
+
+    target[2] = (out_seq >> 8) & 0xFF;
+    target[3] = out_seq & 0xFF;
+    target[4] = (out_ts >> 24) & 0xFF;
+    target[5] = (out_ts >> 16) & 0xFF;
+    target[6] = (out_ts >> 8) & 0xFF;
+    target[7] = out_ts & 0xFF;
+
+    send_interleaved_packet(fd, channel, target, len);
 }
 
 void RTSPServer::feed_frame(const MediaFrame& frame) {
@@ -631,18 +697,10 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
     if (!data || len < 12) return;
 
     if (!is_video) {
-        const uint8_t expected_pt = audio_is_aac_ ? 97 : 0;
-        const uint8_t header_byte = (data[1] & 0x80) | expected_pt;
         std::lock_guard<std::mutex> lock(clients_mutex_);
         for (auto& [fd, session] : clients_) {
             if (!session.is_playing) continue;
-            if ((data[1] & 0x7F) != expected_pt) {
-                std::vector<uint8_t> patched(data, data + len);
-                patched[1] = header_byte;
-                send_interleaved_packet(fd, session.audio_rtp_channel, patched.data(), patched.size());
-            } else {
-                send_interleaved_packet(fd, session.audio_rtp_channel, data, len);
-            }
+            send_client_rtp_packet(fd, session, false, data, len);
         }
         return;
     }
@@ -702,12 +760,12 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
             if (!session.is_playing) continue;
             if (session.wait_idr) {
                 if (is_parameter_packet || is_idr_packet) {
-                    send_interleaved_packet(fd, session.video_rtp_channel, data, len);
+                    send_client_rtp_packet(fd, session, true, data, len);
                     if (is_idr_end) session.wait_idr = false;
                 }
                 continue;
             }
-            send_interleaved_packet(fd, session.video_rtp_channel, data, len);
+            send_client_rtp_packet(fd, session, true, data, len);
         }
         return;
     }
@@ -790,13 +848,13 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
             if (is_idr_start) {
                 // Send cached parameter sets (VPS, SPS, PPS) right before IDR so decoder is immediately primed
                 std::lock_guard<std::mutex> plock(param_mutex_);
-                if (!vps_pkt_.empty()) send_interleaved_packet(fd, session.video_rtp_channel, vps_pkt_.data(), vps_pkt_.size());
-                if (!sps_pkt_.empty()) send_interleaved_packet(fd, session.video_rtp_channel, sps_pkt_.data(), sps_pkt_.size());
-                if (!pps_pkt_.empty()) send_interleaved_packet(fd, session.video_rtp_channel, pps_pkt_.data(), pps_pkt_.size());
+                if (!vps_pkt_.empty()) send_client_rtp_packet(fd, session, true, vps_pkt_.data(), vps_pkt_.size());
+                if (!sps_pkt_.empty()) send_client_rtp_packet(fd, session, true, sps_pkt_.data(), sps_pkt_.size());
+                if (!pps_pkt_.empty()) send_client_rtp_packet(fd, session, true, pps_pkt_.data(), pps_pkt_.size());
             }
 
             if (is_param_set || is_idr_frag) {
-                send_interleaved_packet(fd, session.video_rtp_channel, rtp_out.data(), rtp_out.size());
+                send_client_rtp_packet(fd, session, true, rtp_out.data(), rtp_out.size());
                 if (is_idr_end) {
                     session.wait_idr = false; // Successfully synchronized on a clean keyframe!
                 }
@@ -806,7 +864,7 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
         }
 
         // For synchronized clients, forward all frames
-        send_interleaved_packet(fd, session.video_rtp_channel, rtp_out.data(), rtp_out.size());
+        send_client_rtp_packet(fd, session, true, rtp_out.data(), rtp_out.size());
     }
 }
 

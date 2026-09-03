@@ -24,6 +24,17 @@ struct RTSPClientSession {
     uint16_t video_seq = 0;
     uint16_t audio_seq = 0;
     bool sent_gop = false;
+
+    // Client-specific normalized sequence and timestamp tracking (anchored to RTP-Info)
+    uint16_t out_video_seq = 0;
+    uint16_t out_audio_seq = 0;
+    bool video_ts_initialized = false;
+    uint32_t in_base_video_ts = 0;
+    static constexpr uint32_t out_base_video_ts = 0x10000000;
+
+    bool audio_ts_initialized = false;
+    uint32_t in_base_audio_ts = 0;
+    static constexpr uint32_t out_base_audio_ts = 0x20000000;
 };
 
 class RTSPServer {
@@ -55,6 +66,7 @@ private:
     void handle_rtsp_request(int client_fd, const std::string& req, RTSPClientSession& session);
 
     void send_interleaved_packet(int fd, uint8_t channel, const uint8_t* rtp_data, size_t len);
+    void send_client_rtp_packet(int fd, RTSPClientSession& session, bool is_video, const uint8_t* data, size_t len);
     void packetize_and_send_video(const uint8_t* nalu, size_t len, uint32_t ts_90k, bool is_key);
     void packetize_and_send_audio(const uint8_t* data, size_t len, uint32_t ts_samples);
     void rebuild_snapshot_annexb();
