@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(tuya_streamer VERSION 1.0.0 LANGUAGES C CXX)
+project(tuya_streamer VERSION 2.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,7 +21,7 @@ set(NO_MEDIA OFF CACHE BOOL "" FORCE)
 set(USE_NICE OFF CACHE BOOL "" FORCE)
 set(USE_GNUTLS OFF CACHE BOOL "" FORCE)
 set(USE_OPENSSL ON CACHE BOOL "" FORCE)
-set(OPENSSL_ROOT_DIR "/opt/homebrew/opt/openssl@3")
+# OPENSSL_ROOT_DIR is left to the system (works on both macOS Homebrew and Linux Debian)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(

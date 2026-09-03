@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.0.0
+
+### Scrypted Plugin
+
+- Bump to stable `2.0.0` — no longer beta.
+- Full end-to-end testing and validation completed.
+- Improved Smart Life P2P HD RTSP integration via the companion Tuya Camera Bridge add-on.
+- Stream options correctly declare `codec: "hevc"`, `audio: { codec: "pcm_alaw" }`, `prebuffer: 4000`, and `oobCodecParameters: false`.
+- Quality selection requests the highest advertised writable quality enum (`hd`, `2k`, `4k`, etc.) before RTSP allocation, with safe fallback.
+
+### Tuya Camera Bridge (Home Assistant Add-on)
+
+Complete rewrite of the bridge add-on. The legacy Go/Python engine (originally based on **[DanEng1982/tuya-rtsp-bridge](https://github.com/DanEng1982/tuya-rtsp-bridge)**, to whom we are grateful) has been replaced with:
+
+- **Custom C++ RTSP engine** (`tuya-streamer`):
+  - Full RTSP/1.0 SDP compliance — `a=range:npt=0-`, `Content-Base`, complete `RTP-Info` with `seq`/`rtptime` anchors → VLC clock ticks correctly.
+  - Per-client monotonic RTP timestamp normalization via `std::chrono::steady_clock` — no more backward-jumping timestamps.
+  - Cached IDR/GOP priming → instant decode on connect.
+  - HEVC (H.265) and H.264; G.711 PCMU and AAC audio.
+- **NestJS + Fastify backend** for camera management and Tuya QR-login flow.
+- **React + HeroUI frontend** with:
+  - Live RTSP preview with play-on-hover overlay.
+  - Add-camera modal with themed QR code (foreground-only, less-rounded dots).
+  - Auto-open modal when no profiles exist.
+  - Snapshot age display, camera status, RTSP link copy.
+- Ports: `6766` (API), `6767` (Web UI / ingress), `8655+` (RTSP per camera).
+
+---
+
 ## 0.1.2-beta
 
 - Accurately declare `codec: "hevc"`, `audio: { codec: "pcm_alaw" }`, `prebuffer: 4000`, and `oobCodecParameters: false` in `getVideoStreamOptions`.
@@ -13,154 +42,24 @@
 ## 0.1.0-beta.17
 
 - Initialize `online: true` in `TuyaCamera` constructor when P2P RTSP URL is configured.
-- Remove hardcoded `codec: "h264"` constraint in `getVideoStreamOptions` to support HEVC/H.265 streams from Tuya RTSP Bridge without parsing errors.
+- Remove hardcoded `codec: "h264"` constraint in `getVideoStreamOptions`.
 
 ## 0.1.0-beta.16
 
 - Set stream display name to `Smart Life P2P HD` dynamically when P2P RTSP is configured.
-- Bypass Tuya Cloud offline check when P2P RTSP URL is present and mark camera online locally.
-- Remove hardcoded audio codec requirement to allow FFmpeg dynamic audio negotiation.
-
-## 0.1.0-beta.15
-
-- Restore stable `cloud-rtsp` stream ID and `MediaStreamUrl` output to fix Rebroadcast stream bindings.
-- Let Scrypted's standard FFmpeg Camera mixin handle snapshot extraction from the P2P RTSP stream.
-- Set `source: "local"` when P2P RTSP is configured so Scrypted enables unthrottled local rebroadcast and prebuffering.
-
-## 0.1.0-beta.14
-
-- Return `ScryptedMimeTypes.FFmpegInput` with `-rtsp_transport tcp` in `getVideoStream` for reliable Rebroadcast and FFmpeg streaming.
-- Convert video streams to JPEG image buffers in `takePicture` for working snapshot generation.
-- Dynamically label stream as `Smart Life P2P HD RTSP` (`id: p2p-hd-rtsp`) when P2P RTSP is configured.
-
-## 0.1.0-beta.13
-
-- Implement `Camera` interface (`takePicture` & `getPictureOptions`) using the active video stream (P2P HD RTSP or Cloud RTSP) for snapshots.
-- Dynamic stream source classification (`local` when P2P RTSP is configured, `cloud` otherwise).
-- Advertise all standard stream destinations (`local`, `remote`, `local-recorder`, `remote-recorder`, etc.) for seamless Scrypted stream auto-routing.
-- Fire `onDeviceEvent` on P2P RTSP URL setting change to immediately re-route streams and snapshots.
-
-## 0.1.0-beta.12
-
-- Switch Tuya RTSP Bridge default RTSP port to 8600 across the engine, backend, and Web UI.
-- Cleanly patch upstream bridge code during Docker build and startup.
-- Update RTSP URL documentation and camera placeholder to port 8600.
-
-## 0.1.0-beta.11
-
-- Add ingress and webui support to Tuya RTSP Bridge add-on (sidebar integration + Open Web UI button).
-- Add ffprobe resolution hint and camera stream URL logging in getVideoStream.
-- Add qualityToResolution() mapping for stream options hint.
-- 1.5s delay between quality command and RTSP allocation.
-- Improved logging for quality command acceptance/rejection.
-- Rename tuya_rtsp_bridge to bridge.
-- Remove chat.json from repo.
+- Bypass Tuya Cloud offline check when P2P RTSP URL is present.
 
 ## 0.1.0-beta.10
 
-- Add per-camera Smart Life P2P HD RTSP override while preserving Tuya events and controls.
-- Add a Home Assistant add-on definition for QR-authenticated Smart Life WebRTC/P2P to RTSP bridging.
-- Pin the bridge backend to `DanEng1982/tuya-rtsp-bridge` v1.2.4.
-- Fix the add-on startup log command outside the Supervisor bashio shell and add an HTTP health check.
+- Add per-camera Smart Life P2P HD RTSP override.
+- Add Home Assistant add-on based on DanEng1982/tuya-rtsp-bridge v1.2.4.
 
 ## 0.1.0-beta.9
 
-- Request the highest recognised writable quality advertised by the camera schema before RTSP allocation.
-- Safely fall back to Tuya's server-selected quality.
-
-## 0.1.0-beta.7
-
-fix: fix setTimeout undefined function
-bump version
-
-## 0.1.0-beta.6
-
-chore: update changelog
-fix: ensure timeout is actually correct and bound correctly
-chore: bump version
-
-## 0.1.0-beta.5
-
-chore: update changelog
-fix: use correct property for checking connection state
-chore: bump version
-
-## 0.1.0-beta.4
-
-fix: resolve mqtt connection issues
-bump version
-
-## 0.1.0-beta.3
-
-fixchangelog
-changelog
-quick fix
-bump to beta 3
-
-## 0.1.0-beta.2
-
-update commit
-bump version
-
-## 0.1.0-beta.1
-
-improve mqtt reconnect, also update status
-wip: prevent setting motion if device has no motion detection
-fix: resolve indicator not updating
-feat: add support for light accessory in camera
-wip: fetch rtsp from Tuya Sharing SDK
-
-## 0.1.0
-
-wip: allow changing between different login methods
-wip: remove websocket for cameras since they are not supported
-
-## 0.0.9
-
-wip: update components
-
-## 0.0.8
-
-format code
-replace tool to use `ffmpeg` and bump v0.0.8
-
-## 0.0.7
-
-plugins: update tsconfig.json
-Updated Tuya to v0.0.7 (#408)
-
-## 0.0.7-beta.2
-
-tuya: fix crlf in candidate, fix empty stream name in rebroadcast, webrtc logging
-remove null candidate
-
-## 0.0.7-beta.1
-
-Fix issue not being able to select your prebuffer
-
-## 0.0.7-beta.0
-
-Added support for webrtc, testing needed
-
-## 0.0.6
-
-Improvements in WebRTC
-add initial support for webrtc
-allow triggering doorbell (#361)
-
-## 0.0.5
-
-[Tuya Plugin] Fixed issue with devices not loading (#355)
-
-## 0.0.4
-
-Fix race condition for Tuya Devices (#351)
-
-## 0.0.3
-
-tuya: publish
+- Request highest recognised writable quality advertised by camera schema before RTSP allocation.
+- Safe fallback to Tuya's server-selected quality.
 
 ## 0.0.1
 
-tuya: project cleanups, remove unnecessary dependencies
-Add Tuya Camera (and Doorbell Cameras) Support (#350)
+- Initial Tuya camera plugin extraction from Scrypted monorepo.
+- Camera discovery, cloud RTSP streaming, doorbell events, motion detection.

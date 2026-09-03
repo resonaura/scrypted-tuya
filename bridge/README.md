@@ -1,44 +1,42 @@
-# Tuya RTSP Bridge — Home Assistant add-on
+# Tuya Camera Bridge — Home Assistant Add-on
 
-Turn Tuya / Smart Life cameras into plain RTSP endpoints for Frigate, go2rtc, Agent DVR, or VLC.
+Full-stack Tuya / Smart Life camera bridge with live P2P/WebRTC-to-RTSP conversion, Web UI, and seamless Scrypted integration.
 
-## Install (local add-on)
+## What is this?
 
-1. On the HA host (or via Samba/SSH), copy this folder to:
-   ```
-    /addons/bridge
-    ```
-    The monorepo layout expects the **repo root** as Docker build context. Easiest path:
-    ```bash
-    git clone https://github.com/DanEng1982/tuya-rtsp-bridge.git /addons/tuya-rtsp-bridge-src
-    ln -s /addons/tuya-rtsp-bridge-src/homeassistant/bridge /addons/bridge
-   ```
-2. In HA: **Settings → Add-ons → Add-on store → ⋮ → Check for updates**
-3. Open **Local add-ons → Tuya RTSP Bridge → Install → Start**
-4. Open the Web UI (`http://<ha-host>:8787`) → **Create QR** → scan & confirm in Smart Life
-5. Use in Frigate / go2rtc:
-   ```
-   rtsp://<ha-host>:8600/<CameraName>/hd
-   ```
+This add-on provides:
+
+- **Native C++ streaming engine** — WebRTC P2P to RTSP re-streaming with monotonic timeline, full RTSP/1.0 SDP compliance (VLC clock ticking, frame-accurate timestamps)
+- **NestJS REST + WebSocket backend** — camera profile management, QR-login flow, snapshot API
+- **React / HeroUI web frontend** — live preview, camera cards, add-camera modal with styled QR code
+
+## Install via Home Assistant Add-on Store
+
+1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
+2. Add `https://github.com/resonaura/scrypted-tuya`
+3. Install **Tuya Camera Bridge**, click **Start**
+4. Open the Web UI (ingress or `http://<ha-host>:6767`)
+5. Create a new profile → scan the QR code in the Smart Life app
+6. Copy the camera RTSP URL: `rtsp://<ha-host>:8655/<CameraName>`
+
+## Ports
+
+| Port | Purpose |
+|------|---------|
+| `6766` | REST / WebSocket API |
+| `6767` | Web UI (also ingress) |
+| `8655+` | RTSP streams (one per camera) |
+
+## Scrypted integration
+
+In Scrypted, set the camera **Smart Life P2P HD RTSP URL** to the RTSP address shown in the Web UI. The Tuya Scrypted plugin continues to handle discovery, motion events, doorbells, and controls.
+
+## Attribution
+
+This add-on was inspired by the original **[DanEng1982/tuya-rtsp-bridge](https://github.com/DanEng1982/tuya-rtsp-bridge)** project. We are grateful for DanEng1982's pioneering work on Tuya P2P bridging.  
+The current implementation is a from-scratch rewrite with a custom C++ RTSP engine, NestJS backend, and React frontend — built independently on top of the WebRTC primitives.
 
 ## Requirements
 
-- **host_network: true** (already set) — cameras need LAN WebRTC/UDP and PTZ TCP 6668
-- Do **not** also enable the official Tuya cloud integration for the same cams (it steals the live session)
-
-## Alternatives
-
-If you prefer plain Docker on the HA host (no Supervisor add-on):
-
-```bash
-cd /path/to/bridge
-docker compose up -d --build
-```
-
-See [docs/docker.md](../../docs/docker.md).
-
-## Notes
-
-- Desktop GUI is **not** in the add-on (headless API only)
-- Session files live under the add-on data volume — survive restarts
+- `host_network: true` — cameras need LAN WebRTC/UDP
 - No Tuya IoT Platform developer keys required for the QR flow
