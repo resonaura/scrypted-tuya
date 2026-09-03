@@ -1,14 +1,14 @@
+import clsx from "clsx";
 import React, {
+  DependencyList,
+  useCallback,
   useEffect,
   useRef,
   useState,
-  useCallback,
-  DependencyList,
-} from 'react';
-import './VideoPlayer.scss';
-import BlurEffect from 'react-progressive-blur';
-import { MaterialIcon } from './MaterialIcon';
-import clsx from 'clsx';
+} from "react";
+import BlurEffect from "react-progressive-blur";
+import { MaterialIcon } from "./MaterialIcon";
+import "./VideoPlayer.scss";
 
 /* =========================
    Helper Utilities
@@ -16,13 +16,13 @@ import clsx from 'clsx';
 
 // Format seconds into HH:MM:SS or MM:SS
 function humanVideoTime(totalSeconds: number | null | undefined): string {
-  if (totalSeconds == null || !isFinite(totalSeconds)) return '00:00';
+  if (totalSeconds == null || !isFinite(totalSeconds)) return "00:00";
   const s = Math.max(0, Math.floor(totalSeconds));
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
-  const mm = String(m).padStart(2, '0');
-  const ss = String(sec).padStart(2, '0');
+  const mm = String(m).padStart(2, "0");
+  const ss = String(sec).padStart(2, "0");
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
@@ -31,7 +31,7 @@ function autoShowHideTransition(
   active: boolean,
   setHiddenStart: (v: boolean) => void,
   setHiddenEnd: (v: boolean) => void,
-  delay = 300
+  delay = 300,
 ): number | null {
   // hiddenStart manages DOM visibility / display
   // hiddenEnd controls the .hidden CSS class (opacity/visibility)
@@ -55,7 +55,7 @@ function useEventListener<K extends keyof WindowEventMap>(
   type: K,
   handler: (ev: WindowEventMap[K] & Event) => any,
   options?: AddEventListenerOptions | boolean,
-  deps?: DependencyList
+  deps?: DependencyList,
 ) {
   const saved = useRef(handler);
   useEffect(() => {
@@ -85,23 +85,23 @@ const IconButton: React.FC<
     onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
     onFocus?: () => void;
     className?: string;
-    size?: 'mini' | 'default';
+    size?: "mini" | "default";
     title?: string;
-    'aria-label'?: string;
+    "aria-label"?: string;
   }>
 > = ({
   children,
   onClick,
   onFocus,
   className,
-  size = 'default',
+  size = "default",
   title,
   ...rest
 }) => {
   return (
     <button
       type="button"
-      className={`icon-button ${size} ${className ?? ''}`}
+      className={`icon-button ${size} ${className ?? ""}`}
       onClick={(e) => {
         e.stopPropagation();
         onClick?.(e);
@@ -120,20 +120,20 @@ const IconButton: React.FC<
    ========================= */
 
 enum VolumeIconState {
-  Muted = 'muted',
-  VeryLow = 'very-low-volume',
-  Low = 'low-volume',
-  Mid = 'mid-volume',
-  High = 'high-volume',
+  Muted = "muted",
+  VeryLow = "very-low-volume",
+  Low = "low-volume",
+  Mid = "mid-volume",
+  High = "high-volume",
 }
 
 const VolumeAnimatedIcon: React.FC<{
   state: VolumeIconState;
-  ['data-unique-id']?: string;
-}> = props => {
+  ["data-unique-id"]?: string;
+}> = (props) => {
   return (
     <svg
-      data-unique-id={props['data-unique-id']}
+      data-unique-id={props["data-unique-id"]}
       xmlns="http://www.w3.org/2000/svg"
       width="24"
       height="24"
@@ -173,7 +173,7 @@ const ProgressTimeTooltip: React.FC<{
   active: boolean;
   positionX: number; // px - tooltip left offset
   time: number; // seconds
-  ['data-unique-id']?: string;
+  ["data-unique-id"]?: string;
 }> = ({ active, positionX, time, ...rest }) => {
   const [hiddenStart, setHiddenStart] = useState(!active);
   const [hiddenEnd, setHiddenEnd] = useState(!active);
@@ -192,7 +192,7 @@ const ProgressTimeTooltip: React.FC<{
   return (
     <div
       {...rest}
-      className={`video-progress-time-tooltip player-text ${hiddenEnd ? 'hidden' : ''}`}
+      className={`video-progress-time-tooltip player-text ${hiddenEnd ? "hidden" : ""}`}
       style={{ left: positionX }}
     >
       {humanVideoTime(time)}
@@ -211,8 +211,8 @@ const ProgressBar: React.FC<{
   onDragStart?: () => void;
   onDragStop?: () => void;
   translation: typeof defaultStrings;
-  ['data-unique-id']?: string;
-}> = props => {
+  ["data-unique-id"]?: string;
+}> = (props) => {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState(false);
   const [hover, setHover] = useState(false);
@@ -231,7 +231,7 @@ const ProgressBar: React.FC<{
     const zoom = getBodyZoom();
     const v = zoom.transformUsed ? zoom.value : 1;
     const rect = rootRef.current.getBoundingClientRect();
-    const clientX = 'clientX' in evt ? evt.clientX : evt.touches[0].clientX;
+    const clientX = "clientX" in evt ? evt.clientX : evt.touches[0].clientX;
     const x = clientX / zoom.value - rect.left / v;
     setCursorX(x);
     let ratio = x / (rect.width / v);
@@ -258,28 +258,28 @@ const ProgressBar: React.FC<{
   };
 
   // Global listeners for drag interactions
-  useEventListener(window, 'mousemove', move as any);
-  useEventListener(window, 'touchmove', move as any, { passive: false });
-  useEventListener(window, 'mouseup', () => {
+  useEventListener(window, "mousemove", move as any);
+  useEventListener(window, "touchmove", move as any, { passive: false });
+  useEventListener(window, "mouseup", () => {
     setDragging(false);
 
     if (dragging) {
       stop();
     }
   });
-  useEventListener(window, 'mouseleave', () => {
+  useEventListener(window, "mouseleave", () => {
     setDragging(false);
     if (dragging) {
       stop();
     }
   });
-  useEventListener(window, 'touchend', () => {
+  useEventListener(window, "touchend", () => {
     setDragging(false);
     if (dragging) {
       stop();
     }
   });
-  useEventListener(window, 'touchcancel', () => {
+  useEventListener(window, "touchcancel", () => {
     setDragging(false);
     if (dragging) {
       stop();
@@ -288,7 +288,7 @@ const ProgressBar: React.FC<{
 
   return (
     <div
-      data-unique-id={props['data-unique-id']}
+      data-unique-id={props["data-unique-id"]}
       className="video-progress-bar-wrapper"
     >
       <ProgressTimeTooltip
@@ -325,7 +325,7 @@ const VolumeSlider: React.FC<{
   playbackVolume: number; // 0..1
   setPlaybackVolume: (v: number) => void;
   disableScrollingToChangeVolume?: boolean;
-  ['data-unique-id']?: string;
+  ["data-unique-id"]?: string;
 }> = ({
   visible,
   isMuted,
@@ -376,19 +376,19 @@ const VolumeSlider: React.FC<{
     setByEvent(evt);
   };
 
-  useEventListener(window, 'mousemove', move as any);
-  useEventListener(window, 'touchmove', move as any, { passive: false });
-  useEventListener(window, 'mouseup', () => setDrag(false));
-  useEventListener(window, 'mouseleave', () => setDrag(false));
-  useEventListener(window, 'touchend', () => setDrag(false));
-  useEventListener(window, 'touchcancel', () => setDrag(false));
+  useEventListener(window, "mousemove", move as any);
+  useEventListener(window, "touchmove", move as any, { passive: false });
+  useEventListener(window, "mouseup", () => setDrag(false));
+  useEventListener(window, "mouseleave", () => setDrag(false));
+  useEventListener(window, "touchend", () => setDrag(false));
+  useEventListener(window, "touchcancel", () => setDrag(false));
 
   if (hiddenStart) return null;
   return (
     <div
       {...rest}
       ref={wrapperRef}
-      className={`volume-bar${isMuted ? ' ' + 'muted' : ''}${hiddenEnd ? ' ' + 'hidden' : ''}${smooth ? ' ' + 'smooth' : ''}`}
+      className={`volume-bar${isMuted ? " " + "muted" : ""}${hiddenEnd ? " " + "hidden" : ""}${smooth ? " " + "smooth" : ""}`}
       onMouseDown={start}
       onTouchStart={start}
     >
@@ -408,16 +408,16 @@ const VolumeSlider: React.FC<{
 
 const defaultStrings = {
   actions: {
-    play: 'Play',
-    pause: 'Pause',
-    mute: 'Mute',
-    unmute: 'Unmute',
-    goFullscreen: 'Go fullscreen',
-    exitFullscreen: 'Exit fullscreen',
+    play: "Play",
+    pause: "Pause",
+    mute: "Mute",
+    unmute: "Unmute",
+    goFullscreen: "Go fullscreen",
+    exitFullscreen: "Exit fullscreen",
   },
-  seek: 'Seek',
-  controlPanel: 'Playback control panel',
-  defaultErrorText: 'Something went wrong...',
+  seek: "Seek",
+  controlPanel: "Playback control panel",
+  defaultErrorText: "Something went wrong...",
 };
 
 /* =========================
@@ -435,7 +435,7 @@ export interface VideoPlayerProps {
   disablePlaybackIcon?: boolean;
   disableScrollingToChangeVolume?: boolean;
   translation?: typeof defaultStrings;
-  ['data-unique-id']?: string;
+  ["data-unique-id"]?: string;
   poster?: string; // Poster thumbnail
   aspectRatio?: number | string; // Aspect ratio, e.g. 16/9 or 1.777
   fluid?: boolean; // Stretch to 100% of container width/height
@@ -549,8 +549,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     function onFSChange() {
       setFS(!!document.fullscreenElement);
     }
-    document.addEventListener('fullscreenchange', onFSChange);
-    return () => document.removeEventListener('fullscreenchange', onFSChange);
+    document.addEventListener("fullscreenchange", onFSChange);
+    return () => document.removeEventListener("fullscreenchange", onFSChange);
   }, []);
 
   // Time text formatting
@@ -561,7 +561,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const v = videoRef.current;
     const id = window.setInterval(() => {
       if (!v || draggingScrub) return;
-      if (typeof v.currentTime === 'number' && !isNaN(v.currentTime)) {
+      if (typeof v.currentTime === "number" && !isNaN(v.currentTime)) {
         setCurrent(v.currentTime);
       }
       if (v.duration && isFinite(v.duration)) {
@@ -584,53 +584,53 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   // Keyboard navigation
-  useEventListener(window, 'keydown', (e: KeyboardEvent) => {
+  useEventListener(window, "keydown", (e: KeyboardEvent) => {
     if (!videoRef.current || !wrapperRef.current) return;
     const target = e.target as HTMLElement | null;
     if (!target || !wrapperRef.current.contains(target)) return;
 
     let t = 0;
     switch (e.key) {
-      case ' ':
+      case " ":
         if (!(target instanceof HTMLButtonElement)) togglePlay();
         break;
-      case 'ArrowLeft':
+      case "ArrowLeft":
         if (isLive) break;
         t = Math.max(0, currentTime - 5);
         videoRef.current.currentTime = t;
         setCurrent(t);
         setProgressPct(
           (videoRef.current.currentTime / (videoRef.current.duration || 1)) *
-            100
+            100,
         );
         break;
-      case 'ArrowRight':
+      case "ArrowRight":
         if (isLive) break;
         t = Math.min(duration, currentTime + 5);
         videoRef.current.currentTime = t;
         setCurrent(t);
         setProgressPct(
           (videoRef.current.currentTime / (videoRef.current.duration || 1)) *
-            100
+            100,
         );
         break;
-      case 'ArrowUp':
+      case "ArrowUp":
         handleSetVolume(Math.min(1, volume + 0.1));
         break;
-      case 'ArrowDown':
+      case "ArrowDown":
         handleSetVolume(Math.max(0, volume - 0.1));
         break;
       default:
         // "M"
-        if ((e as any).keyCode === 77) setMuted(m => !m);
+        if ((e as any).keyCode === 77) setMuted((m) => !m);
     }
   });
 
-  useEventListener(window, 'keydown', (e: KeyboardEvent) => {
+  useEventListener(window, "keydown", (e: KeyboardEvent) => {
     if (!videoRef.current) return;
 
     switch (e.key) {
-      case ' ':
+      case " ":
         if (isFullscreen) {
           e.stopPropagation();
           e.preventDefault();
@@ -646,7 +646,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const t = autoShowHideTransition(
       showControls,
       setHiddenStart,
-      setHiddenEnd
+      setHiddenEnd,
     );
     setHideTimer(t);
     return () => {
@@ -723,20 +723,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
     const activityHandler = () => resetControlsTimer();
 
-    el.addEventListener('mousemove', activityHandler);
-    el.addEventListener('mousedown', activityHandler);
-    el.addEventListener('touchstart', activityHandler);
-    el.addEventListener('keydown', activityHandler);
+    el.addEventListener("mousemove", activityHandler);
+    el.addEventListener("mousedown", activityHandler);
+    el.addEventListener("touchstart", activityHandler);
+    el.addEventListener("keydown", activityHandler);
 
     // Initial timer setup
     resetControlsTimer();
 
     return () => {
       clearTimeout(timeoutId);
-      el.removeEventListener('mousemove', activityHandler);
-      el.removeEventListener('mousedown', activityHandler);
-      el.removeEventListener('touchstart', activityHandler);
-      el.removeEventListener('keydown', activityHandler);
+      el.removeEventListener("mousemove", activityHandler);
+      el.removeEventListener("mousedown", activityHandler);
+      el.removeEventListener("touchstart", activityHandler);
+      el.removeEventListener("keydown", activityHandler);
     };
   }, [playing, alwaysShowControls]);
 
@@ -744,26 +744,26 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     <div
       {...rest}
       className={clsx(
-        'video-player-wrapper h-full max-h-full w-full max-w-full rounded-[10px]',
-        className
+        "video-player-wrapper h-full max-h-full w-full max-w-full rounded-[10px]",
+        className,
       )}
     >
       <div
         ref={wrapperRef}
         style={{
           aspectRatio: aspectRatio
-            ? typeof aspectRatio === 'number'
+            ? typeof aspectRatio === "number"
               ? `${aspectRatio}`
               : aspectRatio
             : undefined,
 
-          width: fluid ? '100%' : width,
+          width: fluid ? "100%" : width,
           height: height,
           backgroundImage: poster ? `url(${poster})` : undefined,
-          backgroundSize: 'contain',
-          backgroundPosition: 'center',
+          backgroundSize: "contain",
+          backgroundPosition: "center",
         }}
-        className={`video-player ${error ? 'error' : ''} h-full max-w-full`}
+        className={`video-player ${error ? "error" : ""} h-full max-w-full`}
       >
         {/* Media element */}
         {!error && (
@@ -813,7 +813,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           {/* Overlay (play/pause / error / spinner) */}
           <div
             ref={overlayFocusRef}
-            className={`overlay ${(!playing && !disablePlaybackIcon) || buffering || isLoading ? '' : 'hidden'}`}
+            className={`overlay ${(!playing && !disablePlaybackIcon) || buffering || isLoading ? "" : "hidden"}`}
             onClick={!isLoading ? onOverlayClick : undefined}
             tabIndex={isFullscreen ? undefined : -1}
           >
@@ -833,7 +833,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     size={80}
                     className="player-icon"
                     filled={true}
-                    icon={playing ? 'pause' : 'play-arrow'}
+                    icon={playing ? "pause" : "play-arrow"}
                   />
                 )}
                 {(buffering || isLoading) && (
@@ -844,7 +844,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               </div>
             )}
             {error && (
-              <div className="playback-error flex flex-col items-center gap-[5px]">
+              <div className="playback-error flex flex-col items-center gap-1.25">
                 <MaterialIcon icon="warning" filled={true} size={80} />
                 <p>{translation.defaultErrorText}</p>
               </div>
@@ -854,16 +854,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           {/* Control panel */}
           {!error && !hiddenStart && (
             <div
-              className={`main-actions ${hiddenEnd ? 'hidden' : ''}`}
+              className={`main-actions ${hiddenEnd ? "hidden" : ""}`}
               aria-label={translation.controlPanel}
             >
               <div className="content-layer">
                 <BlurEffect
-                  className={`blur-effect-overlay pointer-events-none absolute inset-x-0 bottom-0 z-2 ${isFullscreen ? 'fullscreen' : 'default'}`}
+                  className={`blur-effect-overlay pointer-events-none absolute inset-x-0 bottom-0 z-2 ${isFullscreen ? "fullscreen" : "default"}`}
                   position="bottom"
                   intensity={200}
                 />
-                <div className="main relative z-[10] flex items-center gap-4 px-6">
+                <div className="main relative z-10 flex items-center gap-4 px-6">
                   {/* Play/Pause */}
                   <IconButton
                     className="play-toggle player-icon"
@@ -883,7 +883,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     <MaterialIcon
                       size={24}
                       filled={true}
-                      icon={playing ? 'pause' : 'play-arrow'}
+                      icon={playing ? "pause" : "play-arrow"}
                     />
                   </IconButton>
 
@@ -967,7 +967,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       <MaterialIcon
                         size={22}
                         className="player-icon"
-                        icon={isFullscreen ? 'fullscreen-exit' : 'fullscreen'}
+                        icon={isFullscreen ? "fullscreen-exit" : "fullscreen"}
                       />
                     </IconButton>
                   </div>

@@ -1,29 +1,24 @@
-import React, { useState, useEffect, useRef } from "react";
 import {
-  Modal,
-  Tabs,
-  Button,
-  TextField,
   Input,
   Label,
-  Select,
   ListBox,
+  Modal,
+  Select,
   Spinner,
   Surface,
+  TextField,
 } from "@heroui/react";
-import {
-  QrCode,
-  RefreshCw,
-  AlertCircle,
-} from "lucide-react";
-import {
-  startQrFlow,
-  pollQr,
-  loginWithPassword,
-  createCamera,
-  refreshCameras,
-} from "../api/client.js";
+import { AlertCircle, QrCode, RefreshCw } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+  createCamera,
+  loginWithPassword,
+  pollQr,
+  refreshCameras,
+  startQrFlow,
+} from "../api/client.js";
+import { Button, Tabs } from "./ui/index.js";
 
 interface AddCameraModalProps {
   isOpen: boolean;
@@ -48,7 +43,9 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
   onAdded,
 }) => {
   const [selectedTab, setSelectedTab] = useState<string>("qr");
-  const [region, setRegion] = useState<string>(() => initialRegion || localStorage.getItem("tuya-bridge.region") || "us");
+  const [region, setRegion] = useState<string>(
+    () => initialRegion || localStorage.getItem("tuya-bridge.region") || "us",
+  );
 
   // QR Flow State
   const [qrToken, setQrToken] = useState<string | null>(null);
@@ -72,13 +69,15 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
-    const nextRegion = initialRegion || localStorage.getItem("tuya-bridge.region") || "us";
+    const nextRegion =
+      initialRegion || localStorage.getItem("tuya-bridge.region") || "us";
     setRegion(nextRegion);
   }, [initialRegion, isOpen]);
 
   useEffect(() => {
     localStorage.setItem("tuya-bridge.region", region);
-    if (region === "us" || region === "ue") setCountryCode((current) => current === "49" ? "1" : current);
+    if (region === "us" || region === "ue")
+      setCountryCode((current) => (current === "49" ? "1" : current));
   }, [region]);
 
   const fetchQr = async (selectedRegion = region) => {
@@ -185,10 +184,10 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
       variant="blur"
     >
       <Modal.Container placement="center" size="md">
-        <Modal.Dialog className="sm:max-w-md max-h-[85vh] overflow-y-auto">
+        <Modal.Dialog className="rs-card-surface sm:max-w-md max-h-[85vh] overflow-y-auto">
           <Modal.CloseTrigger />
           <Modal.Header>
-            <Modal.Icon className="bg-primary/10 text-primary">
+            <Modal.Icon className="bg-foreground/5 text-primary">
               <QrCode className="size-5" />
             </Modal.Icon>
             <Modal.Heading>Connect Tuya profile</Modal.Heading>
@@ -198,14 +197,25 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
             <Tabs
               selectedKey={selectedTab}
               onSelectionChange={(key) => setSelectedTab(key as string)}
-              variant="secondary"
               className="w-full"
+              variant="nav"
             >
               <Tabs.ListContainer className="mb-4">
                 <Tabs.List className="w-full grid grid-cols-3">
-                  <Tabs.Tab id="qr">QR Code</Tabs.Tab>
-                  <Tabs.Tab id="password">Password</Tabs.Tab>
-                  <Tabs.Tab id="manual">Manual</Tabs.Tab>
+                  <Tabs.Tab id="qr">
+                    <Tabs.Indicator />
+                    QR Code
+                  </Tabs.Tab>
+                  <Tabs.Tab id="password">
+                    {" "}
+                    <Tabs.Indicator />
+                    Password
+                  </Tabs.Tab>
+                  <Tabs.Tab id="manual">
+                    {" "}
+                    <Tabs.Indicator />
+                    Manual
+                  </Tabs.Tab>
                 </Tabs.List>
               </Tabs.ListContainer>
 
@@ -215,9 +225,13 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                   <div className="flex-1">
                     <Select
                       selectedKey={region}
-                      onSelectionChange={(k) => setRegion((k as string) || "us")}
+                      onSelectionChange={(k) =>
+                        setRegion((k as string) || "us")
+                      }
                     >
-                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">Account Region</Label>
+                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">
+                        Account Region
+                      </Label>
                       <Select.Trigger>
                         <Select.Value />
                         <Select.Indicator />
@@ -225,7 +239,11 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                       <Select.Popover>
                         <ListBox>
                           {REGIONS.map((r) => (
-                            <ListBox.Item key={r.key} id={r.key} textValue={r.label}>
+                            <ListBox.Item
+                              key={r.key}
+                              id={r.key}
+                              textValue={r.label}
+                            >
                               {r.label}
                             </ListBox.Item>
                           ))}
@@ -235,16 +253,18 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                   </div>
                   <Button
                     size="md"
-                    variant="secondary"
+                    variant="default-soft"
                     onPress={() => fetchQr(region)}
                     isDisabled={isQrLoading}
                     aria-label="Refresh QR"
                   >
-                    <RefreshCw className={`size-4 ${isQrLoading ? "animate-spin" : ""}`} />
+                    <RefreshCw
+                      className={`size-4 ${isQrLoading ? "animate-spin" : ""}`}
+                    />
                   </Button>
                 </div>
 
-                <Surface className="flex flex-col items-center justify-center p-4 rounded-2xl">
+                <Surface className="bg-transparent flex flex-col items-center justify-center p-4 rounded-2xl">
                   {isQrLoading ? (
                     <div className="h-44 flex flex-col items-center justify-center gap-2 text-muted-foreground">
                       <Spinner size="md" />
@@ -258,15 +278,16 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                           className="size-40 object-contain"
                         />
                       </div>
-                      <p className="text-[11px] text-muted-foreground text-center">
-                        Scan with <strong>Tuya Smart</strong> or <strong>Smart Life</strong> app
+                      <p className="mt-2 opacity-50 text-[11px] text-muted-foreground text-center">
+                        Scan with <strong>Tuya Smart</strong> or{" "}
+                        <strong>Smart Life</strong> app
                       </p>
                     </div>
                   ) : (
                     <div className="h-44 flex flex-col items-center justify-center gap-2 text-rose-500">
                       <AlertCircle className="size-6" />
                       <p className="text-xs font-medium">Failed to load QR</p>
-                      <Button size="sm" variant="secondary" onPress={() => fetchQr(region)}>
+                      <Button size="sm" onPress={() => fetchQr(region)}>
                         Retry
                       </Button>
                     </div>
@@ -280,9 +301,13 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                   <div className="grid grid-cols-2 gap-2">
                     <Select
                       selectedKey={region}
-                      onSelectionChange={(k) => setRegion((k as string) || "us")}
+                      onSelectionChange={(k) =>
+                        setRegion((k as string) || "us")
+                      }
                     >
-                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">Region</Label>
+                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">
+                        Region
+                      </Label>
                       <Select.Trigger>
                         <Select.Value />
                         <Select.Indicator />
@@ -290,7 +315,11 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                       <Select.Popover>
                         <ListBox>
                           {REGIONS.map((r) => (
-                            <ListBox.Item key={r.key} id={r.key} textValue={r.label}>
+                            <ListBox.Item
+                              key={r.key}
+                              id={r.key}
+                              textValue={r.label}
+                            >
                               {r.label}
                             </ListBox.Item>
                           ))}
@@ -298,29 +327,44 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                       </Select.Popover>
                     </Select>
 
-                    <TextField value={countryCode} onChange={setCountryCode} variant="secondary">
-                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">Country Code</Label>
-                      <Input placeholder="49" variant="secondary" />
+                    <TextField value={countryCode} onChange={setCountryCode}>
+                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">
+                        Country Code
+                      </Label>
+                      <Input placeholder="49" />
                     </TextField>
                   </div>
 
-                  <TextField value={email} onChange={setEmail} isRequired variant="secondary">
-                    <Label className="text-xs text-muted-foreground font-medium mb-1 block">Email or User</Label>
-                    <Input placeholder="name@example.com" variant="secondary" />
+                  <TextField value={email} onChange={setEmail} isRequired>
+                    <Label className="text-xs text-muted-foreground font-medium mb-1 block">
+                      Email or User
+                    </Label>
+                    <Input placeholder="name@example.com" />
                   </TextField>
 
-                  <TextField value={password} onChange={setPassword} type="password" isRequired variant="secondary">
-                    <Label className="text-xs text-muted-foreground font-medium mb-1 block">Password</Label>
-                    <Input type="password" placeholder="••••••••" variant="secondary" />
+                  <TextField
+                    value={password}
+                    onChange={setPassword}
+                    type="password"
+                    isRequired
+                  >
+                    <Label className="text-xs text-muted-foreground font-medium mb-1 block">
+                      Password
+                    </Label>
+                    <Input type="password" placeholder="••••••••" />
                   </TextField>
 
                   <Button
                     type="submit"
-                    variant="primary"
+                    variant="accent"
                     isDisabled={isPasswordLoading}
                     className="w-full font-semibold mt-2"
                   >
-                    {isPasswordLoading ? <Spinner size="sm" /> : "Sign In & Discover"}
+                    {isPasswordLoading ? (
+                      <Spinner size="sm" />
+                    ) : (
+                      "Sign In & Discover"
+                    )}
                   </Button>
                 </form>
               </Tabs.Panel>
@@ -328,39 +372,66 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
               {/* Manual Entry Panel */}
               <Tabs.Panel id="manual">
                 <form onSubmit={handleManualSubmit} className="space-y-2.5">
-                  <TextField value={manualName} onChange={setManualName} isRequired variant="secondary">
-                    <Label className="text-xs text-muted-foreground font-medium mb-1 block">Camera Name</Label>
-                    <Input placeholder="Front Door" variant="secondary" />
+                  <TextField
+                    value={manualName}
+                    onChange={setManualName}
+                    isRequired
+                  >
+                    <Label className="text-xs text-muted-foreground font-medium mb-1 block">
+                      Camera Name
+                    </Label>
+                    <Input placeholder="Front Door" />
                   </TextField>
 
-                  <TextField value={manualDid} onChange={setManualDid} isRequired variant="secondary">
-                    <Label className="text-xs text-muted-foreground font-medium mb-1 block">Device ID (DID)</Label>
-                    <Input placeholder="bf12345678abcdef" variant="secondary" />
+                  <TextField
+                    value={manualDid}
+                    onChange={setManualDid}
+                    isRequired
+                  >
+                    <Label className="text-xs text-muted-foreground font-medium mb-1 block">
+                      Device ID (DID)
+                    </Label>
+                    <Input placeholder="bf12345678abcdef" />
                   </TextField>
 
-                  <TextField value={manualLocalKey} onChange={setManualLocalKey} variant="secondary">
-                    <Label className="text-xs text-muted-foreground font-medium mb-1 block">Local Key (Optional)</Label>
-                    <Input placeholder="16-character key" variant="secondary" />
+                  <TextField
+                    value={manualLocalKey}
+                    onChange={setManualLocalKey}
+                  >
+                    <Label className="text-xs text-muted-foreground font-medium mb-1 block">
+                      Local Key (Optional)
+                    </Label>
+                    <Input placeholder="16-character key" />
                   </TextField>
 
                   <div className="grid grid-cols-2 gap-2">
-                    <TextField value={manualIp} onChange={setManualIp} variant="secondary">
-                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">Local IP (Optional)</Label>
-                      <Input placeholder="192.168.1.50" variant="secondary" />
+                    <TextField value={manualIp} onChange={setManualIp}>
+                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">
+                        Local IP (Optional)
+                      </Label>
+                      <Input placeholder="192.168.1.50" />
                     </TextField>
                     <Select
                       selectedKey={manualQuality}
-                      onSelectionChange={(k) => setManualQuality((k as "hd" | "sd") || "hd")}
+                      onSelectionChange={(k) =>
+                        setManualQuality((k as "hd" | "sd") || "hd")
+                      }
                     >
-                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">Quality</Label>
+                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">
+                        Quality
+                      </Label>
                       <Select.Trigger>
                         <Select.Value />
                         <Select.Indicator />
                       </Select.Trigger>
                       <Select.Popover>
                         <ListBox>
-                          <ListBox.Item id="hd" textValue="HD Stream">HD Stream</ListBox.Item>
-                          <ListBox.Item id="sd" textValue="SD Stream">SD Stream</ListBox.Item>
+                          <ListBox.Item id="hd" textValue="HD Stream">
+                            HD Stream
+                          </ListBox.Item>
+                          <ListBox.Item id="sd" textValue="SD Stream">
+                            SD Stream
+                          </ListBox.Item>
                         </ListBox>
                       </Select.Popover>
                     </Select>
@@ -368,7 +439,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
 
                   <Button
                     type="submit"
-                    variant="primary"
+                    variant="accent"
                     isDisabled={isManualSubmitting}
                     className="w-full font-semibold mt-2"
                   >
@@ -378,8 +449,6 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
               </Tabs.Panel>
             </Tabs>
           </Modal.Body>
-
-
         </Modal.Dialog>
       </Modal.Container>
     </Modal.Backdrop>
