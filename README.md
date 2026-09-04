@@ -19,6 +19,10 @@ Extracted from [`plugins/tuya`](https://github.com/koush/scrypted/tree/main/plug
 
 > This project is unofficial and is not affiliated with or endorsed by Scrypted or Tuya.
 
+<p align="center">
+  <img src="media/tuya-bridge-dashboard.png" width="800" alt="Tuya Bridge Dashboard" />
+</p>
+
 ---
 
 ## Features
