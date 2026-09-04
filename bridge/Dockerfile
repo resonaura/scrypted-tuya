@@ -46,7 +46,7 @@ ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates libstdc++6 jq \
+    curl ca-certificates libstdc++6 jq ffmpeg \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
     && npm install -g serve \

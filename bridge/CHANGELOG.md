@@ -1,5 +1,10 @@
 # Tuya Camera Bridge — Changelog
 
+## 2.0.4
+
+- **Fix `spawn ffmpeg ENOENT` runtime error**:
+  - Added `ffmpeg` package to the final production container (`Stage 3`), restoring live camera snapshots, card previews, and WebRTC-to-browser H.264 transcoding.
+
 ## 2.0.3
 
 - **Fix build hang during Docker container creation (`pnpm prune --prod`)**:

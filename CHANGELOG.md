@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.4
+
+- **Fix `spawn ffmpeg ENOENT` runtime error in Home Assistant Add-on**:
+  - Added `ffmpeg` package to the final production container (`Stage 3`), restoring live camera snapshots, card previews, and WebRTC-to-browser H.264 transcoding.
+
 ## 2.0.3
 
 - **Fix Docker container build hang on Raspberry Pi (`pnpm prune --prod`)**:
