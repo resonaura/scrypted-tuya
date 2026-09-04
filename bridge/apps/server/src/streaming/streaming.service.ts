@@ -2,18 +2,24 @@ import { Injectable } from "@nestjs/common";
 import { CameraEntity } from "../db/entities/index.js";
 import { env } from "../config/env.js";
 
+/** Returns the public RTSP host (IP or hostname) for building external URLs. */
+function rtspPublicHost(): string {
+  return env.RTSP_HOST || "localhost";
+}
+
 @Injectable()
 export class StreamingService {
   async getStreamInfo(did: string) {
     const cam = await CameraEntity.findOne({ where: [{ id: did }, { did }] });
     if (!cam) return null;
 
-    const baseRtsp = `rtsp://127.0.0.1:${cam.rtspPort || env.RTSP_BASE_PORT}/${cam.rtspPath || `live/${cam.did}`}`;
+    const port = cam.rtspPort || env.RTSP_BASE_PORT;
+    const path = cam.rtspPath || `live/${cam.did}`;
     return {
       did: cam.did,
       name: cam.name,
       online: cam.online,
-      rtspUrl: baseRtsp,
+      rtspUrl: `rtsp://${rtspPublicHost()}:${port}/${path}`,
       quality: cam.quality,
       audioEnabled: cam.audioEnabled,
       videoCodec: "h265",
@@ -27,7 +33,7 @@ export class StreamingService {
       did: cam.did,
       name: cam.name,
       online: cam.online,
-      rtspUrl: `rtsp://127.0.0.1:${cam.rtspPort || env.RTSP_BASE_PORT}/${cam.rtspPath || `live/${cam.did}`}`,
+      rtspUrl: `rtsp://${rtspPublicHost()}:${cam.rtspPort || env.RTSP_BASE_PORT}/${cam.rtspPath || `live/${cam.did}`}`,
       lastSeen: cam.lastSeen,
     }));
   }

@@ -48,7 +48,7 @@ export class CameraEntity extends BaseEntity {
   @Column({ type: "boolean", default: false })
   online!: boolean;
 
-  @Column({ type: "integer", default: 8554 })
+  @Column({ type: "integer", default: 8655 })
   rtspPort!: number;
 
   @Column({ type: "varchar", length: 128, default: "" })

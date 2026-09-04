@@ -196,7 +196,10 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     if (cameras.length === 0) return;
 
     for (const cam of cameras) {
-      if (!cam.rtspPort || !isPortAllowed(cam.rtspPort)) {
+      // Port 8554 is the legacy default that was shipped in early versions.
+      // In HAOS environments port 8554 is commonly occupied by another service.
+      // Force-migrate any camera still using that old default to RTSP_BASE_PORT.
+      if (!cam.rtspPort || !isPortAllowed(cam.rtspPort) || cam.rtspPort === 8554) {
         cam.rtspPort = env.RTSP_BASE_PORT;
       }
       cam.rtspPath = cameraRtspPath(cam.name, cam.did);
@@ -222,7 +225,7 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     }
     const cameras = await this.tuyaProtect.discoverCameras();
     for (const cam of cameras) {
-      if (!cam.rtspPort || !isPortAllowed(cam.rtspPort)) {
+      if (!cam.rtspPort || !isPortAllowed(cam.rtspPort) || cam.rtspPort === 8554) {
         cam.rtspPort = env.RTSP_BASE_PORT;
       }
       cam.rtspPath = cameraRtspPath(cam.name, cam.did);

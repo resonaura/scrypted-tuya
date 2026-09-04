@@ -14,9 +14,23 @@ if [[ -f "$CONFIG_PATH" ]]; then
   LOG_LEVEL="$(jq -r '.log_level // "info"' "$CONFIG_PATH")"
 fi
 
+# Resolve host IP from HA Supervisor API (available in all HAOS add-ons)
+RTSP_HOST=""
+if [[ -n "${SUPERVISOR_TOKEN:-}" ]]; then
+  RTSP_HOST="$(curl -sf -H "Authorization: Bearer $SUPERVISOR_TOKEN" \
+    http://supervisor/network/interface/default/info \
+    | jq -r '.data.ipv4.address[0] // empty' \
+    | cut -d'/' -f1 || true)"
+fi
+# Fallback: use hostname if Supervisor API unavailable
+if [[ -z "$RTSP_HOST" ]]; then
+  RTSP_HOST="$(hostname -I | awk '{print $1}' || true)"
+fi
+
 export PORT="${PORT:-$API_PORT}"
 export WEB_PORT="${WEB_PORT:-$WEB_PORT}"
 export RTSP_BASE_PORT="${RTSP_BASE_PORT:-$RTSP_PORT}"
+export RTSP_HOST="${RTSP_HOST:-}"
 export LOG_LEVEL="${LOG_LEVEL:-info}"
 export NODE_ENV=production
 export SQLITE_PATH=/data/tuya-bridge/storage.sqlite
