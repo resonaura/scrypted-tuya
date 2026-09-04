@@ -1,5 +1,12 @@
 # Tuya Camera Bridge — Changelog
 
+## 2.0.3
+
+- **Fix build hang during Docker container creation (`pnpm prune --prod`)**:
+  - Replaced runtime `pnpm prune --prod` step with `pnpm --filter @tuya-bridge/server --legacy --prod deploy` in the build stage.
+  - Generates an isolated, production-only `node_modules` tree with prebuilt native `better-sqlite3` bindings during the build stage.
+  - Removed `pnpm` from the final runtime container, dramatically speeding up and stabilizing container creation on ARM / Raspberry Pi.
+
 ## 2.0.2
 
 - **Fix `better-sqlite3` native bindings loading (`Could not locate the bindings file`)**:

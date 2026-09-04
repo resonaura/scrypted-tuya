@@ -1,7 +1,6 @@
 # syntax=docker/dockerfile:1
 
 # Global ARGs must be declared before any FROM to be usable in FROM instructions.
-# BUILD_FROM can be passed explicitly (e.g. by HA supervisor) or defaults to amd64.
 ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base-debian:bookworm
 
 # Stage 1: Build C++ Native Streaming Engine
@@ -39,8 +38,10 @@ COPY apps/web ./apps/web
 RUN pnpm --filter @tuya-bridge/web build
 RUN pnpm --filter @tuya-bridge/server build
 
+# Deploy isolated production runtime for @tuya-bridge/server
+RUN pnpm --filter @tuya-bridge/server --legacy --prod deploy /build/deployed-server
+
 # Stage 3: Final Production Runtime
-# Re-declare ARG so it is in scope for this stage's FROM
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
@@ -48,7 +49,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates libstdc++6 jq \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
-    && npm install -g pnpm@10.5.2 serve \
+    && npm install -g serve \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -57,19 +58,11 @@ WORKDIR /app
 COPY --from=native-builder /src/build/tuya-streamer /app/bin/tuya-streamer
 RUN chmod +x /app/bin/tuya-streamer
 
-# Copy workspace package manifests
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
-COPY apps/server/package.json ./apps/server/
-COPY apps/web/package.json ./apps/web/
+# Copy deployed standalone production server (includes production node_modules with compiled better-sqlite3)
+COPY --from=node-builder /build/deployed-server/node_modules ./node_modules
+COPY --from=node-builder /build/deployed-server/package.json ./package.json
 
-# Copy pre-installed and pre-compiled node_modules from node-builder
-COPY --from=node-builder /build/node_modules ./node_modules
-COPY --from=node-builder /build/apps/server/node_modules ./apps/server/node_modules
-
-# Prune devDependencies to keep image lean
-RUN pnpm prune --prod
-
-# Copy built artefacts from builder
+# Copy built app dists
 COPY --from=node-builder /build/apps/server/dist ./apps/server/dist
 COPY --from=node-builder /build/apps/web/dist ./apps/web/dist
 

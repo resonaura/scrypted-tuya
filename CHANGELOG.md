@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.3
+
+- **Fix Docker container build hang on Raspberry Pi (`pnpm prune --prod`)**:
+  - Replaced runtime `pnpm prune --prod` step with `pnpm --filter @tuya-bridge/server --legacy --prod deploy` in the build stage.
+  - Generates an isolated, production-only `node_modules` tree with prebuilt native `better-sqlite3` bindings in the build stage.
+  - Removed `pnpm` from the final runtime container for faster, deterministic image creation.
+
 ## 2.0.2
 
 - **Fix `better-sqlite3` native bindings loading in Home Assistant add-on (`Could not locate the bindings file`)**:
