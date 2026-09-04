@@ -79,7 +79,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./bridge
-          file: ./bridge/Dockerfile
+          file: ./bridge/Dockerfile.standalone
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
