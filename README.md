@@ -96,7 +96,7 @@ docker run -d \
   --network host \
   -v $(pwd)/data:/data/tuya-bridge \
   -v $(pwd)/config:/config/tuya-bridge \
-  tuya-bridge:latest
+  ghcr.io/resonaura/tuya-bridge:latest
 ```
 
 After starting, open `http://<host-ip>:6767` in your browser.

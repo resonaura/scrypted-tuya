@@ -1,10 +1,10 @@
 services:
   tuya-bridge:
-    # Build locally or use prebuilt image when available:
-    # image: ghcr.io/resonaura/tuya-bridge:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/resonaura/tuya-bridge:latest
+    # Or build locally from source:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
     container_name: tuya-bridge
     restart: unless-stopped
     # CRITICAL: host network mode is required for camera P2P WebRTC / UDP discovery
