@@ -1,10 +1,11 @@
 # Changelog
 
-## [2.0.5] - 2026-09-04
-### Fixed
-- Migrate legacy `rtspPort=8554` DB entries to `RTSP_BASE_PORT` (8655) on startup — port 8554 is occupied by another service in HAOS environments causing H.264 relay bind failure and HTTP 404 from ffmpeg DESCRIBE
-- Change `camera.entity.ts` default `rtspPort` from `8554` to `8655` to match `RTSP_BASE_PORT`
-- Public RTSP URLs now show the actual host IP (resolved via HA Supervisor API in `run.sh`) instead of `127.0.0.1`
+## 2.0.5
+
+- **Fix H.264 RTSP relay 404 error & expose correct public stream URL**:
+  - Migrate legacy `rtspPort=8554` DB entries to `RTSP_BASE_PORT` (8655) on startup (port 8554 is occupied by another service in HAOS environments, causing relay bind failure and HTTP 404 from ffmpeg DESCRIBE).
+  - Changed `camera.entity.ts` default `rtspPort` from `8554` to `8655` to match `RTSP_BASE_PORT`.
+  - Public RTSP URLs now show the actual host IP (resolved via HA Supervisor API in `run.sh`) instead of `127.0.0.1`.
 
 ## 2.0.4
 
