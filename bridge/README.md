@@ -11,13 +11,28 @@ This add-on provides:
 - **React / HeroUI web frontend** — live preview, camera cards, add-camera modal with styled QR code
 
 ## Install via Home Assistant Add-on Store
-
+ 
+### 1-Click Install
+ 
+[![Open your Home Assistant instance and show the add add-on repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fresonaura%2Fscrypted-tuya)
+ 
+### Manual Install
+ 
 1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
 2. Add `https://github.com/resonaura/scrypted-tuya`
 3. Install **Tuya Camera Bridge**, click **Start**
 4. Open the Web UI (ingress or `http://<ha-host>:6767`)
 5. Create a new profile → scan the QR code in the Smart Life app
 6. Copy the camera RTSP URL: `rtsp://<ha-host>:8655/<CameraName>`
+ 
+## Standalone Docker (without Home Assistant)
+ 
+```bash
+git clone https://github.com/resonaura/scrypted-tuya.git
+cd scrypted-tuya/bridge
+docker compose up -d --build
+```
+See [`docker-compose.example.yml`](./docker-compose.example.yml) for full container options.
 
 ## Ports
 

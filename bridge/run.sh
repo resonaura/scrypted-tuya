@@ -14,17 +14,17 @@ if [[ -f "$CONFIG_PATH" ]]; then
   LOG_LEVEL="$(jq -r '.log_level // "info"' "$CONFIG_PATH")"
 fi
 
-# Resolve host IP from HA Supervisor API (available in all HAOS add-ons)
-RTSP_HOST=""
-if [[ -n "${SUPERVISOR_TOKEN:-}" ]]; then
+# Resolve host IP: accept RTSP_HOST from env if provided, else check HA Supervisor API, then hostname
+RTSP_HOST="${RTSP_HOST:-}"
+if [[ -z "$RTSP_HOST" && -n "${SUPERVISOR_TOKEN:-}" ]]; then
   RTSP_HOST="$(curl -sf -H "Authorization: Bearer $SUPERVISOR_TOKEN" \
     http://supervisor/network/interface/default/info \
     | jq -r '.data.ipv4.address[0] // empty' \
     | cut -d'/' -f1 || true)"
 fi
-# Fallback: use hostname if Supervisor API unavailable
+# Fallback: use hostname if Supervisor API unavailable or returned empty
 if [[ -z "$RTSP_HOST" ]]; then
-  RTSP_HOST="$(hostname -I | awk '{print $1}' || true)"
+  RTSP_HOST="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
 fi
 
 export PORT="${PORT:-$API_PORT}"

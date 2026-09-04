@@ -31,7 +31,11 @@ For cameras that stream at low resolution via Tuya Cloud RTSP (or not at all), u
 2. Opens a WebRTC P2P session to the camera using the Tuya protocol.
 3. Re-streams it as a standard RTSP feed on your local network.
 
-### Install
+### 1-Click Install via Home Assistant
+
+[![Open your Home Assistant instance and show the add add-on repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fresonaura%2Fscrypted-tuya)
+
+### Manual Install (Home Assistant)
 
 1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
 2. Add `https://github.com/resonaura/scrypted-tuya`
@@ -43,13 +47,67 @@ For cameras that stream at low resolution via Tuya Cloud RTSP (or not at all), u
 
 The Scrypted plugin continues handling discovery, motion, doorbell events and controls. Video comes from the P2P bridge.
 
-### Ports
+---
 
-| Port | Purpose |
-|------|---------|
-| `6766` | API |
-| `6767` | Web UI / HA ingress |
-| `8655+` | RTSP streams |
+## Standalone Docker (without Home Assistant)
+
+You can run the Tuya Camera Bridge on any Linux/macOS machine with Docker:
+
+### Using Docker Compose (Recommended)
+
+Clone the repository and run:
+
+```bash
+git clone https://github.com/resonaura/scrypted-tuya.git
+cd scrypted-tuya/bridge
+docker compose up -d --build
+```
+
+Example `docker-compose.yml`:
+
+```yaml
+services:
+  tuya-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tuya-bridge
+    restart: unless-stopped
+    # CRITICAL: host network mode is required for camera P2P WebRTC / UDP discovery
+    network_mode: host
+    environment:
+      - PORT=6766
+      - WEB_PORT=6767
+      - RTSP_BASE_PORT=8655
+      # Optional: set LAN IP explicitly if auto-detection fails:
+      # - RTSP_HOST=192.168.1.50
+      - LOG_LEVEL=info
+    volumes:
+      - ./data:/data/tuya-bridge
+      - ./config:/config/tuya-bridge
+```
+
+### Using `docker run`
+
+```bash
+docker run -d \
+  --name tuya-bridge \
+  --restart unless-stopped \
+  --network host \
+  -v $(pwd)/data:/data/tuya-bridge \
+  -v $(pwd)/config:/config/tuya-bridge \
+  tuya-bridge:latest
+```
+
+After starting, open `http://<host-ip>:6767` in your browser.
+
+### Network Ports
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| `6766` | TCP | REST / WebSocket API |
+| `6767` | TCP | Web UI dashboard |
+| `8655+` | TCP/UDP | RTSP streams (one per camera, starting at 8655) |
 
 ---
 

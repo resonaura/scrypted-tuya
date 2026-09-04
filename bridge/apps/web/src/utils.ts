@@ -9,7 +9,7 @@ export function getCameraUrls(camera: Camera) {
     .replace(/^-+|-+$/g, "") || camera.did;
   const apiBase = getApiBase() || (typeof window !== "undefined" ? window.location.origin : "");
   const snapshot = `${apiBase}/api/cameras/${encodeURIComponent(slug)}/snapshot`;
-  const rtspHost = "localhost";
+  const rtspHost = (typeof window !== "undefined" && window.location.hostname) ? window.location.hostname : "localhost";
   const rtsp = `rtsp://${rtspHost}:${camera.rtspPort || 8655}/${camera.rtspPath || `live/${slug}`}`;
   return { rtsp, snapshot, preview: `${snapshot}?t=${Date.now()}` };
 }

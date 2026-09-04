@@ -3,7 +3,7 @@ import { CameraEntity } from "../db/entities/index.js";
 import { env } from "../config/env.js";
 
 /** Returns the public RTSP host (IP or hostname) for building external URLs. */
-function rtspPublicHost(): string {
+export function rtspPublicHost(): string {
   return env.RTSP_HOST || "localhost";
 }
 

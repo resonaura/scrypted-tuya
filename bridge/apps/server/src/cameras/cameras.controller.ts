@@ -13,6 +13,7 @@ import {
 } from "@nestjs/common";
 import { CamerasService } from "./cameras.service.js";
 import { CreateCameraSchema } from "./dto.js";
+import { rtspPublicHost } from "../streaming/streaming.service.js";
 import type { FastifyReply } from "fastify";
 
 @Controller("api/cameras")
@@ -59,7 +60,7 @@ export class CamerasController {
     this.camerasService.startStream(cam);
     return {
       success: true,
-      rtspUrl: `rtsp://127.0.0.1:${cam.rtspPort}/${cam.rtspPath}`,
+      rtspUrl: `rtsp://${rtspPublicHost()}:${cam.rtspPort}/${cam.rtspPath}`,
     };
   }
 
