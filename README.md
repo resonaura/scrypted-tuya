@@ -8,7 +8,7 @@
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Add--on-orange.svg)](https://www.home-assistant.io/)
 [![C++23 Engine](https://img.shields.io/badge/Native%20Engine-C%2B%2B23-00599C.svg)](bridge/apps/native)
 [![Scrypted](https://img.shields.io/badge/Scrypted-Plugin-8A2BE2.svg)](https://scrypted.app)
-[![Docker](https://img.shields.io/badge/Docker-GHCR-2496ED?logo=docker&logoColor=white)](https://github.com/resonaura/scrypted-tuya/pkgs/container/tuya-bridge)
+[![Docker](https://img.shields.io/badge/Docker-GHCR-2496ED?logo=docker&logoColor=white)](https://github.com/resonaura/scrypted-tuya/pkgs/container/tuya-rtsp-bridge)
 
 Unofficial standalone Scrypted Tuya / Smart Life camera plugin & companion Home Assistant WebRTC-to-RTSP bridge.
 
@@ -106,7 +106,7 @@ docker run -d \
   --network host \
   -v $(pwd)/data:/data/tuya-bridge \
   -v $(pwd)/config:/config/tuya-bridge \
-  ghcr.io/resonaura/tuya-bridge:latest
+  ghcr.io/resonaura/tuya-rtsp-bridge:latest
 ```
 
 After starting, open `http://<host-ip>:6767` in your browser.

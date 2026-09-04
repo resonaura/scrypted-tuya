@@ -1,6 +1,6 @@
 services:
   tuya-bridge:
-    image: ghcr.io/resonaura/tuya-bridge:latest
+    image: ghcr.io/resonaura/tuya-rtsp-bridge:latest
     # Or build locally from source:
     # build:
     #   context: .
