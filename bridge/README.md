@@ -1,4 +1,10 @@
-# Tuya Camera Bridge — Home Assistant Add-on
+# <img src="icon.png" width="64" height="64" alt="Tuya Bridge Icon" style="vertical-align: middle; margin-right: 10px;" /> Tuya Camera Bridge — Home Assistant Add-on
+
+[![Version](https://img.shields.io/badge/version-2.0.5-blue.svg)](CHANGELOG.md)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](../LICENSE)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Add--on-orange.svg)](https://www.home-assistant.io/)
+[![C++23 Engine](https://img.shields.io/badge/Native%20Engine-C%2B%2B23-00599C.svg)](apps/native)
+[![GHCR Image](https://img.shields.io/badge/Docker-GHCR-2496ED?logo=docker&logoColor=white)](https://github.com/resonaura/scrypted-tuya/pkgs/container/tuya_rtsp_bridge%2Faarch64)
 
 Full-stack Tuya / Smart Life camera bridge with live P2P/WebRTC-to-RTSP conversion, Web UI, and seamless Scrypted integration.
 
