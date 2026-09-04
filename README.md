@@ -1,4 +1,6 @@
-# <img src="icon.png" width="64" height="64" alt="Tuya Bridge Icon" style="vertical-align: middle; margin-right: 10px;" /> scrypted-tuya & Tuya Camera Bridge
+<img src="icon.png" width="64" height="64" alt="Tuya Bridge Icon" />
+
+# scrypted-tuya & Tuya Camera Bridge
 
 [![Version](https://img.shields.io/badge/version-2.0.5-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
