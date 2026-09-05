@@ -1,4 +1,4 @@
-import { Controller, Get, Param, NotFoundException, Inject } from "@nestjs/common";
+import { Controller, Get, Post, Param, Body, NotFoundException, Inject } from "@nestjs/common";
 import { StreamingService } from "./streaming.service.js";
 
 @Controller("api/streaming")
@@ -15,5 +15,17 @@ export class StreamingController {
     const info = await this.streamingService.getStreamInfo(did);
     if (!info) throw new NotFoundException("Stream not found");
     return info;
+  }
+
+  @Post(":did/talk")
+  async startTalk(@Param("did") did: string, @Body() body: any) {
+    const info = await this.streamingService.getStreamInfo(did);
+    if (!info) throw new NotFoundException("Camera not found");
+    return { status: "ready", did, rtmpUrl: info.rtmpUrl };
+  }
+
+  @Post(":did/talk/stop")
+  async stopTalk(@Param("did") did: string) {
+    return { status: "stopped", did };
   }
 }

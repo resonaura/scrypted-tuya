@@ -175,6 +175,13 @@ export class TuyaProtectService implements OnModuleInit {
         data.msg ||
         data.errorCode ||
         "Tuya API returned error";
+      if (
+        data.errorCode === "USER_SESSION_INVALID" ||
+        String(msg).includes("USER_SESSION_INVALID")
+      ) {
+        this.logger.warn("Tuya session has expired (USER_SESSION_INVALID). Clearing session.");
+        void this.logout();
+      }
       throw new Error(msg);
     }
 

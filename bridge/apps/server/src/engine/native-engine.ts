@@ -50,6 +50,11 @@ export class NativeMediaEngine extends EventEmitter {
     string,
     { resolve: (b64: string) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
   > = new Map();
+  private talkbackPorts: Map<string, number> = new Map();
+
+  public getTalkbackPort(did: string): number | undefined {
+    return this.talkbackPorts.get(did);
+  }
 
   public start(): boolean {
     if (this.process) return true;
@@ -144,7 +149,13 @@ export class NativeMediaEngine extends EventEmitter {
     } else if (msg.event === "session_ready") {
       this.emit("session_ready", msg.did);
     } else if (msg.event === "session_started") {
-      this.emit("session_started", msg.did, msg.rtsp_port);
+      if (msg.talkback_port) {
+        this.talkbackPorts.set(msg.did, msg.talkback_port);
+      }
+      this.emit("session_started", msg.did, msg.rtsp_port, msg.talkback_port);
+    } else if (msg.event === "session_stopped") {
+      this.talkbackPorts.delete(msg.did);
+      this.emit("session_stopped", msg.did);
     } else if (msg.event === "keyframe") {
       this.emit("keyframe", msg.did);
     } else if (msg.event === "unhealthy") {

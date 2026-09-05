@@ -547,13 +547,22 @@ void RTSPServer::send_client_rtp_packet(int fd, RTSPClientSession& session, bool
     } else {
         out_seq = session.out_audio_seq++;
 
-        const uint32_t clock_rate_khz = audio_is_aac_ ? 16 : 8;
-        uint32_t calc_ts = session.out_base_audio_ts + static_cast<uint32_t>(elapsed_ms * clock_rate_khz);
-        if (calc_ts <= session.last_audio_out_ts) {
-            calc_ts = session.last_audio_out_ts + 1;
+        if (audio_is_aac_) {
+            uint32_t calc_ts = session.out_base_audio_ts + static_cast<uint32_t>(elapsed_ms * 16);
+            if (calc_ts <= session.last_audio_out_ts) {
+                calc_ts = session.last_audio_out_ts + 1;
+            }
+            session.last_audio_out_ts = calc_ts;
+            out_ts = calc_ts;
+        } else {
+            const size_t num_samples = (len > 12) ? (len - 12) : 160;
+            if (session.last_audio_out_ts == 0) {
+                session.last_audio_out_ts = session.out_base_audio_ts;
+            } else {
+                session.last_audio_out_ts += static_cast<uint32_t>(num_samples);
+            }
+            out_ts = session.last_audio_out_ts;
         }
-        session.last_audio_out_ts = calc_ts;
-        out_ts = calc_ts;
     }
 
     uint8_t buf[2048];
@@ -716,10 +725,74 @@ void RTSPServer::packetize_and_send_audio(const uint8_t* data, size_t len, uint3
     }
 }
 
+static inline uint8_t linear_to_mulaw(int16_t pcm_val) {
+    int16_t mask;
+    int16_t seg;
+    uint8_t uval;
+
+    if (pcm_val < 0) {
+        pcm_val = -pcm_val;
+        mask = 0x7F;
+    } else {
+        mask = 0xFF;
+    }
+
+    if (pcm_val > 32635) pcm_val = 32635;
+    pcm_val += 0x84;
+
+    if (pcm_val >= (0x4000)) seg = 7;
+    else if (pcm_val >= (0x2000)) seg = 6;
+    else if (pcm_val >= (0x1000)) seg = 5;
+    else if (pcm_val >= (0x0800)) seg = 4;
+    else if (pcm_val >= (0x0400)) seg = 3;
+    else if (pcm_val >= (0x0200)) seg = 2;
+    else if (pcm_val >= (0x0100)) seg = 1;
+    else seg = 0;
+
+    uval = static_cast<uint8_t>((seg << 4) | ((pcm_val >> (seg + 3)) & 0x0F));
+    return (uval ^ mask);
+}
+
 void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
     if (!data || len < 12) return;
 
     if (!is_video) {
+        if (!audio_is_aac_ && len > 12) {
+            // Robustly determine true audio payload offset (handling CC CSRCs and extension headers)
+            const uint8_t cc = data[0] & 0x0F;
+            const bool has_ext = (data[0] & 0x10) != 0;
+            size_t header_len = 12 + cc * 4;
+            if (has_ext && len >= header_len + 4) {
+                const uint16_t ext_len = (static_cast<uint16_t>(data[header_len + 2]) << 8) | data[header_len + 3];
+                header_len += 4 + ext_len * 4;
+            }
+
+            if (len > header_len) {
+                // Tuya WebRTC transmits raw 16-bit signed Linear PCM (codecType 101 / 0x81) in PT=0 packets.
+                // When serving standard PCMU/8000 in SDP, convert linear PCM to standard G.711 mu-law
+                // so standard RTSP decoders (FFmpeg, VLC, Scrypted) decode pristine audio without clipping.
+                const size_t payload_len = len - header_len;
+                const size_t num_samples = payload_len / 2;
+                std::vector<uint8_t> pcmu_rtp(12 + num_samples);
+                std::memcpy(pcmu_rtp.data(), data, 12);
+                pcmu_rtp[0] = 0x80; // Standard RTP v2 header without extensions/CSRC in outbound RTSP
+                pcmu_rtp[1] = (data[1] & 0x80) | 0x00; // PT=0 (PCMU)
+
+                const uint8_t* pcm_bytes = data + header_len;
+                for (size_t i = 0; i < num_samples; ++i) {
+                    int16_t sample = static_cast<int16_t>(pcm_bytes[i * 2] | (pcm_bytes[i * 2 + 1] << 8));
+                    pcmu_rtp[12 + i] = linear_to_mulaw(sample);
+                }
+
+                std::lock_guard<std::mutex> lock(clients_mutex_);
+                for (auto& [fd, session] : clients_) {
+                    if (!session.is_playing) continue;
+                    send_client_rtp_packet(fd, session, false, pcmu_rtp.data(), pcmu_rtp.size());
+                }
+            }
+            return;
+        }
+
         std::lock_guard<std::mutex> lock(clients_mutex_);
         for (auto& [fd, session] : clients_) {
             if (!session.is_playing) continue;

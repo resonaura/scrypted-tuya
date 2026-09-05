@@ -204,7 +204,11 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
       }
       cam.rtspPath = cameraRtspPath(cam.name, cam.did);
       await cam.save();
-      await this.startStream(cam);
+      try {
+        await this.startStream(cam);
+      } catch (err: any) {
+        this.logger.warn(`Failed to auto-start stream for ${cam.name} (${cam.did}): ${err.message}`);
+      }
     }
   }
 
@@ -322,13 +326,21 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     const internalPath = `internal/${slug}`;
 
     if (this.tuyaProtect.isLoggedIn()) {
-      const started = await this.tuyaMqtt.startCameraSession(
-        cam.did,
-        internalPort,
-        internalPath,
-        (cam.quality as "hd" | "sd") || "hd",
-      );
-      if (!started) throw new Error("Tuya signaling session did not start");
+      try {
+        const started = await this.tuyaMqtt.startCameraSession(
+          cam.did,
+          internalPort,
+          internalPath,
+          (cam.quality as "hd" | "sd") || "hd",
+        );
+        if (!started) {
+          this.logger.warn(`Tuya signaling session did not start for ${cam.name} (${cam.did})`);
+          return;
+        }
+      } catch (err: any) {
+        this.logger.warn(`Failed to start Tuya signaling for ${cam.name} (${cam.did}): ${err.message}`);
+        return;
+      }
     } else {
       this.engine.startP2P({
         did: cam.did,

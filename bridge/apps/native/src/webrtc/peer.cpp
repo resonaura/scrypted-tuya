@@ -1,6 +1,12 @@
 #include "peer.hpp"
+#include <arpa/inet.h>
+#include <array>
+#include <chrono>
+#include <cstring>
 #include <iostream>
 #include <regex>
+#include <sys/socket.h>
+#include <unistd.h>
 #include <glaze/glaze.hpp>
 #include "ipc/events.hpp"
 
@@ -18,6 +24,37 @@ bool WebRTCPeer::start() {
     if (running_) return true;
     running_ = true;
 
+    auto bind_receiver = [](int& socket_fd, int& port) {
+        socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (socket_fd < 0) return false;
+
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port = 0;
+        if (bind(socket_fd, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) < 0) {
+            close(socket_fd);
+            socket_fd = -1;
+            return false;
+        }
+
+        socklen_t addr_len = sizeof(addr);
+        if (getsockname(socket_fd, reinterpret_cast<sockaddr*>(&addr), &addr_len) != 0) {
+            close(socket_fd);
+            socket_fd = -1;
+            return false;
+        }
+        port = ntohs(addr.sin_port);
+        int recv_buffer = 2 * 1024 * 1024;
+        setsockopt(socket_fd, SOL_SOCKET, SO_RCVBUF, &recv_buffer, sizeof(recv_buffer));
+        return true;
+    };
+
+    if (bind_receiver(talkback_socket_fd_, talkback_port_)) {
+        std::cout << "[WebRTCPeer] 🎙️ Talkback UDP ingest listening on 127.0.0.1:" << talkback_port_ << " for " << config_.did << std::endl;
+        talkback_receiver_thread_ = std::thread(&WebRTCPeer::talkback_receive_loop, this, talkback_socket_fd_);
+    }
+
     setup_peer_connection();
 
     keyframe_thread_ = std::thread(&WebRTCPeer::keyframe_loop, this);
@@ -27,6 +64,15 @@ bool WebRTCPeer::start() {
 void WebRTCPeer::stop() {
     running_ = false;
     connected_ = false;
+
+    if (talkback_socket_fd_ >= 0) {
+        shutdown(talkback_socket_fd_, SHUT_RDWR);
+        close(talkback_socket_fd_);
+        talkback_socket_fd_ = -1;
+    }
+    if (talkback_receiver_thread_.joinable()) {
+        talkback_receiver_thread_.join();
+    }
 
     if (keyframe_thread_.joinable()) {
         keyframe_thread_.join();
@@ -43,14 +89,60 @@ void WebRTCPeer::stop() {
         video_track_.reset();
     }
 
-    if (audio_track_) {
-        try { audio_track_->close(); } catch (...) {}
-        audio_track_.reset();
+    if (audio_send_track_) {
+        try { audio_send_track_->close(); } catch (...) {}
+        audio_send_track_.reset();
+    }
+
+    if (audio_recv_track_) {
+        try { audio_recv_track_->close(); } catch (...) {}
+        audio_recv_track_.reset();
     }
 
     if (pc_) {
         try { pc_->close(); } catch (...) {}
         pc_.reset();
+    }
+}
+
+void WebRTCPeer::talkback_receive_loop(int socket_fd) {
+    std::array<std::byte, 2048> buffer{};
+    uint64_t packet_count = 0;
+    while (running_) {
+        const auto len = recv(socket_fd, buffer.data(), buffer.size(), 0);
+        if (len <= 0) {
+            if (running_) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
+        }
+        if (len < static_cast<ssize_t>(sizeof(rtc::RtpHeader))) continue;
+
+        auto* header = reinterpret_cast<rtc::RtpHeader*>(buffer.data());
+        if (header->version() != 2) continue;
+        // Set payload type to 0 (PCMU / G.711u) and set negotiated SSRC
+        header->setPayloadType(0);
+        header->setSsrc(audio_send_ssrc_);
+
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!audio_send_track_ || !audio_send_track_->isOpen()) {
+            if (packet_count % 100 == 0) {
+                std::cout << "[WebRTCPeer] ⚠️ Audio send track not open yet (isOpen="
+                          << (audio_send_track_ ? audio_send_track_->isOpen() : false)
+                          << ", state=" << (pc_ ? static_cast<int>(pc_->state()) : -1) << ")" << std::endl;
+            }
+            packet_count++;
+            continue;
+        }
+
+        try {
+            audio_send_track_->send(buffer.data(), static_cast<size_t>(len));
+            packet_count++;
+            if (packet_count == 1 || packet_count % 100 == 0) {
+                std::cout << "[WebRTCPeer] 🎙️ Sent " << packet_count << " talkback audio packets to camera "
+                          << config_.did << " (len=" << len << ", ssrc=" << audio_send_ssrc_ << ")" << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[WebRTCPeer] ❌ Failed to send talkback audio: " << e.what() << std::endl;
+        }
     }
 }
 
@@ -85,7 +177,7 @@ void WebRTCPeer::handle_video_packet(const rtc::binary& packet) {
 
 void WebRTCPeer::handle_audio_packet(const rtc::binary& packet) {
     if (packet.size() < 12 || !rtsp_server_) return;
-    rtsp_server_->feed_raw_rtp(reinterpret_cast<const uint8_t*>(packet.data()), packet.size(), false);
+    handle_rtp_packet(packet, false);
 }
 
 void WebRTCPeer::handle_rtp_packet(const rtc::binary& packet, bool is_video) {
@@ -230,7 +322,7 @@ void WebRTCPeer::setup_peer_connection() {
                 }
             });
         } else if (desc.type() == "audio") {
-            audio_track_ = track;
+            audio_recv_track_ = track;
             track->setMediaHandler(std::make_shared<rtc::RtcpReceivingSession>());
             track->onMessage([this](rtc::message_variant msg) {
                 if (std::holds_alternative<rtc::binary>(msg)) {
@@ -249,14 +341,21 @@ void WebRTCPeer::setup_tracks() {
     if (!pc_) return;
 
     // Add Audio Track (PCMU / 8000, SendRecv for Tuya backchannel support)
+    const auto seed = std::hash<std::string>{}(config_.did);
+    audio_send_ssrc_ = static_cast<uint32_t>((seed & 0x7fffffffU) | 0x20000000U);
+
     rtc::Description::Audio audio_desc("audio", rtc::Description::Direction::SendRecv);
     audio_desc.addPCMUCodec(0);
     audio_desc.addPCMACodec(8);
     audio_desc.addOpusCodec(111);
-    audio_track_ = pc_->addTrack(audio_desc);
-    audio_track_->setMediaHandler(std::make_shared<rtc::RtcpReceivingSession>());
+    audio_desc.addSSRC(audio_send_ssrc_, "tuya-talkback-audio");
+    audio_send_track_ = pc_->addTrack(audio_desc);
 
-    audio_track_->onMessage([this](rtc::message_variant msg) {
+    audio_send_track_->onOpen([this]() {
+        std::cout << "[WebRTCPeer] 🎙️ Camera WebRTC Audio Send track OPENED for " << config_.did << std::endl;
+    });
+
+    audio_send_track_->onMessage([this](rtc::message_variant msg) {
         if (std::holds_alternative<rtc::binary>(msg)) {
             const auto& bin = std::get<rtc::binary>(msg);
             handle_audio_packet(bin);

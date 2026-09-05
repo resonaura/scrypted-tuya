@@ -29,6 +29,7 @@ struct EventSessionStarted {
     std::string event = "session_started";
     std::string did;
     int rtsp_port = 0;
+    int talkback_port = 0;
 };
 
 struct EventSessionStopped {

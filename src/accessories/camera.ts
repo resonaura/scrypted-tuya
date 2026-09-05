@@ -21,6 +21,8 @@ import sdk, {
   Settings,
   SettingValue,
 } from "@scrypted/sdk";
+import { spawn, type ChildProcess } from "child_process";
+import type { Readable } from "stream";
 import { TuyaAccessory } from "./accessory";
 import { TuyaPlugin } from "../plugin";
 import { TuyaDevice, TuyaDeviceStatus } from "../tuya/const";
@@ -42,15 +44,22 @@ const SCHEMA_CODE = {
   INDICATOR: ["basic_indicator"]
 };
 
-export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCamera, BinarySensor, MotionSensor, OnOff, Settings {
+export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCamera, BinarySensor, MotionSensor, OnOff, Settings, Intercom {
   private lightAccessory: ScryptedDeviceBase | undefined;
   private selectedQuality: string | undefined;
+  private intercomProcess: ChildProcess | null = null;
   private storageSettings = new StorageSettings(this, {
     p2pRtspUrl: {
       title: "Smart Life P2P HD RTSP URL",
       description: "Optional HD URL from Tuya RTSP Bridge, for example rtsp://home-assistant:8600/CameraName/hd. When configured, this replaces Tuya Cloud RTSP video while keeping Tuya events and controls.",
       type: "string",
       placeholder: "rtsp://home-assistant:8600/CameraName/hd",
+    },
+    talkbackRtmpUrl: {
+      title: "Talkback RTMP URL",
+      description: "Optional RTMP ingest URL for talkback audio (e.g. rtmp://home-assistant:1935/talk/CameraName). If blank, automatically resolves from the Smart Life P2P bridge RTSP URL.",
+      type: "string",
+      placeholder: "rtmp://home-assistant:1935/talk/CameraName",
     },
   });
 
@@ -97,12 +106,107 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         ScryptedInterface.VideoCamera,
         ScryptedInterface.DeviceProvider,
         ScryptedInterface.Settings,
+        ScryptedInterface.Intercom,
         indicatorSchema ? ScryptedInterface.OnOff : null,
         motionSchema ? ScryptedInterface.MotionSensor : null,
         doorbellSchema ? ScryptedInterface.BinarySensor : null,
       ]
       .filter((p): p is ScryptedInterface => !!p)
     }
+  }
+
+  async startIntercom(media: MediaObject): Promise<void> {
+    await this.stopIntercom();
+
+    const targetUrl = this.resolveTalkbackRtmpUrl();
+    if (!targetUrl) {
+      this.console.warn(`[${this.name}] Cannot start talkback: no Talkback RTMP URL configured and could not auto-derive from bridge.`);
+      throw new Error(`Talkback RTMP URL not configured for ${this.name}`);
+    }
+
+    this.console.info(`[${this.name}] Starting talkback session -> ${targetUrl}`);
+
+    try {
+      const inputStream = await sdk.mediaManager.convertMediaObject<Readable>(
+        media,
+        "audio/x-wav"
+      );
+
+      const ffmpegArgs = [
+        "-hide_banner",
+        "-loglevel", "error",
+        "-fflags", "nobuffer",
+        "-flags", "low_delay",
+        "-probesize", "32",
+        "-analyzeduration", "0",
+        "-i", "pipe:0",
+        "-vn",
+        "-c:a", "aac",
+        "-b:a", "16k",
+        "-ar", "16000",
+        "-ac", "1",
+        "-f", "flv",
+        targetUrl,
+      ];
+
+      this.intercomProcess = spawn("ffmpeg", ffmpegArgs, {
+        stdio: ["pipe", "ignore", "pipe"],
+      });
+
+      this.intercomProcess.stderr?.on("data", (chunk: Buffer) => {
+        const msg = chunk.toString().trim();
+        if (msg) this.console.debug(`[${this.name}] [Talkback FFmpeg] ${msg}`);
+      });
+
+      this.intercomProcess.on("error", (err: Error) => {
+        this.console.error(`[${this.name}] Talkback FFmpeg process error:`, err);
+      });
+
+      this.intercomProcess.on("close", (code: number | null) => {
+        this.console.info(`[${this.name}] Talkback session ended (code ${code})`);
+        this.intercomProcess = null;
+      });
+
+      inputStream.pipe(this.intercomProcess.stdin!);
+    } catch (e: any) {
+      this.console.error(`[${this.name}] Failed to start talkback:`, e);
+      await this.stopIntercom();
+      throw e;
+    }
+  }
+
+  async stopIntercom(): Promise<void> {
+    if (this.intercomProcess) {
+      try {
+        this.intercomProcess.stdin?.destroy();
+        this.intercomProcess.kill("SIGKILL");
+      } catch {}
+      this.intercomProcess = null;
+    }
+  }
+
+  private resolveTalkbackRtmpUrl(): string | null {
+    const configured = this.storageSettings.values.talkbackRtmpUrl?.trim();
+    if (configured) return configured;
+
+    const cameraName = this.name || this.tuyaDevice.name || this.tuyaDevice.id;
+    const rtsp = this.storageSettings.values.p2pRtspUrl?.trim();
+    if (rtsp) {
+      try {
+        const u = new URL(rtsp);
+        const pathParts = u.pathname.split("/").filter(Boolean);
+        const lastPart = pathParts.length > 0 ? pathParts[pathParts.length - 1] : undefined;
+        const slug = lastPart || cameraName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        return `rtmp://${u.hostname}:1935/talk/${slug}`;
+      } catch {}
+    }
+
+    const slug = cameraName
+      .toLowerCase()
+      .replace(/\bcamera\b/g, " ")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || this.tuyaDevice.id;
+    return `rtmp://127.0.0.1:1935/talk/${slug}`;
   }
 
   async getDevice(nativeId: ScryptedNativeId) {
@@ -199,9 +303,11 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
 
       if (changed) {
         this.selectedQuality = selection.value;
-        selection.current
-          ? selection.current.value = selection.value
-          : this.tuyaDevice.status.push({ code: selection.code, value: selection.value });
+        if (selection.current) {
+          selection.current.value = selection.value;
+        } else {
+          this.tuyaDevice.status.push({ code: selection.code, value: selection.value });
+        }
         this.console.info(`[${this.name}] Maximum quality command accepted: ${selection.code}=${selection.value}`);
       } else {
         this.console.warn(`[${this.name}] Tuya rejected the maximum-quality command (${selection.code}=${selection.value}). Falling back to Tuya's default RTSP quality.`);

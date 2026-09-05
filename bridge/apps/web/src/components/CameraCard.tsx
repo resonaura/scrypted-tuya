@@ -17,6 +17,7 @@ import { preheatWebRtc } from "../api/client.js";
 import type { Camera } from "../types/index.js";
 import { copyText, getCameraUrls } from "../utils.js";
 import { Card } from "./ui/Card.js";
+import { TalkbackPill } from "./TalkbackPill.js";
 
 interface CameraCardProps {
   camera: Camera;
@@ -38,10 +39,11 @@ export const CameraCard: React.FC<CameraCardProps> = ({
   const reduceMotion = useReducedMotion();
   const [snapshotKey, setSnapshotKey] = React.useState(Date.now());
   const [imgError, setImgError] = React.useState(false);
-  const [copied, setCopied] = React.useState<"rtsp" | "snapshot" | null>(null);
+  const [copied, setCopied] = React.useState<"rtsp" | "rtmp" | "snapshot" | null>(null);
+  const [isTalking, setIsTalking] = React.useState(false);
   const [lastSnapshotAge, setLastSnapshotAge] = React.useState(-1);
   const lastSnapshotLoadRef = React.useRef(0);
-  const { rtsp, snapshot } = getCameraUrls(camera);
+  const { rtsp, rtmp, snapshot } = getCameraUrls(camera);
   const lastPreheatRef = React.useRef(0);
 
   const handlePreheat = React.useCallback(() => {
@@ -77,12 +79,16 @@ export const CameraCard: React.FC<CameraCardProps> = ({
     return () => window.clearInterval(ageTimer);
   }, []);
 
-  const copy = async (kind: "rtsp" | "snapshot", value: string) => {
+  const copy = async (kind: "rtsp" | "rtmp" | "snapshot", value: string) => {
     try {
       await copyText(value);
       setCopied(kind);
       toast.success(
-        kind === "snapshot" ? "Snapshot URL copied" : "RTSP URL copied",
+        kind === "snapshot"
+          ? "Snapshot URL copied"
+          : kind === "rtmp"
+            ? "Talkback RTMP URL copied"
+            : "RTSP URL copied",
       );
       window.setTimeout(() => setCopied(null), 1600);
     } catch {
@@ -99,6 +105,14 @@ export const CameraCard: React.FC<CameraCardProps> = ({
       toast.error("Failed to delete camera");
     }
   };
+
+  const handleToggleTalk = React.useCallback(() => {
+    setIsTalking((v) => !v);
+  }, []);
+
+  const handleStopTalk = React.useCallback(() => {
+    setIsTalking(false);
+  }, []);
 
   // Snapshot age label: "now" only if 0s, else "{N}s", "—" if never loaded
   const snapshotAgeLabel =
@@ -227,13 +241,19 @@ export const CameraCard: React.FC<CameraCardProps> = ({
         </div>
 
         {/* Camera Info — padding only here */}
-        <div className="flex items-start justify-between gap-3 px-4 pb-2 pt-3">
+        <div className="flex items-center justify-between gap-3 px-4 pb-2 pt-3">
           <div className="min-w-0">
             <h3 className="truncate text-base font-semibold">{camera.name}</h3>
             <p className="truncate font-mono text-[11px] text-muted-foreground">
               {camera.did}
             </p>
           </div>
+          <TalkbackPill
+            did={camera.did}
+            isActive={isTalking}
+            onToggle={handleToggleTalk}
+            onStop={handleStopTalk}
+          />
         </div>
 
         {/* Links & Actions — padding only here */}
@@ -253,6 +273,27 @@ export const CameraCard: React.FC<CameraCardProps> = ({
               onPress={() => void copy("rtsp", rtsp)}
             >
               {copied === "rtsp" ? (
+                <Check className="size-4 text-success" />
+              ) : (
+                <Copy className="size-4" />
+              )}
+            </Button>
+          </Surface>
+          <Surface className="flex min-w-0 items-center gap-2 rounded-xl border border-default-200/70 bg-default-50/60 p-2">
+            <div className="min-w-0 flex-1">
+              <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Talkback RTMP (Audio Ingest)
+              </p>
+              <p className="truncate font-mono text-[11px]">{rtmp}</p>
+            </div>
+            <Button
+              isIconOnly
+              size="sm"
+              variant="ghost"
+              aria-label="Copy Talkback RTMP URL"
+              onPress={() => void copy("rtmp", rtmp)}
+            >
+              {copied === "rtmp" ? (
                 <Check className="size-4 text-success" />
               ) : (
                 <Copy className="size-4" />

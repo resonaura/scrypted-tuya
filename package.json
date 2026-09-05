@@ -13,7 +13,8 @@
       "scrypted-deploy": "scrypted-deploy",
       "scrypted-changelog": "scrypted-changelog",
       "scrypted-package-json": "scrypted-package-json",
-      "scrypted-readme": "scrypted-readme"
+      "scrypted-readme": "scrypted-readme",
+      "audio:talkback": "npx tsx scripts/audio/talkback-sample.ts"
    },
    "keywords": [
       "scrypted",

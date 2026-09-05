@@ -11,7 +11,8 @@ export function getCameraUrls(camera: Camera) {
   const snapshot = `${apiBase}/api/cameras/${encodeURIComponent(slug)}/snapshot`;
   const rtspHost = (typeof window !== "undefined" && window.location.hostname) ? window.location.hostname : "localhost";
   const rtsp = `rtsp://${rtspHost}:${camera.rtspPort || 8655}/${camera.rtspPath || `live/${slug}`}`;
-  return { rtsp, snapshot, preview: `${snapshot}?t=${Date.now()}` };
+  const rtmp = `rtmp://${rtspHost}:1935/talk/${slug}`;
+  return { rtsp, rtmp, snapshot, preview: `${snapshot}?t=${Date.now()}` };
 }
 
 export async function copyText(value: string): Promise<void> {

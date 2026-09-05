@@ -1,9 +1,12 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Modal } from "@heroui/react";
+import { X } from "lucide-react";
 import type { Camera } from "../types/index.js";
 import { createWebRtcViewer, preheatWebRtc, stopWebRtcViewer } from "../api/client.js";
 import { getCameraUrls } from "../utils.js";
 import { VideoPlayer } from "./VideoPlayer.js";
+import { TalkbackPill } from "./TalkbackPill.js";
+import { Button } from "./ui/Button.js";
 
 export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClose: () => void }> = ({ camera, isOpen, onClose }) => {
   const [viewerKey, setViewerKey] = useState(0);
@@ -12,8 +15,17 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
+  const [isTalking, setIsTalking] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const { snapshot } = getCameraUrls(camera);
+
+  const handleToggleTalk = useCallback(() => {
+    setIsTalking((v) => !v);
+  }, []);
+
+  const handleStopTalk = useCallback(() => {
+    setIsTalking(false);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -116,10 +128,43 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
   }, [status]);
 
   return (
-    <Modal.Backdrop isOpen={isOpen} onOpenChange={(open) => !open && onClose()} variant="blur">
+    <Modal.Backdrop
+      isOpen={isOpen}
+      onOpenChange={(open) => {
+        if (!open) {
+          setIsTalking(false);
+          onClose();
+        }
+      }}
+      variant="blur"
+    >
       <Modal.Container placement="center" size="lg">
         <Modal.Dialog className="relative sm:max-w-5xl overflow-hidden p-0 border-0 bg-transparent shadow-none">
-          <Modal.CloseTrigger className="absolute right-3 top-3 z-30 size-9 rounded-full bg-black/60 text-white shadow-lg backdrop-blur-md hover:bg-black/80 transition-colors" />
+          {/* Close button with default-soft styles matching Talk button */}
+          <Button
+            isIconOnly
+            size="sm"
+            variant="default-soft"
+            className="absolute right-3 top-3 z-30 size-8 rounded-full backdrop-blur-md cursor-pointer shadow-xs"
+            onPress={() => {
+              setIsTalking(false);
+              onClose();
+            }}
+            aria-label="Close"
+          >
+            <X className="size-4" />
+          </Button>
+
+          {/* Talkback Button / Capsule */}
+          <div className="absolute left-3 top-3 z-30">
+            <TalkbackPill
+              did={camera?.did}
+              isActive={isTalking}
+              onToggle={handleToggleTalk}
+              onStop={handleStopTalk}
+            />
+          </div>
+
           <div
             className="relative aspect-video w-full overflow-hidden rounded-2xl bg-zinc-950 shadow-2xl"
             style={{

@@ -11,6 +11,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(6766),
   WEB_PORT: z.coerce.number().default(6767),
   RTSP_BASE_PORT: z.coerce.number().default(8655),
+  RTMP_PORT: z.coerce.number().default(1935),
   RTSP_HOST: z.string().default(""),
   SQLITE_PATH: z
     .string()

@@ -135,7 +135,11 @@ void IpcServer::handle_command(const std::string& line) {
         auto it = sessions_.find(cfg.did);
         if (it != sessions_.end()) {
             if (it->second->restart_p2p(cfg)) {
-                send_event(to_json(EventSessionStarted{.did = cfg.did, .rtsp_port = cfg.rtsp_port}));
+                send_event(to_json(EventSessionStarted{
+                    .did = cfg.did,
+                    .rtsp_port = cfg.rtsp_port,
+                    .talkback_port = it->second->get_talkback_port(),
+                }));
             } else {
                 send_event(to_json(EventError{.did = cfg.did, .message = "Failed to restart P2P session"}));
             }
@@ -145,8 +149,13 @@ void IpcServer::handle_command(const std::string& line) {
         auto session = std::make_unique<StreamSession>(cfg, [this](const std::string& evt) { send_event(evt); });
 
         if (session->start()) {
+            int tb_port = session->get_talkback_port();
             sessions_[cfg.did] = std::move(session);
-            send_event(to_json(EventSessionStarted{.did = cfg.did, .rtsp_port = cfg.rtsp_port}));
+            send_event(to_json(EventSessionStarted{
+                .did = cfg.did,
+                .rtsp_port = cfg.rtsp_port,
+                .talkback_port = tb_port,
+            }));
         } else {
             send_event(to_json(EventError{.did = cfg.did, .message = "Failed to start session"}));
         }

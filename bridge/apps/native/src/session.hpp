@@ -42,6 +42,10 @@ public:
 
     std::vector<uint8_t> get_snapshot_annexb() const;
 
+    int get_talkback_port() const {
+        return webrtc_peer_ ? webrtc_peer_->get_talkback_port() : 0;
+    }
+
     const std::string& get_did() const { return config_.did; }
 
 private:

@@ -13,7 +13,8 @@
     "start": "turbo run start",
     "typecheck": "turbo run typecheck",
     "format": "prettier --write \"apps/**/*.{ts,tsx,js,json}\" && pnpm --filter @tuya-bridge/native format",
-    "format:native": "pnpm --filter @tuya-bridge/native format"
+    "format:native": "pnpm --filter @tuya-bridge/native format",
+    "audio:talkback": "npx tsx ../scripts/audio/talkback-sample.ts"
   },
   "devDependencies": {
     "clang-format": "^1.8.0",
