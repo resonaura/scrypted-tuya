@@ -1,6 +1,6 @@
 # Tuya Camera Bridge — Changelog
 
-## 2.1.4
+## 2.1.5
 
 - **Camera Inbound Microphone Audio Fix**:
   - Sent `{"type":"start","msg":"audio"}` over the WebRTC `fmp4Stream` DataChannel upon session setup, explicitly requesting the camera DSP to begin transmitting mic audio packets alongside video.

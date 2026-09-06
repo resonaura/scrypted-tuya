@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.4
+## 2.1.5
 
 - **Talkback Zero-Latency Audio Push (`-flush_packets 1`)**:
   - Added `-flush_packets 1` to the talkback FFmpeg process in `camera.ts`, ensuring FLV audio packets are flushed over TCP to the RTMP endpoint immediately without waiting for output buffer thresholds.
