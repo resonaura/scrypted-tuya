@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.6
+
+- Small fixes
+
 ## 2.1.5
 
 - **Talkback Zero-Latency Audio Push (`-flush_packets 1`)**:
@@ -28,7 +32,6 @@
   - Removed manual `stdin` piping — `FFmpegInput.inputArguments` already encodes the correct `-i` source.
   - Changed FFmpeg log level from `error` to `warning` so talkback failures are now visible in Scrypted device logs.
   - Added diagnostic log lines: incoming `mimeType`, resolved RTMP target URL, and full FFmpeg argument list for easier future debugging.
-
 
 > [!WARNING]
 > ⚠️ **Experimental Feature / Work in Progress**:

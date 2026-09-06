@@ -65,8 +65,21 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
 
   constructor(state: TuyaDevice, controller: TuyaPlugin) {
     super(state, controller);
-    if (this.storageSettings.values.p2pRtspUrl?.trim()) {
-      this.online = true;
+  }
+
+  private getP2pRtspUrl(): string | undefined {
+    try {
+      return this.storageSettings.values.p2pRtspUrl?.trim();
+    } catch {
+      return undefined;
+    }
+  }
+
+  private getTalkbackRtmpUrl(): string | undefined {
+    try {
+      return this.storageSettings.values.talkbackRtmpUrl?.trim();
+    } catch {
+      return undefined;
     }
   }
 
@@ -77,7 +90,7 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
   async putSetting(key: string, value: SettingValue): Promise<void> {
     await this.storageSettings.putSetting(key, value);
     if (key === "p2pRtspUrl") {
-      if (this.storageSettings.values.p2pRtspUrl?.trim()) {
+      if (this.getP2pRtspUrl()) {
         this.online = true;
       }
       this.onDeviceEvent(ScryptedInterface.VideoCamera, undefined);
@@ -85,7 +98,7 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
   }
 
   async updateAllValues(): Promise<void> {
-    if (this.storageSettings.values.p2pRtspUrl?.trim()) {
+    if (this.getP2pRtspUrl()) {
       this.online = true;
       await this.updateStatus(this.tuyaDevice.status || []);
     } else {

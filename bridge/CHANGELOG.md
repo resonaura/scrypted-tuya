@@ -1,5 +1,9 @@
 # Tuya Camera Bridge — Changelog
 
+## 2.1.6
+
+- Small fixes
+
 ## 2.1.5
 
 - **Camera Inbound Microphone Audio Fix**:
