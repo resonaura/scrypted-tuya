@@ -1,7 +1,7 @@
 name: "Tuya Camera Bridge"
 slug: "tuya-rtsp-bridge"
 description: "Full-stack Tuya & Smart Life camera P2P/WebRTC-to-RTSP bridge with live Web UI and Scrypted integration"
-version: "2.1.4"
+version: "2.1.5"
 image: "ghcr.io/resonaura/tuya-rtsp-bridge/{arch}"
 arch:
   - aarch64
