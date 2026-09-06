@@ -27,6 +27,10 @@ import {
 import { AddCameraModal } from "./components/AddCameraModal.js";
 import { CameraCard } from "./components/CameraCard.js";
 import { Navbar } from "./components/Navbar.js";
+import {
+  TalkbackProvider,
+  type TalkbackHolder,
+} from "./components/TalkbackProvider.js";
 import { Button, Card } from "./components/ui/index.js";
 import { VideoPlayerModal } from "./components/VideoPlayerModal.js";
 import "./styles/tones.css";
@@ -58,6 +62,9 @@ export function App() {
   const [sort, setSort] = useState<CameraSort>("custom");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
+  const [talkHolders, setTalkHolders] = useState<
+    Record<string, TalkbackHolder>
+  >({});
   const wsEverConnectedRef = useRef(false);
   const hasAutoOpenedModalRef = useRef(false);
 
@@ -130,6 +137,24 @@ export function App() {
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
+            if (data.event === "welcome" && Array.isArray(data.talk)) {
+              setTalkHolders(
+                Object.fromEntries(
+                  data.talk.map(
+                    (s: { did: string; holder: TalkbackHolder }) => [
+                      s.did,
+                      s.holder,
+                    ],
+                  ),
+                ),
+              );
+            }
+            if (data.event === "talk_state" && data.did) {
+              setTalkHolders((prev) => ({
+                ...prev,
+                [data.did]: data.holder ?? null,
+              }));
+            }
             if (
               [
                 "session_started",
@@ -258,183 +283,185 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground selection:bg-primary/20">
-      <Toaster theme={theme} position="top-center" />
-      <Navbar
-        isWsConnected={isWsConnected}
-        authState={authState}
-        onAddClick={() => setIsAddModalOpen(true)}
-        onRefreshClick={handleSync}
-        onLogoutClick={handleLogout}
-        isRefreshing={isRefreshing}
-        theme={theme}
-        onToggleTheme={() =>
-          setTheme((value) => (value === "dark" ? "light" : "dark"))
-        }
-      />
-      <main className="mx-auto w-full max-w-375 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-        <Card className="flex flex-row mb-5">
-          <div className="flex-1 relative flex items-center">
-            <Search className="pointer-events-none absolute left-3 size-4 text-muted-foreground" />
-            <TextField
-              value={query}
-              onChange={setQuery}
-              aria-label="Search cameras"
-              className="w-full"
+    <TalkbackProvider remoteHolders={talkHolders}>
+      <div className="min-h-screen bg-background text-foreground selection:bg-primary/20">
+        <Toaster theme={theme} position="top-center" />
+        <Navbar
+          isWsConnected={isWsConnected}
+          authState={authState}
+          onAddClick={() => setIsAddModalOpen(true)}
+          onRefreshClick={handleSync}
+          onLogoutClick={handleLogout}
+          isRefreshing={isRefreshing}
+          theme={theme}
+          onToggleTheme={() =>
+            setTheme((value) => (value === "dark" ? "light" : "dark"))
+          }
+        />
+        <main className="mx-auto w-full max-w-375 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          <Card className="flex flex-row mb-5">
+            <div className="flex-1 relative flex items-center">
+              <Search className="pointer-events-none absolute left-3 size-4 text-muted-foreground" />
+              <TextField
+                value={query}
+                onChange={setQuery}
+                aria-label="Search cameras"
+                className="w-full"
+              >
+                <Input
+                  placeholder="Search by camera name or DID"
+                  className="pl-9"
+                />
+              </TextField>
+            </div>
+            <Select
+              selectedKey={filter}
+              onSelectionChange={(key) =>
+                setFilter((key as CameraFilter) || "all")
+              }
+              aria-label="Filter cameras"
             >
-              <Input
-                placeholder="Search by camera name or DID"
-                className="pl-9"
-              />
-            </TextField>
-          </div>
-          <Select
-            selectedKey={filter}
-            onSelectionChange={(key) =>
-              setFilter((key as CameraFilter) || "all")
-            }
-            aria-label="Filter cameras"
-          >
-            <Select.Trigger>
-              <Select.Value />
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                <ListBox.Item id="all">All cameras</ListBox.Item>
-                <ListBox.Item id="online">Online only</ListBox.Item>
-                <ListBox.Item id="offline">Offline only</ListBox.Item>
-              </ListBox>
-            </Select.Popover>
-          </Select>
-          <Select
-            selectedKey={sort}
-            onSelectionChange={(key) =>
-              setSort((key as CameraSort) || "custom")
-            }
-            aria-label="Sort cameras"
-          >
-            <Select.Trigger>
-              <Select.Value />
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                <ListBox.Item id="custom">Custom order</ListBox.Item>
-                <ListBox.Item id="name">Name</ListBox.Item>
-                <ListBox.Item id="status">Online first</ListBox.Item>
-              </ListBox>
-            </Select.Popover>
-          </Select>
-        </Card>
-        {loadError && (
-          <Surface className="mb-5 flex items-center justify-between gap-4 rounded-2xl border border-danger/30 bg-danger/10 p-4">
-            <div className="flex items-center gap-3">
-              <AlertCircle className="size-5 text-danger" />
-              <div>
-                <p className="text-sm font-semibold">
-                  Bridge connection failed
-                </p>
-                <p className="text-xs text-muted-foreground">{loadError}</p>
+              <Select.Trigger>
+                <Select.Value />
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  <ListBox.Item id="all">All cameras</ListBox.Item>
+                  <ListBox.Item id="online">Online only</ListBox.Item>
+                  <ListBox.Item id="offline">Offline only</ListBox.Item>
+                </ListBox>
+              </Select.Popover>
+            </Select>
+            <Select
+              selectedKey={sort}
+              onSelectionChange={(key) =>
+                setSort((key as CameraSort) || "custom")
+              }
+              aria-label="Sort cameras"
+            >
+              <Select.Trigger>
+                <Select.Value />
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  <ListBox.Item id="custom">Custom order</ListBox.Item>
+                  <ListBox.Item id="name">Name</ListBox.Item>
+                  <ListBox.Item id="status">Online first</ListBox.Item>
+                </ListBox>
+              </Select.Popover>
+            </Select>
+          </Card>
+          {loadError && (
+            <Surface className="mb-5 flex items-center justify-between gap-4 rounded-2xl border border-danger/30 bg-danger/10 p-4">
+              <div className="flex items-center gap-3">
+                <AlertCircle className="size-5 text-danger" />
+                <div>
+                  <p className="text-sm font-semibold">
+                    Bridge connection failed
+                  </p>
+                  <p className="text-xs text-muted-foreground">{loadError}</p>
+                </div>
               </div>
-            </div>
-            <Button
-              size="sm"
-              variant="danger-soft"
-              onPress={() => void loadCameras()}
-            >
-              Retry
-            </Button>
-          </Surface>
-        )}
-        {isLoading ? (
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {[0, 1, 2].map((item) => (
-              <Skeleton
-                key={item}
-                className="aspect-4/3 opacity-20 rounded-2xl"
-              />
-            ))}
-          </div>
-        ) : cameras.length === 0 ? (
-          <Card className="p-12 text-center">
-            <div className="mx-auto mb-4 grid size-14 place-items-center rounded-full bg-foreground/5 text-primary">
-              <CameraIcon className="size-5 opacity-50" />
-            </div>
-            <h3 className="text-lg font-semibold">No cameras yet</h3>
-            <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-              Connect <b>Smart Life</b> or <b>Tuya Smart</b> with QR, or add a
-              camera manually.
-            </p>
-            <Button
-              className="mt-5 ml-auto mr-auto"
-              variant="accent"
-              onPress={() => setIsAddModalOpen(true)}
-            >
-              <Plus className="size-4" /> Add profile
-            </Button>
-          </Card>
-        ) : displayedCameras.length === 0 ? (
-          <Card className="rounded-3xl p-10 text-center flex justify-center">
-            <WifiOff className="mx-auto mb-3 size-7 text-muted-foreground" />
-            <h3 className="font-semibold">No matching cameras</h3>
-            <p className="text-sm text-muted-foreground">
-              Change the search or status filter.
-            </p>
-            <Button
-              className="mt-4 ml-auto mr-auto"
-              size="sm"
-              variant="default-soft"
-              onPress={() => {
-                setQuery("");
-                setFilter("all");
-              }}
-            >
-              Clear filters
-            </Button>
-          </Card>
-        ) : (
-          <motion.div
-            layout
-            className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
-          >
-            <AnimatePresence mode="popLayout">
-              {displayedCameras.map((camera, index) => (
-                <CameraCard
-                  key={camera.id}
-                  camera={camera}
-                  index={index}
-                  total={displayedCameras.length}
-                  onPlay={setSelectedCamera}
-                  onDelete={async (id) => {
-                    await deleteCamera(id);
-                    setCameras((current) =>
-                      current.filter((camera) => camera.id !== id),
-                    );
-                  }}
-                  onMove={moveCamera}
+              <Button
+                size="sm"
+                variant="danger-soft"
+                onPress={() => void loadCameras()}
+              >
+                Retry
+              </Button>
+            </Surface>
+          )}
+          {isLoading ? (
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              {[0, 1, 2].map((item) => (
+                <Skeleton
+                  key={item}
+                  className="aspect-4/3 opacity-20 rounded-2xl"
                 />
               ))}
-            </AnimatePresence>
-          </motion.div>
-        )}
-      </main>
-      <AddCameraModal
-        isOpen={isAddModalOpen}
-        initialRegion={authState?.loggedIn ? authState.region : undefined}
-        onClose={() => setIsAddModalOpen(false)}
-        onAdded={() => {
-          void loadAuth();
-          void loadCameras(true);
-        }}
-      />
-      {selectedCamera && (
-        <VideoPlayerModal
-          camera={selectedCamera}
-          isOpen
-          onClose={() => setSelectedCamera(null)}
+            </div>
+          ) : cameras.length === 0 ? (
+            <Card className="p-12 text-center">
+              <div className="mx-auto mb-4 grid size-14 place-items-center rounded-full bg-foreground/5 text-primary">
+                <CameraIcon className="size-5 opacity-50" />
+              </div>
+              <h3 className="text-lg font-semibold">No cameras yet</h3>
+              <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+                Connect <b>Smart Life</b> or <b>Tuya Smart</b> with QR, or add a
+                camera manually.
+              </p>
+              <Button
+                className="mt-5 ml-auto mr-auto"
+                variant="accent"
+                onPress={() => setIsAddModalOpen(true)}
+              >
+                <Plus className="size-4" /> Add profile
+              </Button>
+            </Card>
+          ) : displayedCameras.length === 0 ? (
+            <Card className="rounded-3xl p-10 text-center flex justify-center">
+              <WifiOff className="mx-auto mb-3 size-7 text-muted-foreground" />
+              <h3 className="font-semibold">No matching cameras</h3>
+              <p className="text-sm text-muted-foreground">
+                Change the search or status filter.
+              </p>
+              <Button
+                className="mt-4 ml-auto mr-auto"
+                size="sm"
+                variant="default-soft"
+                onPress={() => {
+                  setQuery("");
+                  setFilter("all");
+                }}
+              >
+                Clear filters
+              </Button>
+            </Card>
+          ) : (
+            <motion.div
+              layout
+              className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+            >
+              <AnimatePresence mode="popLayout">
+                {displayedCameras.map((camera, index) => (
+                  <CameraCard
+                    key={camera.id}
+                    camera={camera}
+                    index={index}
+                    total={displayedCameras.length}
+                    onPlay={setSelectedCamera}
+                    onDelete={async (id) => {
+                      await deleteCamera(id);
+                      setCameras((current) =>
+                        current.filter((camera) => camera.id !== id),
+                      );
+                    }}
+                    onMove={moveCamera}
+                  />
+                ))}
+              </AnimatePresence>
+            </motion.div>
+          )}
+        </main>
+        <AddCameraModal
+          isOpen={isAddModalOpen}
+          initialRegion={authState?.loggedIn ? authState.region : undefined}
+          onClose={() => setIsAddModalOpen(false)}
+          onAdded={() => {
+            void loadAuth();
+            void loadCameras(true);
+          }}
         />
-      )}
-    </div>
+        {selectedCamera && (
+          <VideoPlayerModal
+            camera={selectedCamera}
+            isOpen
+            onClose={() => setSelectedCamera(null)}
+          />
+        )}
+      </div>
+    </TalkbackProvider>
   );
 }

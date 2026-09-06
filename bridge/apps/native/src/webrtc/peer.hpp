@@ -70,6 +70,8 @@ private:
     int talkback_port_ = 0;
     int talkback_socket_fd_ = -1;
     uint32_t audio_send_ssrc_ = 0;
+    uint16_t audio_send_seq_ = 1;
+    uint32_t audio_send_ts_ = 0;
     std::thread talkback_receiver_thread_;
 
     std::atomic<bool> running_{false};

@@ -1,31 +1,32 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Modal } from "@heroui/react";
 import { X } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  createWebRtcViewer,
+  preheatWebRtc,
+  stopWebRtcViewer,
+} from "../api/client.js";
 import type { Camera } from "../types/index.js";
-import { createWebRtcViewer, preheatWebRtc, stopWebRtcViewer } from "../api/client.js";
 import { getCameraUrls } from "../utils.js";
-import { VideoPlayer } from "./VideoPlayer.js";
 import { TalkbackPill } from "./TalkbackPill.js";
 import { Button } from "./ui/Button.js";
+import { VideoPlayer } from "./VideoPlayer.js";
 
-export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClose: () => void }> = ({ camera, isOpen, onClose }) => {
+export const VideoPlayerModal: React.FC<{
+  camera: Camera;
+  isOpen: boolean;
+  onClose: () => void;
+}> = ({ camera, isOpen, onClose }) => {
   const [viewerKey, setViewerKey] = useState(0);
-  const [status, setStatus] = useState<"connecting" | "live" | "error">("connecting");
+  const [status, setStatus] = useState<"connecting" | "live" | "error">(
+    "connecting",
+  );
   const [snapshotKey, setSnapshotKey] = useState(Date.now());
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
-  const [isTalking, setIsTalking] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const { snapshot } = getCameraUrls(camera);
-
-  const handleToggleTalk = useCallback(() => {
-    setIsTalking((v) => !v);
-  }, []);
-
-  const handleStopTalk = useCallback(() => {
-    setIsTalking(false);
-  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -37,34 +38,41 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
     let mediaTimer: number | undefined;
     setStatus("connecting");
 
-    const waitForIce = (pc: RTCPeerConnection) => new Promise<void>((resolve) => {
-      if (pc.iceGatheringState === "complete") return resolve();
-      let finished = false;
-      const finish = () => {
-        if (finished) return;
-        finished = true;
-        pc.removeEventListener("icegatheringstatechange", check);
-        pc.onicecandidate = null;
-        resolve();
-      };
-      const check = () => {
-        if (pc.iceGatheringState === "complete") finish();
-      };
-      pc.onicecandidate = (event) => {
-        if (event.candidate) window.setTimeout(finish, 30);
-      };
-      pc.addEventListener("icegatheringstatechange", check);
-      window.setTimeout(finish, 200);
-    });
+    const waitForIce = (pc: RTCPeerConnection) =>
+      new Promise<void>((resolve) => {
+        if (pc.iceGatheringState === "complete") return resolve();
+        let finished = false;
+        const finish = () => {
+          if (finished) return;
+          finished = true;
+          pc.removeEventListener("icegatheringstatechange", check);
+          pc.onicecandidate = null;
+          resolve();
+        };
+        const check = () => {
+          if (pc.iceGatheringState === "complete") finish();
+        };
+        pc.onicecandidate = (event) => {
+          if (event.candidate) window.setTimeout(finish, 30);
+        };
+        pc.addEventListener("icegatheringstatechange", check);
+        window.setTimeout(finish, 200);
+      });
 
     const start = async () => {
       try {
         peer = new RTCPeerConnection({ bundlePolicy: "max-bundle" });
-        const transceiver = peer.addTransceiver("video", { direction: "recvonly" });
+        const transceiver = peer.addTransceiver("video", {
+          direction: "recvonly",
+        });
         peer.addTransceiver("audio", { direction: "recvonly" });
         const capabilities = RTCRtpReceiver.getCapabilities("video");
-        const h264 = capabilities?.codecs.filter((c) => c.mimeType.toLowerCase() === "video/h264") || [];
-        if (h264.length && "setCodecPreferences" in transceiver) transceiver.setCodecPreferences(h264);
+        const h264 =
+          capabilities?.codecs.filter(
+            (c) => c.mimeType.toLowerCase() === "video/h264",
+          ) || [];
+        if (h264.length && "setCodecPreferences" in transceiver)
+          transceiver.setCodecPreferences(h264);
         peer.ontrack = (event) => {
           if (event.track.kind === "video") {
             setVideoStream(new MediaStream([event.track]));
@@ -81,9 +89,15 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
           if (disposed || !peer) return;
           if (peer.connectionState === "connected") {
             setStatus("live");
-          } else if (peer.connectionState === "failed" || peer.connectionState === "closed") {
+          } else if (
+            peer.connectionState === "failed" ||
+            peer.connectionState === "closed"
+          ) {
             setStatus("error");
-            reconnectTimer = window.setTimeout(() => setViewerKey((v) => v + 1), 2000);
+            reconnectTimer = window.setTimeout(
+              () => setViewerKey((v) => v + 1),
+              2000,
+            );
           } else if (peer.connectionState === "disconnected") {
             setStatus((prev) => (prev === "live" ? "live" : "connecting"));
           }
@@ -91,21 +105,36 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
         await peer.setLocalDescription(await peer.createOffer());
         await waitForIce(peer);
         if (!peer.localDescription) throw new Error("No browser WebRTC offer");
-        const created = await createWebRtcViewer(camera.did, peer.localDescription.toJSON());
-        if (disposed) { await stopWebRtcViewer(camera.did, created.sessionId); return; }
+        const created = await createWebRtcViewer(
+          camera.did,
+          peer.localDescription.toJSON(),
+        );
+        if (disposed) {
+          await stopWebRtcViewer(camera.did, created.sessionId);
+          return;
+        }
         sessionId = created.sessionId;
         await peer.setRemoteDescription(created.answer);
         mediaTimer = window.setTimeout(() => {
           if (disposed) return;
-          if (peer?.connectionState === "connected") { setStatus("live"); return; }
+          if (peer?.connectionState === "connected") {
+            setStatus("live");
+            return;
+          }
           setStatus("error");
           peer?.close();
-          reconnectTimer = window.setTimeout(() => setViewerKey((v) => v + 1), 1000);
+          reconnectTimer = window.setTimeout(
+            () => setViewerKey((v) => v + 1),
+            1000,
+          );
         }, 12_000);
       } catch {
         if (!disposed) {
           setStatus("error");
-          reconnectTimer = window.setTimeout(() => setViewerKey((v) => v + 1), 3000);
+          reconnectTimer = window.setTimeout(
+            () => setViewerKey((v) => v + 1),
+            3000,
+          );
         }
       }
     };
@@ -131,10 +160,7 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
     <Modal.Backdrop
       isOpen={isOpen}
       onOpenChange={(open) => {
-        if (!open) {
-          setIsTalking(false);
-          onClose();
-        }
+        if (!open) onClose();
       }}
       variant="blur"
     >
@@ -146,10 +172,7 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
             size="sm"
             variant="default-soft"
             className="absolute right-3 top-3 z-30 size-8 rounded-full backdrop-blur-md cursor-pointer shadow-xs"
-            onPress={() => {
-              setIsTalking(false);
-              onClose();
-            }}
+            onPress={onClose}
             aria-label="Close"
           >
             <X className="size-4" />
@@ -157,12 +180,7 @@ export const VideoPlayerModal: React.FC<{ camera: Camera; isOpen: boolean; onClo
 
           {/* Talkback Button / Capsule */}
           <div className="absolute left-3 top-3 z-30">
-            <TalkbackPill
-              did={camera?.did}
-              isActive={isTalking}
-              onToggle={handleToggleTalk}
-              onStop={handleStopTalk}
-            />
+            <TalkbackPill did={camera?.did} />
           </div>
 
           <div

@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.1.0
+
+> [!WARNING]
+> ⚠️ **Experimental Feature / Work in Progress**:
+> Two-Way Audio (Talkback / Intercom) is currently in active development and considered experimental. While the complete end-to-end streaming architecture (WebRTC / RTMP) and 8 kHz / 40 ms timing synchronization are implemented, the audio delivered to the camera speaker may still sound distorted or robotic on various Tuya hardware DAC implementations and has not yet been fully resolved.
+
+- **Two-Way Audio (Talkback / Intercom) Support**:
+  - Full talkback pipeline enabling two-way voice communication through Tuya / Smart Life cameras from Scrypted, HomeKit, and the Web UI.
+  - **Scrypted Intercom Integration**: Implemented Scrypted `Intercom` interface routing two-way audio through the companion Bridge RTMP ingest endpoint with real-time FFmpeg resampling.
+  - **Tuya WebRTC Audio Protocol**: Converted outbound voice stream to 8000 Hz mono G.711 μ-law with Tuya DAC signed-magnitude transformation in 40 ms frames, fixing 2× slowdown and pitch drop issues.
+  - **Native Engine Talkback Channel**: Added dedicated UDP ingestion and monotonic RTP timestamp sequencing (+320 per 160-byte payload) for the camera's WebRTC audio send track in `tuya-streamer`.
+  - **Web UI Controls**: Added interactive push-to-talk (PTT) and toggle talkback controls in the camera live player modal and camera cards.
+- **Audio & Video Stream Improvements**:
+  - Fixed audio codec declaration in Scrypted stream options (`h264` video, `aac` / `pcm_alaw` audio).
+  - Cleaned up talkback audio filtering and buffering for ultra-low latency.
+
 ## 2.0.5
 
 - **Fix H.264 RTSP relay 404 error & expose correct public stream URL**:

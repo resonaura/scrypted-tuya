@@ -318,7 +318,7 @@ export class TuyaMqttService {
       }
       const sdp = dataMsg?.sdp || (typeof dataMsg === "string" ? dataMsg : "");
       if (sdp) {
-        this.logger.log(`✅ Received WebRTC SDP Answer from Tuya camera ${did}!`);
+        this.logger.log(`✅ Received WebRTC SDP Answer from Tuya camera ${did}:\n${sdp}`);
         NativeMediaEngine.getInstance().sendLine({
           cmd: "set_remote_answer",
           did,
@@ -339,10 +339,52 @@ export class TuyaMqttService {
           mid: dataMsg.mid || "0",
         });
       }
+    } else if (type === "speaker") {
+      this.logger.log(`🎙️ [Tuya MQTT] Camera ${did} responded to speaker command: ${JSON.stringify(dataMsg)}`);
     } else if (type === "disconnect") {
       this.logger.warn(`Camera ${did} sent disconnect: ${JSON.stringify(dataMsg)}`);
       this.stopCameraSession(did);
       NativeMediaEngine.getInstance().emit("webrtc_disconnected", did);
+    }
+  }
+
+  public sendSpeaker(did: string, enabled: boolean): void {
+    const meta = this.sessions.get(did);
+    if (!meta) {
+      this.logger.warn(`🎙️ [Tuya MQTT] Cannot send speaker command: no active session for camera ${did}`);
+      return;
+    }
+
+    const speakerPayload = {
+      protocol: 312,
+      pv: "2.2",
+      t: Math.floor(Date.now() / 1000),
+      data: {
+        header: {
+          type: "speaker",
+          from: meta.msid,
+          to: did,
+          sub_dev_id: "",
+          sessionid: meta.sessionId,
+          moto_id: meta.motoId,
+          tid: "",
+          seq: 0,
+          rtx: 0,
+        },
+        msg: {
+          mode: "webrtc",
+          cmdValue: enabled ? 1 : 0,
+        },
+      },
+    };
+
+    this.logger.log(
+      `🎙️ [Tuya MQTT] Sending speaker ${enabled ? "ON (1)" : "OFF (0)"} command (protocol 312) to camera ${did}`,
+    );
+    try {
+      meta.client.publish(meta.deviceOutTopic, JSON.stringify(speakerPayload), { qos: 1 });
+    } catch (err: any) {
+      this.logger.warn(`🎙️ [Tuya MQTT] Failed to publish speaker command: ${err.message}`);
     }
   }
 

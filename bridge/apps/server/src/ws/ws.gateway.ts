@@ -1,20 +1,32 @@
+import { forwardRef, Inject, Logger, OnModuleDestroy } from "@nestjs/common";
 import {
-  WebSocketGateway,
-  WebSocketServer,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  WebSocketGateway,
+  WebSocketServer,
 } from "@nestjs/websockets";
+import * as dgram from "node:dgram";
 import { Server, WebSocket } from "ws";
 import { NativeMediaEngine } from "../engine/native-engine.js";
-import { Logger, OnModuleDestroy } from "@nestjs/common";
-import * as dgram from "node:dgram";
+import {
+  buildTalkbackRtp,
+  encodeDacUlawFromS16le,
+  TALKBACK_S16_BYTES,
+  TALKBACK_TS_INCREMENT,
+} from "../streaming/talkback-dac.js";
+import {
+  TalkbackSessionService,
+  type TalkbackPublicState,
+} from "../streaming/talkback-session.service.js";
 
 interface TalkSession {
   did: string;
+  ownerId: string;
   port?: number;
   seq: number;
   timestamp: number;
   packetCount: number;
+  pcmRemainder: Buffer;
 }
 
 @WebSocketGateway({ path: "/ws" })
@@ -29,14 +41,26 @@ export class AppWebSocketGateway
   private clients: Set<WebSocket> = new Set();
   private activeTalkSessions: Map<WebSocket, TalkSession> = new Map();
   private udpSocket: dgram.Socket = dgram.createSocket("udp4");
+  private nextOwner = 1;
+  private ownerOf = new WeakMap<WebSocket, string>();
 
-  constructor() {
+  constructor(
+    @Inject(forwardRef(() => TalkbackSessionService))
+    private readonly talkback: TalkbackSessionService,
+  ) {
     this.udpSocket.on("error", (err) => {
       this.logger.warn(`Talkback UDP socket error: ${err.message}`);
     });
   }
 
   afterInit() {
+    this.talkback.on("state", (state: TalkbackPublicState) => {
+      this.broadcast({ event: "talk_state", ...state });
+      if (state.holder !== "web") {
+        this.dropWebSessions(state.did, "preempted");
+      }
+    });
+
     this.engine.on("p2p_connected", (did, ip, port) => {
       this.broadcast({ event: "p2p_connected", did, ip, port });
     });
@@ -64,16 +88,21 @@ export class AppWebSocketGateway
   handleConnection(client: WebSocket) {
     this.clients.add(client);
     this.logger.log(`Client connected. Total clients: ${this.clients.size}`);
-    client.send(JSON.stringify({ event: "welcome", timestamp: Date.now() }));
+    client.send(
+      JSON.stringify({
+        event: "welcome",
+        timestamp: Date.now(),
+        talk: this.talkback.snapshot(),
+      }),
+    );
 
     client.on("message", (data: any, isBinary: boolean) => {
-      // Determine if message is a JSON control command (starts with '{')
       const firstByte = Buffer.isBuffer(data)
         ? data[0]
         : typeof data === "string"
           ? data.charCodeAt(0)
           : 0;
-      const isJsonText = !isBinary || firstByte === 0x7b; // 0x7b is '{'
+      const isJsonText = !isBinary || firstByte === 0x7b;
 
       if (isJsonText) {
         try {
@@ -81,44 +110,104 @@ export class AppWebSocketGateway
           if (str.startsWith("{")) {
             const msg = JSON.parse(str);
             if (msg.type === "ping") {
-              client.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
+              client.send(
+                JSON.stringify({ type: "pong", timestamp: Date.now() }),
+              );
               return;
             } else if (msg.type === "talk_start" && msg.did) {
-              const port = this.engine.getTalkbackPort(msg.did);
-              this.logger.log(
-                `🎙️ [Talkback WS] Client started talk for ${msg.did}, talkback UDP port: ${port || "WAITING"}`,
-              );
-              this.activeTalkSessions.set(client, {
-                did: msg.did,
-                port,
-                seq: Math.floor(Math.random() * 0x10000),
-                timestamp: Math.floor(Math.random() * 0x10000000),
-                packetCount: 0,
-              });
-              client.send(
-                JSON.stringify({
-                  type: "talk_ready",
-                  did: msg.did,
-                  ready: Boolean(port),
-                }),
-              );
+              this.startTalk(client, msg.did);
               return;
             } else if (msg.type === "talk_audio" && msg.did && msg.data) {
               const buf = Buffer.from(msg.data, "base64");
               this.handleAudioData(client, buf);
               return;
             } else if (msg.type === "talk_stop") {
-              this.logger.log(`🎙️ [Talkback WS] Client stopped talk`);
-              this.activeTalkSessions.delete(client);
+              this.stopTalk(client);
               return;
             }
           }
         } catch {}
       }
 
-      // Otherwise, binary audio payload from real-time microphone stream
-      this.handleAudioData(client, Buffer.isBuffer(data) ? data : Buffer.from(data));
+      this.handleAudioData(
+        client,
+        Buffer.isBuffer(data) ? data : Buffer.from(data),
+      );
     });
+  }
+
+  private ownerId(client: WebSocket): string {
+    let id = this.ownerOf.get(client);
+    if (!id) {
+      id = `web-${this.nextOwner++}`;
+      this.ownerOf.set(client, id);
+    }
+    return id;
+  }
+
+  private startTalk(client: WebSocket, did: string): void {
+    const existing = this.activeTalkSessions.get(client);
+    if (existing) {
+      this.talkback.release(existing.did, "web", existing.ownerId);
+      this.activeTalkSessions.delete(client);
+    }
+
+    const ownerId = this.ownerId(client);
+    const result = this.talkback.claim(did, "web", ownerId);
+    if (!result.ok) {
+      this.logger.log(
+        `🎙️ [Talkback WS] talk_start denied for ${did} (holder=${result.holder})`,
+      );
+      client.send(
+        JSON.stringify({
+          type: "talk_busy",
+          did,
+          holder: result.holder,
+        }),
+      );
+      return;
+    }
+
+    const port = this.engine.getTalkbackPort(did);
+    this.logger.log(
+      `🎙️ [Talkback WS] Client started talk for ${did}, talkback UDP port: ${port || "WAITING"}`,
+    );
+    this.activeTalkSessions.set(client, {
+      did,
+      ownerId,
+      port,
+      seq: Math.floor(Math.random() * 0x10000),
+      timestamp: Math.floor(Math.random() * 0x10000000),
+      packetCount: 0,
+      pcmRemainder: Buffer.alloc(0),
+    });
+    client.send(
+      JSON.stringify({
+        type: "talk_ready",
+        did,
+        ready: Boolean(port),
+      }),
+    );
+  }
+
+  private stopTalk(client: WebSocket): void {
+    const session = this.activeTalkSessions.get(client);
+    if (!session) return;
+    this.logger.log(`🎙️ [Talkback WS] Client stopped talk ${session.did}`);
+    this.activeTalkSessions.delete(client);
+    this.talkback.release(session.did, "web", session.ownerId);
+  }
+
+  private dropWebSessions(did: string, reason: string): void {
+    for (const [client, session] of this.activeTalkSessions) {
+      if (session.did !== did) continue;
+      this.activeTalkSessions.delete(client);
+      if (client.readyState === WebSocket.OPEN) {
+        try {
+          client.send(JSON.stringify({ type: "talk_end", did, reason }));
+        } catch {}
+      }
+    }
   }
 
   private handleAudioData(client: WebSocket, payload: Buffer): void {
@@ -127,39 +216,51 @@ export class AppWebSocketGateway
     if (!session.port) {
       session.port = this.engine.getTalkbackPort(session.did) || 0;
     }
-    if (!session.port || payload.length === 0) return;
+    if (payload.length === 0) return;
 
-    // Wrap in 12-byte RTP header: PT=0, timestamp increment = audio samples count (8000Hz)
-    const samples = Math.floor(payload.length / 2);
-    const rtp = Buffer.alloc(12 + payload.length);
-    rtp[0] = 0x80; // V=2, P=0, X=0, CC=0
-    rtp[1] = 0x00; // M=0, PT=0 (Tuya negotiated audio PT)
-    rtp.writeUInt16BE(session.seq & 0xffff, 2);
-    session.seq = (session.seq + 1) & 0xffff;
-    rtp.writeUInt32BE(session.timestamp >>> 0, 4);
-    session.timestamp = (session.timestamp + (samples > 0 ? samples : payload.length)) >>> 0;
-    rtp.writeUInt32BE(0x12345678, 8); // dummy SSRC, peer.cpp overrides with audio_send_ssrc_
-    payload.copy(rtp, 12);
+    session.pcmRemainder = Buffer.concat([session.pcmRemainder, payload]);
 
-    this.udpSocket.send(rtp, session.port, "127.0.0.1", (err) => {
-      if (err) this.logger.warn(`Failed to send talkback UDP: ${err.message}`);
-    });
-
-    session.packetCount++;
-    if (session.packetCount === 1 || session.packetCount % 100 === 0) {
-      this.logger.log(
-        `🎙️ [Talkback WS] Forwarded ${session.packetCount} audio packets to camera ${session.did} (UDP port ${session.port})`,
+    while (session.pcmRemainder.length >= TALKBACK_S16_BYTES) {
+      const s16 = session.pcmRemainder.subarray(0, TALKBACK_S16_BYTES);
+      session.pcmRemainder = session.pcmRemainder.subarray(
+        TALKBACK_S16_BYTES,
       );
+
+      if (!this.talkback.shouldSend(session.did, "web")) continue;
+
+      const frame = encodeDacUlawFromS16le(s16);
+      this.talkback.touch(session.did, "web");
+
+      if (!session.port) continue;
+
+      const rtp = buildTalkbackRtp(frame, session.seq, session.timestamp);
+      session.seq = (session.seq + 1) & 0xffff;
+      session.timestamp = (session.timestamp + TALKBACK_TS_INCREMENT) >>> 0;
+
+      this.udpSocket.send(rtp, session.port, "127.0.0.1", (err) => {
+        if (err)
+          this.logger.warn(`Failed to send talkback UDP: ${err.message}`);
+      });
+
+      session.packetCount++;
+      if (session.packetCount === 1 || session.packetCount % 100 === 0) {
+        this.logger.log(
+          `🎙️ [Talkback WS] DAC μ-law ${session.packetCount} pkts ${session.did} udp ${session.port}`,
+        );
+      }
     }
   }
 
   handleDisconnect(client: WebSocket) {
     this.clients.delete(client);
-    this.activeTalkSessions.delete(client);
+    this.stopTalk(client);
     this.logger.log(`Client disconnected. Total clients: ${this.clients.size}`);
   }
 
   onModuleDestroy() {
+    for (const client of [...this.activeTalkSessions.keys()]) {
+      this.stopTalk(client);
+    }
     try {
       this.udpSocket.close();
     } catch {}

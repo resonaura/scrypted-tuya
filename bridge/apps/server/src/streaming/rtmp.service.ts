@@ -1,12 +1,28 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
+import {
+  forwardRef,
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from "@nestjs/common";
+import { spawn, type ChildProcess } from "node:child_process";
+import * as dgram from "node:dgram";
 import { EventEmitter } from "node:events";
 import * as net from "node:net";
-import * as dgram from "node:dgram";
-import { spawn, type ChildProcess } from "node:child_process";
 import { env } from "../config/env.js";
 import { CameraEntity } from "../db/entities/index.js";
-import { cameraSlug } from "../utils/camera-slug.js";
 import { NativeMediaEngine } from "../engine/native-engine.js";
+import { cameraSlug } from "../utils/camera-slug.js";
+import {
+  buildTalkbackRtp,
+  encodeDacUlawFromS16le,
+  TALKBACK_FFMPEG_FILTER,
+  TALKBACK_FRAME_MS,
+  TALKBACK_S16_BYTES,
+  TALKBACK_TS_INCREMENT,
+} from "./talkback-dac.js";
+import { TalkbackSessionService } from "./talkback-session.service.js";
 
 const HANDSHAKE = 1536;
 const MSG_SET_CHUNK = 1;
@@ -85,6 +101,7 @@ class RtmpConnection extends EventEmitter {
     number,
     {
       timestamp: number;
+      delta?: number;
       len: number;
       type: number;
       streamId: number;
@@ -158,7 +175,7 @@ class RtmpConnection extends EventEmitter {
     let msgLen = prev?.len ?? 0;
     let msgType = prev?.type ?? 0;
     let streamId = prev?.streamId ?? 0;
-    let ts = prev?.timestamp ?? 0;
+    let ts = 0;
     let extra = 0;
 
     if (fmt === 0) {
@@ -185,11 +202,28 @@ class RtmpConnection extends EventEmitter {
       extra = 0;
     }
 
-    let timestamp = ts;
+    let timestamp = 0;
+    let delta = prev?.delta ?? 0;
+    if (fmt === 0) {
+      timestamp = ts;
+      delta = 0;
+    } else if (fmt === 1 || fmt === 2) {
+      delta = ts;
+      timestamp = (prev?.timestamp ?? 0) + ts;
+    } else {
+      timestamp = (prev?.timestamp ?? 0) + delta;
+    }
+
     if (ts === 0xffffff) {
       if (this.buf.length < hdrLen + extra + 4) return false;
-      timestamp = this.buf.readUInt32BE(hdrLen + extra);
+      const ext = this.buf.readUInt32BE(hdrLen + extra);
       extra += 4;
+      if (fmt === 0) {
+        timestamp = ext;
+      } else if (fmt === 1 || fmt === 2) {
+        delta = ext;
+        timestamp = (prev?.timestamp ?? 0) + ext;
+      }
     }
 
     const have = prev?.payload.length ?? 0;
@@ -202,6 +236,7 @@ class RtmpConnection extends EventEmitter {
     const payload = Buffer.concat([prev?.payload ?? Buffer.alloc(0), piece]);
     this.chunks.set(csId, {
       timestamp,
+      delta,
       len: msgLen,
       type: msgType,
       streamId,
@@ -211,6 +246,7 @@ class RtmpConnection extends EventEmitter {
     if (payload.length >= msgLen) {
       this.chunks.set(csId, {
         timestamp,
+        delta,
         len: msgLen,
         type: msgType,
         streamId,
@@ -221,7 +257,12 @@ class RtmpConnection extends EventEmitter {
     return true;
   }
 
-  private onMessage(type: number, payload: Buffer, streamId: number, timestamp: number): void {
+  private onMessage(
+    type: number,
+    payload: Buffer,
+    streamId: number,
+    timestamp: number,
+  ): void {
     if (type === MSG_SET_CHUNK && payload.length >= 4) {
       this.inChunkSize = payload.readUInt32BE(0) || this.inChunkSize;
       return;
@@ -250,16 +291,27 @@ class RtmpConnection extends EventEmitter {
       } else if (cmd === "releaseStream") {
         this.sendCommand("_result", tx, null, null);
       } else if (cmd === "FCPublish") {
-        this.sendCommand("onFCPublish", tx, null, { code: "NetStream.Publish.Start", description: "ok" });
+        this.sendCommand("onFCPublish", tx, null, {
+          code: "NetStream.Publish.Start",
+          description: "ok",
+        });
       } else if (cmd === "createStream") {
         this.sendCommand("_result", tx, null, 1);
       } else if (cmd === "publish") {
         this.streamName = String(args[3] || args[4] || "stream");
         this.sendUserControl(0, 1);
-        this.sendOnStatus(streamId, "NetStream.Publish.Start", `Publishing ${this.streamName}`);
+        this.sendOnStatus(
+          streamId,
+          "NetStream.Publish.Start",
+          `Publishing ${this.streamName}`,
+        );
         this.published = true;
         this.emit("publish", { name: this.streamName, app: this.app });
-      } else if (cmd === "FCUnpublish" || cmd === "deleteStream" || cmd === "closeStream") {
+      } else if (
+        cmd === "FCUnpublish" ||
+        cmd === "deleteStream" ||
+        cmd === "closeStream"
+      ) {
         this.teardown();
       }
       return;
@@ -301,12 +353,26 @@ class RtmpConnection extends EventEmitter {
     this.sendMessage(3, MSG_COMMAND, 0, payload);
   }
 
-  private sendOnStatus(streamId: number, code: string, description: string): void {
-    const payload = encodeAmf0List(["onStatus", 0, null, { level: "status", code, description }]);
+  private sendOnStatus(
+    streamId: number,
+    code: string,
+    description: string,
+  ): void {
+    const payload = encodeAmf0List([
+      "onStatus",
+      0,
+      null,
+      { level: "status", code, description },
+    ]);
     this.sendMessage(4, MSG_COMMAND, streamId, payload);
   }
 
-  private sendMessage(csId: number, type: number, streamId: number, payload: Buffer): void {
+  private sendMessage(
+    csId: number,
+    type: number,
+    streamId: number,
+    payload: Buffer,
+  ): void {
     const hdr = Buffer.alloc(12);
     hdr[0] = csId & 0x3f;
     hdr[3] = 0;
@@ -381,7 +447,10 @@ function decodeAmf0List(buf: Buffer): unknown[] {
   return out;
 }
 
-function decodeAmf0(buf: Buffer, off: number): { value: unknown; off: number } | null {
+function decodeAmf0(
+  buf: Buffer,
+  off: number,
+): { value: unknown; off: number } | null {
   if (off >= buf.length) return null;
   const t = buf[off++];
   if (t === 0x00) {
@@ -450,36 +519,70 @@ export class RtmpService implements OnModuleInit, OnModuleDestroy {
       seq: number;
       timestamp: number;
       pcmRemainder: Buffer;
+      queue: Buffer[];
+      timer: NodeJS.Timeout | null;
+      startTime: number;
+      sentPackets: number;
+      active: boolean;
     }
   >();
+
+  constructor(
+    @Inject(forwardRef(() => TalkbackSessionService))
+    private readonly talkback: TalkbackSessionService,
+  ) {}
 
   async onModuleInit() {
     try {
       this.rtmpServer = new RTMPIngestServer(env.RTMP_PORT);
       await this.rtmpServer.start();
-      this.logger.log(`🎙️ [RTMP Ingest] Listening on port ${this.rtmpServer.listenPort}`);
+      this.logger.log(
+        `🎙️ [RTMP Ingest] Listening on port ${this.rtmpServer.listenPort}`,
+      );
+
+      const pendingAudio = new Map<string, Buffer[]>();
 
       this.rtmpServer.on("publish", async ({ name }: RtmpPublishEvent) => {
+        pendingAudio.set(name, []);
         const cam = await this.resolveCamera(name);
         if (!cam) {
-          this.logger.warn(`🎙️ [Talkback RTMP] Publisher connected for stream "${name}" but no matching camera found`);
+          this.logger.warn(
+            `🎙️ [Talkback RTMP] Publisher connected for stream "${name}" but no matching camera found`,
+          );
+          pendingAudio.delete(name);
           return;
         }
 
-        const talkbackPort = NativeMediaEngine.getInstance().getTalkbackPort(cam.did);
-        this.logger.log(`🎙️ [Talkback RTMP] Publisher connected for "${name}" -> ${cam.name} (${cam.did}), talkback UDP: ${talkbackPort || "NONE"}`);
+        const talkbackPort = NativeMediaEngine.getInstance().getTalkbackPort(
+          cam.did,
+        );
+        this.logger.log(
+          `🎙️ [Talkback RTMP] Publisher connected for "${name}" -> ${cam.name} (${cam.did}), talkback UDP: ${talkbackPort || "NONE"}`,
+        );
         if (talkbackPort) {
-          this.startRelay(name, cam.did, talkbackPort);
+          const prebuffered = pendingAudio.get(name) || [];
+          pendingAudio.delete(name);
+          const claimed = this.talkback.claim(cam.did, "rtmp", name);
+          if (claimed.ok && claimed.state.holder === "web") {
+            this.logger.log(
+              `🎙️ [Talkback RTMP] ${cam.did} muted — web Talk is live, packets go to void until it ends`,
+            );
+          }
+          this.startRelay(name, cam.did, talkbackPort, prebuffered);
         } else {
-          this.logger.warn(`🎙️ [Talkback RTMP] Camera ${cam.name} does not have an active talkback UDP port yet`);
+          this.logger.warn(
+            `🎙️ [Talkback RTMP] Camera ${cam.name} does not have an active talkback UDP port yet`,
+          );
+          pendingAudio.delete(name);
         }
       });
 
-      this.rtmpServer.on("audio", ({ name, payload, timestamp }: RtmpAudioEvent) => {
-        const relay = this.activeRelays.get(name);
-        if (!relay || !relay.proc.stdin?.writable) return;
-
-        try {
+      let tagCount = 0;
+      this.rtmpServer.on(
+        "audio",
+        ({ name, payload, timestamp }: RtmpAudioEvent) => {
+          tagCount++;
+          const relay = this.activeRelays.get(name);
           const tagHdr = Buffer.alloc(11);
           tagHdr[0] = 0x08; // Audio
           tagHdr[1] = (payload.length >> 16) & 0xff;
@@ -495,46 +598,103 @@ export class RtmpService implements OnModuleInit, OnModuleDestroy {
 
           const prevTagSize = Buffer.alloc(4);
           prevTagSize.writeUInt32BE(payload.length + 11, 0);
+          const tagBuffer = Buffer.concat([tagHdr, payload, prevTagSize]);
 
-          relay.proc.stdin.write(Buffer.concat([tagHdr, payload, prevTagSize]));
-        } catch (err: any) {
-          this.logger.warn(`🎙️ [Talkback RTMP] Failed to write audio tag: ${err.message}`);
-        }
-      });
+          if (relay && relay.proc.stdin?.writable) {
+            try {
+              relay.proc.stdin.write(tagBuffer);
+            } catch (err: any) {
+              this.logger.warn(
+                `🎙️ [Talkback RTMP] Failed to write audio tag: ${err.message}`,
+              );
+            }
+          } else if (pendingAudio.has(name)) {
+            pendingAudio.get(name)!.push(tagBuffer);
+          }
+        },
+      );
 
       this.rtmpServer.on("unpublish", async ({ name }: RtmpPublishEvent) => {
-        this.logger.log(`🎙️ [Talkback RTMP] Publisher disconnected from "${name}"`);
-        this.stopRelay(name);
+        pendingAudio.delete(name);
+        this.logger.log(
+          `🎙️ [Talkback RTMP] Publisher disconnected from "${name}", total audio tags: ${tagCount}`,
+        );
+        tagCount = 0;
+        const relay = this.activeRelays.get(name);
+        if (relay && relay.proc.stdin?.writable) {
+          try {
+            relay.proc.stdin.end();
+          } catch {}
+        } else {
+          this.stopRelay(name);
+        }
       });
     } catch (err: any) {
       this.logger.error(`❌ [RTMP Ingest] Failed to start: ${err.message}`);
     }
   }
 
-  private startRelay(streamName: string, did: string, port: number): void {
-    this.stopRelay(streamName);
+  private startRelay(
+    streamName: string,
+    did: string,
+    port: number,
+    prebufferedTags: Buffer[] = [],
+  ): void {
+    this.stopRelay(streamName, { release: false });
 
-    this.logger.log(`🎙️ [Talkback RTMP] Spawning audio transcoder (FLV pipe -> Raw PCM_S16LE 8kHz mono) -> 127.0.0.1:${port}`);
+    this.logger.log(
+      `🎙️ [Talkback RTMP] FLV (any codec) -> s16le 8 kHz telephone 300–3400 Hz -> DAC μ-law 160 B/40 ms -> 127.0.0.1:${port}`,
+    );
 
-    const proc = spawn("ffmpeg", [
-      "-hide_banner",
-      "-loglevel", "warning",
-      "-use_wallclock_as_timestamps", "1",
-      "-f", "flv",
-      "-i", "pipe:0",
-      "-vn",
-      "-filter:a", "volume=0.85,aresample=async=1000",
-      "-c:a", "pcm_s16le",
-      "-ar", "8000",
-      "-ac", "1",
-      "-f", "s16le",
-      "pipe:1"
-    ], {
-      stdio: ["pipe", "pipe", "inherit"],
+    const proc = spawn(
+      "ffmpeg",
+      [
+        "-hide_banner",
+        "-loglevel",
+        "warning",
+        "-fflags",
+        "+genpts",
+        "-f",
+        "flv",
+        "-i",
+        "pipe:0",
+        "-vn",
+        "-filter:a",
+        TALKBACK_FFMPEG_FILTER,
+        "-ac",
+        "1",
+        "-ar",
+        "8000",
+        "-c:a",
+        "pcm_s16le",
+        "-f",
+        "s16le",
+        "pipe:1",
+      ],
+      {
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+
+    proc.stderr?.on("data", (d: Buffer) => {
+      this.logger.warn(`🎙️ [Talkback FFmpeg stderr] ${d.toString().trim()}`);
     });
 
     const udpSocket = dgram.createSocket("udp4");
-    const relayState = {
+    const relayState: {
+      proc: ChildProcess;
+      port: number;
+      did: string;
+      udpSocket: dgram.Socket;
+      seq: number;
+      timestamp: number;
+      pcmRemainder: Buffer;
+      queue: Buffer[];
+      timer: NodeJS.Timeout | null;
+      startTime: number;
+      sentPackets: number;
+      active: boolean;
+    } = {
       proc,
       port,
       did,
@@ -542,61 +702,129 @@ export class RtmpService implements OnModuleInit, OnModuleDestroy {
       seq: Math.floor(Math.random() * 0x10000),
       timestamp: Math.floor(Math.random() * 0x10000000),
       pcmRemainder: Buffer.alloc(0),
+      queue: [],
+      timer: null,
+      startTime: 0,
+      sentPackets: 0,
+      active: true,
     };
 
-    // Frame size for 8000Hz mono 16-bit PCM: 20ms = 160 samples = 320 bytes
-    const FRAME_SIZE = 320;
+    const S16_CHUNK = TALKBACK_S16_BYTES;
+    const FRAME_DURATION_MS = TALKBACK_FRAME_MS;
 
+    // Drift-compensating real-time pacing (20 ms average).
+    const scheduleNext = () => {
+      if (!relayState.active) return;
+      if (relayState.queue.length > 0) {
+        if (relayState.startTime === 0) {
+          relayState.startTime = performance.now();
+        }
+        const rtp = relayState.queue.shift()!;
+        if (this.talkback.shouldSend(did, "rtmp")) {
+          try {
+            udpSocket.send(rtp, port, "127.0.0.1");
+            relayState.sentPackets++;
+            this.talkback.touch(did, "rtmp");
+          } catch {}
+        }
+
+        const targetTime =
+          relayState.startTime + relayState.sentPackets * FRAME_DURATION_MS;
+        const delay = Math.max(0, targetTime - performance.now());
+        relayState.timer = setTimeout(scheduleNext, delay);
+      } else {
+        relayState.startTime = 0;
+        relayState.sentPackets = 0;
+        relayState.timer = setTimeout(scheduleNext, 5);
+      }
+    };
+    scheduleNext();
+
+    let totalStdoutBytes = 0;
     proc.stdout?.on("data", (chunk: Buffer) => {
+      totalStdoutBytes += chunk.length;
       relayState.pcmRemainder = Buffer.concat([relayState.pcmRemainder, chunk]);
-      while (relayState.pcmRemainder.length >= FRAME_SIZE) {
-        const frame = relayState.pcmRemainder.subarray(0, FRAME_SIZE);
-        relayState.pcmRemainder = relayState.pcmRemainder.subarray(FRAME_SIZE);
-
-        const rtp = Buffer.alloc(12 + FRAME_SIZE);
-        rtp[0] = 0x80; // V=2, P=0, X=0, CC=0
-        rtp[1] = 0x00; // PT=0 (PCMU/8000 slot used by camera)
-        rtp.writeUInt16BE(relayState.seq & 0xffff, 2);
+      while (relayState.pcmRemainder.length >= S16_CHUNK) {
+        const s16 = relayState.pcmRemainder.subarray(0, S16_CHUNK);
+        relayState.pcmRemainder = relayState.pcmRemainder.subarray(S16_CHUNK);
+        const frame = encodeDacUlawFromS16le(s16);
+        const rtp = buildTalkbackRtp(
+          frame,
+          relayState.seq,
+          relayState.timestamp,
+        );
         relayState.seq = (relayState.seq + 1) & 0xffff;
-        rtp.writeUInt32BE(relayState.timestamp >>> 0, 4);
-        relayState.timestamp = (relayState.timestamp + 160) >>> 0;
-        rtp.writeUInt32BE(0x12345678, 8); // dummy SSRC, peer.cpp overrides with audio_send_ssrc_
-        frame.copy(rtp, 12);
+        relayState.timestamp =
+          (relayState.timestamp + TALKBACK_TS_INCREMENT) >>> 0;
 
-        try {
-          udpSocket.send(rtp, port, "127.0.0.1");
-        } catch {}
+        if (this.talkback.shouldSend(did, "rtmp")) {
+          relayState.queue.push(rtp);
+        }
       }
     });
 
     proc.stdin?.on("error", () => {});
     proc.on("error", (err) => {
-      this.logger.error(`🎙️ [Talkback RTMP] FFmpeg relay error: ${err.message}`);
+      this.logger.error(
+        `🎙️ [Talkback RTMP] FFmpeg relay error: ${err.message}`,
+      );
     });
     proc.on("exit", (code) => {
-      this.logger.log(`🎙️ [Talkback RTMP] FFmpeg relay exited with code ${code}`);
-      this.stopRelay(streamName);
+      this.logger.log(
+        `🎙️ [Talkback RTMP] FFmpeg relay exited with code ${code}, total stdout bytes: ${totalStdoutBytes}, queued: ${relayState.queue.length} packets (~${relayState.queue.length * FRAME_DURATION_MS}ms)`,
+      );
+      // Wait for queued frames to be delivered to camera at real-time pace before teardown
+      const drainInterval = setInterval(() => {
+        if (relayState.queue.length === 0) {
+          clearInterval(drainInterval);
+          this.stopRelay(streamName);
+        }
+      }, 50);
     });
 
     // Write FLV header (9 bytes) + PreviousTagSize0 (4 bytes)
     const flvHeader = Buffer.from([
-      0x46, 0x4c, 0x56, // 'FLV'
-      0x01,             // version 1
-      0x04,             // audio only flag
-      0x00, 0x00, 0x00, 0x09, // header size 9
-      0x00, 0x00, 0x00, 0x00, // PreviousTagSize0
+      0x46,
+      0x4c,
+      0x56, // 'FLV'
+      0x01, // version 1
+      0x04, // audio only flag
+      0x00,
+      0x00,
+      0x00,
+      0x09, // header size 9
+      0x00,
+      0x00,
+      0x00,
+      0x00, // PreviousTagSize0
     ]);
     try {
       proc.stdin?.write(flvHeader);
+      for (const tag of prebufferedTags) {
+        proc.stdin?.write(tag);
+      }
     } catch {}
 
     this.activeRelays.set(streamName, relayState);
   }
 
-  private stopRelay(streamName: string): void {
+  private stopRelay(
+    streamName: string,
+    opts: { release?: boolean } = {},
+  ): void {
     const relay = this.activeRelays.get(streamName);
     if (!relay) return;
+    relay.active = false;
     this.activeRelays.delete(streamName);
+    if (opts.release !== false) {
+      this.talkback.release(relay.did, "rtmp", streamName);
+    }
+    if (relay.timer) {
+      clearTimeout(relay.timer);
+      clearInterval(relay.timer);
+      relay.timer = null;
+    }
+    relay.queue = [];
     try {
       relay.proc.stdout?.removeAllListeners();
     } catch {}

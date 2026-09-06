@@ -1,5 +1,18 @@
 # Tuya Camera Bridge — Changelog
 
+## 2.1.0
+
+> [!WARNING]
+> ⚠️ **Experimental Feature / Work in Progress**:
+> Two-Way Audio (Talkback / Intercom) is currently in active development and considered experimental. While the complete end-to-end streaming architecture (WebRTC / RTMP) and 8 kHz / 40 ms timing synchronization are implemented, the audio delivered to the camera speaker may still sound distorted or robotic on various Tuya hardware DAC implementations and has not yet been fully resolved.
+
+- **Two-Way Audio (Talkback / Intercom) Engine**:
+  - Full talkback pipeline enabling two-way voice communication directly through Tuya / Smart Life cameras.
+  - **RTMP Talkback Service**: Added RTMP audio ingest service (`rtmp.service.ts`) accepting incoming audio from Scrypted / HomeKit, transcoding to 8000 Hz mono s16le, and converting in real-time to Tuya signed DAC G.711 μ-law frames.
+  - **WebRTC Talkback Integration**: Web UI microphone streaming via WebSocket gateway (`ws.gateway.ts`) with client-side 8000 Hz resampling and 40 ms framing (`TalkbackProvider.tsx`), fixing 2× playback slowdown and pitch drop.
+  - **Native C++ Engine Support (`tuya-streamer`)**: Implemented talkback UDP listener, dynamic RTP payload sequencing (+320 sample increment per 160-byte DAC payload at 8 kHz), and Tuya codecType 101/0x81 handling in `peer.cpp`.
+  - **HeroUI Controls**: Added animated Talkback Pill and push-to-talk / toggle controls to camera cards and video player modals.
+
 ## 2.0.5
 
 - **Fix H.264 RTSP relay 404 error & expose correct public stream URL**:

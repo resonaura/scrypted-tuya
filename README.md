@@ -2,7 +2,7 @@
 
 # scrypted-tuya & Tuya Camera Bridge
 
-[![Version](https://img.shields.io/badge/Version-2.0.5-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-2.1.0-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Build & Publish](https://github.com/resonaura/scrypted-tuya/actions/workflows/publish.yaml/badge.svg)](https://github.com/resonaura/scrypted-tuya/actions/workflows/publish.yaml)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Add--on-orange.svg)](https://www.home-assistant.io/)

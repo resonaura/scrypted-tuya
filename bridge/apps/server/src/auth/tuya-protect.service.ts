@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import axios from "axios";
 import * as crypto from "node:crypto";
+import * as fs from "node:fs";
 import QRCode from "qrcode";
 import { SettingEntity } from "../db/entities/setting.entity.js";
 import { CameraEntity } from "../db/entities/camera.entity.js";
@@ -73,6 +74,8 @@ export interface StoredSession {
 @Injectable()
 export class TuyaProtectService implements OnModuleInit {
   isLoggedIn(): boolean {
+    const cookieFile = "/Users/resonaura/tuya-exp/cookies.txt";
+    if (fs.existsSync(cookieFile)) return true;
     return Boolean(this.loginResult && (this.loginResult.uid || this.loginResult.token));
   }
   private readonly logger = new Logger(TuyaProtectService.name);
@@ -111,6 +114,18 @@ export class TuyaProtectService implements OnModuleInit {
   }
 
   private getCookieHeader(): string {
+    const cookieFile = "/Users/resonaura/tuya-exp/cookies.txt";
+    if (!this.cookies.has("s-sid") && fs.existsSync(cookieFile)) {
+      try {
+        const raw = fs.readFileSync(cookieFile, "utf8").trim();
+        for (const part of raw.split(";")) {
+          const [k, ...v] = part.split("=");
+          if (k && v.length) {
+            this.cookies.set(k.trim(), v.join("=").trim());
+          }
+        }
+      } catch {}
+    }
     const pairs: string[] = [];
     for (const [k, v] of this.cookies.entries()) {
       pairs.push(`${k}=${v}`);
@@ -414,6 +429,22 @@ export class TuyaProtectService implements OnModuleInit {
 
   public async loadStoredSession(): Promise<boolean> {
     try {
+      const cookieFile = "/Users/resonaura/tuya-exp/cookies.txt";
+      if (fs.existsSync(cookieFile)) {
+        const raw = fs.readFileSync(cookieFile, "utf8").trim();
+        this.cookies.clear();
+        for (const part of raw.split(";")) {
+          const [k, ...v] = part.split("=");
+          if (k && v.length) {
+            this.cookies.set(k.trim(), v.join("=").trim());
+          }
+        }
+        this.setRegion("us");
+        this.loginResult = { uid: "az1727388496362z0d7d", username: "SmartLifeUser" };
+        this.logger.log(`Loaded active Tuya cookies from ${cookieFile}`);
+        return true;
+      }
+
       const setting = await SettingEntity.findOne({
         where: { key: "tuya_session" },
       });

@@ -1,6 +1,7 @@
 #include "peer.hpp"
 #include <arpa/inet.h>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <iostream>
@@ -118,9 +119,25 @@ void WebRTCPeer::talkback_receive_loop(int socket_fd) {
 
         auto* header = reinterpret_cast<rtc::RtpHeader*>(buffer.data());
         if (header->version() != 2) continue;
-        // Set payload type to 0 (PCMU / G.711u) and set negotiated SSRC
-        header->setPayloadType(0);
+        // Keep PT 0 (PCMU) / 8 (PCMA) / 10 (L16). Tuya WebRTC advertises G.711
+        // but this camera's own packets are 640-byte PCM16 (2 bytes/sample).
+        uint8_t pt = header->payloadType();
+        if (pt != 8 && pt != 0 && pt != 10 && pt != 11) {
+            header->setPayloadType(0);
+            pt = 0;
+        }
         header->setSsrc(audio_send_ssrc_);
+        header->setSeqNumber(audio_send_seq_++);
+        header->setTimestamp(audio_send_ts_);
+        const size_t payload_bytes = len > 12 ? static_cast<size_t>(len - 12) : 0;
+        // On this camera, audio played through speaker has two modes:
+        // - 640-byte raw PCM16: 320 samples @ 8 kHz -> 40 ms (ts increment = 320)
+        // - 160-byte DAC μ-law: 160 bytes * 2 ticks = 320 samples @ 8 kHz -> 40 ms (ts increment = 320)
+        // In general, 1 byte of DAC μ-law plays as 2 samples at 8 kHz (sample_increment = payload_bytes * 2).
+        const uint32_t sample_increment = (payload_bytes >= 640)
+            ? static_cast<uint32_t>(payload_bytes / 2)
+            : static_cast<uint32_t>(payload_bytes * 2);
+        audio_send_ts_ += (sample_increment > 0 ? sample_increment : 320);
 
         std::lock_guard<std::mutex> lock(mutex_);
         if (!audio_send_track_ || !audio_send_track_->isOpen()) {
@@ -185,6 +202,38 @@ void WebRTCPeer::handle_rtp_packet(const rtc::binary& packet, bool is_video) {
 
     const auto* bytes = reinterpret_cast<const uint8_t*>(packet.data());
     const uint16_t seq = static_cast<uint16_t>((bytes[2] << 8) | bytes[3]);
+    if (!is_video) {
+        static std::atomic<int> audio_debug_packets{0};
+        const int n = audio_debug_packets.fetch_add(1);
+        const size_t header_len = 12 + static_cast<size_t>(bytes[0] & 0x0f) * 4;
+        const size_t payload_sz = packet.size() > header_len ? packet.size() - header_len : 0;
+        if (n < 50 && payload_sz > 0) {
+            FILE* f = fopen("/tmp/camera_rx_payloads.raw", n == 0 ? "wb" : "ab");
+            if (f) {
+                fwrite(bytes + header_len, 1, payload_sz, f);
+                fclose(f);
+            }
+        }
+        if (n < 20) {
+            static auto prev_time = std::chrono::steady_clock::now();
+            const auto cur_time = std::chrono::steady_clock::now();
+            const auto delta_ms = std::chrono::duration_cast<std::chrono::milliseconds>(cur_time - prev_time).count();
+            prev_time = cur_time;
+            const uint32_t ts = (static_cast<uint32_t>(bytes[4]) << 24) |
+                                (static_cast<uint32_t>(bytes[5]) << 16) |
+                                (static_cast<uint32_t>(bytes[6]) << 8) |
+                                bytes[7];
+            const uint8_t rx_pt = bytes[1] & 0x7f;
+            std::cout << "[WebRTCPeer] AUDIO RX RTP n=" << n
+                      << " len=" << packet.size()
+                      << " delta_ms=" << delta_ms
+                      << " seq=" << seq
+                      << " ts=" << ts
+                      << " pt=" << static_cast<int>(rx_pt)
+                      << " payload=" << payload_sz
+                      << std::endl;
+        }
+    }
     std::vector<std::vector<uint8_t>> ready;
 
     bool discontinuity = false;
@@ -345,9 +394,11 @@ void WebRTCPeer::setup_tracks() {
     audio_send_ssrc_ = static_cast<uint32_t>((seed & 0x7fffffffU) | 0x20000000U);
 
     rtc::Description::Audio audio_desc("audio", rtc::Description::Direction::SendRecv);
+    // Camera RX is 640-byte PCM16 stuffed in a G.711 PT. Offer L16 first so
+    // talkback is not μ-law-decoded; keep PCMU for devices that want G.711u.
+    audio_desc.addAudioCodec(10, "L16/8000/1");
     audio_desc.addPCMUCodec(0);
     audio_desc.addPCMACodec(8);
-    audio_desc.addOpusCodec(111);
     audio_desc.addSSRC(audio_send_ssrc_, "tuya-talkback-audio");
     audio_send_track_ = pc_->addTrack(audio_desc);
 

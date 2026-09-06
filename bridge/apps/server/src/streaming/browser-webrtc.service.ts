@@ -117,35 +117,32 @@ export class BrowserWebRtcService implements OnModuleDestroy {
       "-fflags", "nobuffer+discardcorrupt+fastseek",
       "-flags", "low_delay",
       "-max_delay", "0",
-      "-analyzeduration", "100000",
-      "-probesize", "100000",
+      "-analyzeduration", "500000",
+      "-probesize", "500000",
       "-i", session.rtspUrl,
       "-map", "0:v:0",
-      "-c:v", "libx264",
-      "-preset", "ultrafast",
-      "-tune", "zerolatency",
-      "-profile:v", "baseline",
-      "-level:v", "4.1",
-      "-pix_fmt", "yuv420p",
-      "-g", "15",
-      "-keyint_min", "15",
-      "-bf", "0",
-      "-x264-params", "repeat-headers=1:scenecut=0",
+      "-c:v", "copy",
+      "-bsf:v", "dump_extra=freq=keyframe",
       "-f", "rtp",
       "-payload_type", "96",
       `rtp://127.0.0.1:${session.rtpPort}?pkt_size=1200`,
-      "-map", "0:a:0?",
-      "-af", "aresample=async=1000",
-      "-c:a", "libopus",
-      "-application", "lowdelay",
-      "-frame_duration", "20",
-      "-ar", "48000",
-      "-ac", "1",
-      "-b:a", "32k",
-      "-f", "rtp",
-      "-payload_type", "111",
-      `rtp://127.0.0.1:${session.audioRtpPort}?pkt_size=1200`,
     ];
+
+    if (session.audioRtpPort) {
+      args.push(
+        "-map", "0:a:0?",
+        "-c:a", "libopus",
+        "-ar", "48000",
+        "-ac", "1",
+        "-b:a", "48k",
+        "-application", "lowdelay",
+        "-f", "rtp",
+        "-payload_type", "111",
+        `rtp://127.0.0.1:${session.audioRtpPort}?pkt_size=1200`,
+      );
+    } else {
+      args.push("-an");
+    }
 
     this.logger.log(`Spawning browser transcoder for ${session.did} (rtp=${session.rtpPort}, audioRtp=${session.audioRtpPort}, url=${session.rtspUrl})`);
     const proc = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });

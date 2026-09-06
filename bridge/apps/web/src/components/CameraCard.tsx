@@ -16,8 +16,8 @@ import { toast } from "sonner";
 import { preheatWebRtc } from "../api/client.js";
 import type { Camera } from "../types/index.js";
 import { copyText, getCameraUrls } from "../utils.js";
-import { Card } from "./ui/Card.js";
 import { TalkbackPill } from "./TalkbackPill.js";
+import { Card } from "./ui/Card.js";
 
 interface CameraCardProps {
   camera: Camera;
@@ -39,8 +39,9 @@ export const CameraCard: React.FC<CameraCardProps> = ({
   const reduceMotion = useReducedMotion();
   const [snapshotKey, setSnapshotKey] = React.useState(Date.now());
   const [imgError, setImgError] = React.useState(false);
-  const [copied, setCopied] = React.useState<"rtsp" | "rtmp" | "snapshot" | null>(null);
-  const [isTalking, setIsTalking] = React.useState(false);
+  const [copied, setCopied] = React.useState<
+    "rtsp" | "rtmp" | "snapshot" | null
+  >(null);
   const [lastSnapshotAge, setLastSnapshotAge] = React.useState(-1);
   const lastSnapshotLoadRef = React.useRef(0);
   const { rtsp, rtmp, snapshot } = getCameraUrls(camera);
@@ -105,14 +106,6 @@ export const CameraCard: React.FC<CameraCardProps> = ({
       toast.error("Failed to delete camera");
     }
   };
-
-  const handleToggleTalk = React.useCallback(() => {
-    setIsTalking((v) => !v);
-  }, []);
-
-  const handleStopTalk = React.useCallback(() => {
-    setIsTalking(false);
-  }, []);
 
   // Snapshot age label: "now" only if 0s, else "{N}s", "—" if never loaded
   const snapshotAgeLabel =
@@ -248,12 +241,7 @@ export const CameraCard: React.FC<CameraCardProps> = ({
               {camera.did}
             </p>
           </div>
-          <TalkbackPill
-            did={camera.did}
-            isActive={isTalking}
-            onToggle={handleToggleTalk}
-            onStop={handleStopTalk}
-          />
+          <TalkbackPill did={camera.did} />
         </div>
 
         {/* Links & Actions — padding only here */}

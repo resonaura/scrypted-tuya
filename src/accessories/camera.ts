@@ -51,15 +51,15 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
   private storageSettings = new StorageSettings(this, {
     p2pRtspUrl: {
       title: "Smart Life P2P HD RTSP URL",
-      description: "Optional HD URL from Tuya RTSP Bridge, for example rtsp://home-assistant:8600/CameraName/hd. When configured, this replaces Tuya Cloud RTSP video while keeping Tuya events and controls.",
+      description: "Optional HD URL from Tuya RTSP Bridge, for example rtsp://127.0.0.1:8655/live/CameraDID. When configured, this replaces Tuya Cloud RTSP video while keeping Tuya events and controls.",
       type: "string",
-      placeholder: "rtsp://home-assistant:8600/CameraName/hd",
+      placeholder: "rtsp://127.0.0.1:8655/live/CameraDID",
     },
     talkbackRtmpUrl: {
       title: "Talkback RTMP URL",
-      description: "Optional RTMP ingest URL for talkback audio (e.g. rtmp://home-assistant:1935/talk/CameraName). If blank, automatically resolves from the Smart Life P2P bridge RTSP URL.",
+      description: "Optional RTMP ingest URL for talkback audio (e.g. rtmp://127.0.0.1:1935/talk/CameraDID). ⚠️ Note: talkback is experimental and speaker audio may sound distorted on certain camera models. If blank, automatically resolves from the Smart Life P2P bridge RTSP URL.",
       type: "string",
-      placeholder: "rtmp://home-assistant:1935/talk/CameraName",
+      placeholder: "rtmp://127.0.0.1:1935/talk/CameraDID",
     },
   });
 
@@ -142,7 +142,7 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         "-i", "pipe:0",
         "-vn",
         "-c:a", "aac",
-        "-b:a", "16k",
+        "-b:a", "32k",
         "-ar", "16000",
         "-ac", "1",
         "-f", "flv",
@@ -359,11 +359,11 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         oobCodecParameters: false,
         prebuffer: 4000,
         video: {
-          codec: p2pRtspUrl ? "hevc" : "h264",
+          codec: "h264",
           ...(resolution ? { width: resolution.width, height: resolution.height } : {}),
         },
         audio: {
-          codec: "pcm_alaw",
+          codec: p2pRtspUrl ? "aac" : "pcm_alaw",
         },
       },
     ];

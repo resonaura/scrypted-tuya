@@ -19,3 +19,6 @@ chat.json
 .turbo
 db_to_md.py
 conversation.md
+dialog.md
+bridge/dialog.md
+docs/
