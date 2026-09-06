@@ -14,6 +14,12 @@
 
 namespace tuya {
 
+static inline int64_t steady_now_ms() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+
 RTSPServer::RTSPServer(int port, const std::string& path, KeyframeCallback kf_cb, bool is_hevc,
                        bool audio_is_aac)
     : port_(port), path_(path), kf_req_cb_(std::move(kf_cb)), is_hevc_(is_hevc),
@@ -142,6 +148,7 @@ bool RTSPServer::start() {
 
     running_ = true;
     accept_thread_ = std::thread(&RTSPServer::accept_loop, this);
+    silence_thread_ = std::thread(&RTSPServer::silence_loop, this);
     return true;
 }
 
@@ -230,6 +237,7 @@ void RTSPServer::stop() {
     if (accept_thread_.joinable()) accept_thread_.join();
     if (udp_thread_.joinable()) udp_thread_.join();
     if (audio_udp_thread_.joinable()) audio_udp_thread_.join();
+    if (silence_thread_.joinable()) silence_thread_.join();
     {
         std::lock_guard<std::mutex> lock(client_threads_mutex_);
         for (auto& thread : client_threads_) {
@@ -607,6 +615,7 @@ void RTSPServer::feed_frame(const MediaFrame& frame) {
 
         packetize_and_send_video(frame.data.data(), frame.data.size(), frame.timestamp_ms * 90, frame.is_keyframe);
     } else {
+        last_audio_feed_ms_.store(steady_now_ms(), std::memory_order_relaxed);
         packetize_and_send_audio(frame.data.data(), frame.data.size(), frame.timestamp_ms * 16);
     }
 }
@@ -784,6 +793,7 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
                     pcmu_rtp[12 + i] = linear_to_mulaw(sample);
                 }
 
+                last_audio_feed_ms_.store(steady_now_ms(), std::memory_order_relaxed);
                 std::lock_guard<std::mutex> lock(clients_mutex_);
                 for (auto& [fd, session] : clients_) {
                     if (!session.is_playing) continue;
@@ -793,6 +803,7 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
             return;
         }
 
+        last_audio_feed_ms_.store(steady_now_ms(), std::memory_order_relaxed);
         std::lock_guard<std::mutex> lock(clients_mutex_);
         for (auto& [fd, session] : clients_) {
             if (!session.is_playing) continue;
@@ -961,6 +972,86 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
 
         // For synchronized clients, forward all frames
         send_client_rtp_packet(fd, session, true, rtp_out.data(), rtp_out.size());
+    }
+}
+
+// PCMU G.711 μ-law silence byte = 0xFF (zero sample encoded)
+static constexpr uint8_t kPcmuSilenceByte = 0xFF;
+// 20 ms @ 8000 Hz = 160 samples for PCMU
+static constexpr size_t kSilenceSamples = 160;
+// How long to wait with no real audio before injecting silence (ms)
+static constexpr int64_t kSilenceThresholdMs = 150;
+
+void RTSPServer::silence_loop() {
+    // Per-client state for silence sequence/timestamp so we have proper
+    // monotonically increasing values independent of real-audio timestamps.
+    struct SilenceState {
+        uint16_t seq = 0;
+        uint32_t ts = 0x20000000;
+    };
+    std::unordered_map<int, SilenceState> client_state;
+
+    // Pre-build the fixed-size PCMU silence RTP packet payload (no header yet)
+    // Header is filled per-client below.
+    static constexpr size_t kPktSize = 12 + kSilenceSamples;
+    std::array<uint8_t, kPktSize> pkt{};
+    // RTP fixed header fields that never change
+    pkt[0] = 0x80;           // V=2, no padding, no ext, CC=0
+    pkt[1] = 0x80 | 0x00;   // Marker=1, PT=0 (PCMU)
+    // SSRC – use the audio SSRC constant
+    pkt[8]  = 0x98; pkt[9]  = 0x76;
+    pkt[10] = 0x54; pkt[11] = 0x32;
+    std::fill(pkt.begin() + 12, pkt.end(), kPcmuSilenceByte);
+
+    while (running_) {
+        // Sleep 20 ms (one PCMU frame interval)
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        if (!running_) break;
+
+        // Skip silence injection while real audio is flowing
+        const int64_t now = steady_now_ms();
+        const int64_t last = last_audio_feed_ms_.load(std::memory_order_relaxed);
+        if (last != 0 && (now - last) < kSilenceThresholdMs) {
+            // Real audio is active — prune stale client states to save memory
+            std::lock_guard<std::mutex> lock(clients_mutex_);
+            for (auto it = client_state.begin(); it != client_state.end(); ) {
+                if (clients_.find(it->first) == clients_.end())
+                    it = client_state.erase(it);
+                else
+                    ++it;
+            }
+            continue;
+        }
+
+        // No real audio for kSilenceThresholdMs — inject silence to every playing client
+        std::lock_guard<std::mutex> lock(clients_mutex_);
+        for (auto& [fd, session] : clients_) {
+            if (!session.is_playing) continue;
+
+            auto& cs = client_state[fd];
+
+            // Build RTP packet per client (seq/ts are client-specific)
+            std::array<uint8_t, kPktSize> cpkt = pkt;
+            cpkt[2] = (cs.seq >> 8) & 0xFF;
+            cpkt[3] =  cs.seq       & 0xFF;
+            cpkt[4] = (cs.ts >> 24) & 0xFF;
+            cpkt[5] = (cs.ts >> 16) & 0xFF;
+            cpkt[6] = (cs.ts >>  8) & 0xFF;
+            cpkt[7] =  cs.ts        & 0xFF;
+
+            send_interleaved_packet(fd, session.audio_rtp_channel, cpkt.data(), cpkt.size());
+
+            cs.seq += 1;
+            cs.ts  += static_cast<uint32_t>(kSilenceSamples); // 160 samples @ 8kHz = 20ms
+        }
+
+        // Prune states for disconnected clients
+        for (auto it = client_state.begin(); it != client_state.end(); ) {
+            if (clients_.find(it->first) == clients_.end())
+                it = client_state.erase(it);
+            else
+                ++it;
+        }
     }
 }
 

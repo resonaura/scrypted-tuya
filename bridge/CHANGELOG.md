@@ -1,5 +1,15 @@
 # Tuya Camera Bridge — Changelog
 
+## 2.1.1
+
+- **Audio Pipeline Reliability & Silence Fallback**:
+  - **Automatic PCMU Silence Generation**: Injected dedicated background silence thread (`silence_loop`) into the native RTSP server emitting 20 ms standard G.711 μ-law frames (`0xFF`) at 8000 Hz when camera audio packets are absent. Prevents downstream decoders (FFmpeg, Scrypted, VLC, HomeKit) from hanging or timing out waiting for audio.
+  - **Self-Throttling Audio Detection**: Silence generation automatically pauses as soon as genuine camera audio packets arrive (<150 ms threshold) and resumes seamlessly if audio stalls, maintaining continuous sequence numbers and timestamps per RTSP client.
+  - **WebRTC Audio Reorder Buffer Fixes**:
+    - Cleared `audio_reorder_` and `video_reorder_` states upon WebRTC ICE reconnect (`rtc::PeerConnection::State::Connected`) so stale sequence numbers from prior sessions do not cause subsequent incoming packets to be dropped.
+    - Removed duplicate `onMessage` listener from the talkback outbound track (`audio_send_track_`) which was corrupting incoming sequence number tracking.
+    - Increased audio packet reorder window (`max_pending`) from 2 to 6 packets to reliably handle minor network jitter without premature packet drops.
+
 ## 2.1.0
 
 > [!WARNING]

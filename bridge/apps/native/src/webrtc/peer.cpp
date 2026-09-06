@@ -271,7 +271,7 @@ bool WebRTCPeer::flush_reordered_packets(bool is_video, std::vector<std::vector<
 
     // Absorb short out-of-order bursts from Tuya/SRTP without allowing a
     // genuinely lost packet to stall the stream forever.
-    const size_t max_pending = is_video ? 8 : 2;
+    const size_t max_pending = is_video ? 8 : 6;
     if (state.pending.size() >= max_pending) {
         uint16_t nearest = state.pending.begin()->first;
         uint16_t nearest_distance = static_cast<uint16_t>(nearest - state.expected_seq);
@@ -319,6 +319,13 @@ void WebRTCPeer::setup_peer_connection() {
             unhealthy_sent_ = false;
             last_video_packet_ms_ = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
+            // Reset reorder state so stale expected_seq from a previous session
+            // doesn't cause all incoming packets to be dropped (distance < 0 path).
+            {
+                std::lock_guard<std::mutex> rlock(reorder_mutex_);
+                video_reorder_ = {};
+                audio_reorder_ = {};
+            }
             if (event_cb_) {
                 event_cb_(to_json(EventWebRTCConnected{.did = config_.did}));
             }
@@ -406,12 +413,10 @@ void WebRTCPeer::setup_tracks() {
         std::cout << "[WebRTCPeer] 🎙️ Camera WebRTC Audio Send track OPENED for " << config_.did << std::endl;
     });
 
-    audio_send_track_->onMessage([this](rtc::message_variant msg) {
-        if (std::holds_alternative<rtc::binary>(msg)) {
-            const auto& bin = std::get<rtc::binary>(msg);
-            handle_audio_packet(bin);
-        }
-    });
+    // NOTE: audio_send_track_ is talkback-outbound only. Incoming camera audio
+    // arrives on audio_recv_track_ via onTrack(). Do NOT attach an onMessage
+    // handler here — it would duplicate every incoming audio packet and corrupt
+    // the reorder seq tracking.
 
     // Add Video Track (H.264 / H.265, RecvOnly)
     rtc::Description::Video video_desc("video", rtc::Description::Direction::RecvOnly);

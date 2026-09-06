@@ -123,6 +123,11 @@ private:
     std::mutex gop_mutex_;
     std::vector<MediaFrame> gop_cache_;
     bool has_keyframe_ = false;
+
+    // Audio silence generation: inject PCMU silence when no real audio arrives
+    std::atomic<int64_t> last_audio_feed_ms_{0};
+    std::thread silence_thread_;
+    void silence_loop();
 };
 
 }  // namespace tuya

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.2
+
+- **Bridge 2.1.1 Update / Audio Stream Resilience**:
+  - **Silence Generation Fallback**: Updated companion Tuya Camera Bridge with native PCMU silence injection when camera stream has no active audio track, preventing media player hangs and probe timeouts in Scrypted and HomeKit.
+  - **WebRTC Audio Fixes**: Resolved packet drops on reconnects and network jitter, ensuring stable audio delivery as soon as the camera starts sending audio frames.
+
 ## 2.1.1
 
 - **Fix: Talkback audio not reaching RTMP target (HomeKit intercom)**:
