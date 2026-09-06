@@ -162,6 +162,7 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         "-b:a", "32k",
         "-ar", "16000",
         "-ac", "1",
+        "-flush_packets", "1",
         "-f", "flv",
         targetUrl,
       ];

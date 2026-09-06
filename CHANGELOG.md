@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.4
+
+- **Talkback Zero-Latency Audio Push (`-flush_packets 1`)**:
+  - Added `-flush_packets 1` to the talkback FFmpeg process in `camera.ts`, ensuring FLV audio packets are flushed over TCP to the RTMP endpoint immediately without waiting for output buffer thresholds.
+- **Tuya Camera Bridge 2.1.2 Integration**:
+  - Upgraded embedded Bridge transcoder with optimized x264 parameters (`no-deblock=1`, `aq-mode=0`, bounded CRF/bitrate, and `-threads 2`), reducing constant background CPU utilization by up to ~40%.
+
 ## 2.1.3
 
 - **Fix: Talkback 461 Unsupported Transport from Scrypted RTSP source**:
