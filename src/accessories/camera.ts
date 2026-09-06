@@ -20,9 +20,9 @@ import sdk, {
   Setting,
   Settings,
   SettingValue,
+  FFmpegInput,
 } from "@scrypted/sdk";
 import { spawn, type ChildProcess } from "child_process";
-import type { Readable } from "stream";
 import { TuyaAccessory } from "./accessory";
 import { TuyaPlugin } from "../plugin";
 import { TuyaDevice, TuyaDeviceStatus } from "../tuya/const";
@@ -125,21 +125,22 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
     }
 
     this.console.info(`[${this.name}] Starting talkback session -> ${targetUrl}`);
+    this.console.info(`[${this.name}] Incoming media mimeType: ${media.mimeType}`);
 
     try {
-      const inputStream = await sdk.mediaManager.convertMediaObject<Readable>(
+      // Ask Scrypted for native FFmpeg input args — it handles the format
+      // automatically regardless of what HomeKit sends (AAC, Opus, PCM, etc.)
+      // This avoids an unnecessary WAV transcode hop and lets FFmpeg receive
+      // the stream in its native format directly.
+      const ffmpegInput = await sdk.mediaManager.convertMediaObjectToJSON<FFmpegInput>(
         media,
-        "audio/x-wav"
+        ScryptedMimeTypes.FFmpegInput,
       );
 
       const ffmpegArgs = [
         "-hide_banner",
-        "-loglevel", "error",
-        "-fflags", "nobuffer",
-        "-flags", "low_delay",
-        "-probesize", "32",
-        "-analyzeduration", "0",
-        "-i", "pipe:0",
+        "-loglevel", "warning",
+        ...(ffmpegInput.inputArguments ?? []),
         "-vn",
         "-c:a", "aac",
         "-b:a", "32k",
@@ -149,13 +150,15 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         targetUrl,
       ];
 
+      this.console.info(`[${this.name}] FFmpeg talkback args: ffmpeg ${ffmpegArgs.join(" ")}`);
+
       this.intercomProcess = spawn("ffmpeg", ffmpegArgs, {
         stdio: ["pipe", "ignore", "pipe"],
       });
 
       this.intercomProcess.stderr?.on("data", (chunk: Buffer) => {
         const msg = chunk.toString().trim();
-        if (msg) this.console.debug(`[${this.name}] [Talkback FFmpeg] ${msg}`);
+        if (msg) this.console.warn(`[${this.name}] [Talkback FFmpeg] ${msg}`);
       });
 
       this.intercomProcess.on("error", (err: Error) => {
@@ -166,8 +169,6 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         this.console.info(`[${this.name}] Talkback session ended (code ${code})`);
         this.intercomProcess = null;
       });
-
-      inputStream.pipe(this.intercomProcess.stdin!);
     } catch (e: any) {
       this.console.error(`[${this.name}] Failed to start talkback:`, e);
       await this.stopIntercom();

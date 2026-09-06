@@ -1,6 +1,14 @@
 # Changelog
 
-## 2.1.0
+## 2.1.1
+
+- **Fix: Talkback audio not reaching RTMP target (HomeKit intercom)**:
+  - Replaced the `audio/x-wav` pipe-based approach with `ScryptedMimeTypes.FFmpegInput` conversion (same pattern used by the eufy-security Scrypted plugin). Scrypted now provides native FFmpeg input arguments directly, correctly handling whatever format HomeKit delivers (typically AAC) without an unnecessary WAV transcode hop.
+  - Removed broken `-probesize 32` argument (32 bytes is smaller than a minimal WAV header, causing FFmpeg to silently fail on stream detection).
+  - Removed manual `stdin` piping — `FFmpegInput.inputArguments` already encodes the correct `-i` source.
+  - Changed FFmpeg log level from `error` to `warning` so talkback failures are now visible in Scrypted device logs.
+  - Added diagnostic log lines: incoming `mimeType`, resolved RTMP target URL, and full FFmpeg argument list for easier future debugging.
+
 
 > [!WARNING]
 > ⚠️ **Experimental Feature / Work in Progress**:
