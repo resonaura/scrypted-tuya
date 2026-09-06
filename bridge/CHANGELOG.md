@@ -1,6 +1,6 @@
 # Tuya Camera Bridge — Changelog
 
-## 2.1.2
+## 2.1.4
 
 - **Transcoder CPU & Resource Optimizations**:
   - **x264 Deblocking Bypass (`no-deblock=1`)**: Disabled in-loop deblocking filter in `transcoder.service.ts` for real-time H.264 relay, reducing CPU encode time by ~15–20% without noticeable quality degradation.
