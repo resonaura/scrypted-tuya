@@ -413,10 +413,14 @@ void WebRTCPeer::setup_tracks() {
         std::cout << "[WebRTCPeer] 🎙️ Camera WebRTC Audio Send track OPENED for " << config_.did << std::endl;
     });
 
-    // NOTE: audio_send_track_ is talkback-outbound only. Incoming camera audio
-    // arrives on audio_recv_track_ via onTrack(). Do NOT attach an onMessage
-    // handler here — it would duplicate every incoming audio packet and corrupt
-    // the reorder seq tracking.
+    // Handle incoming camera audio packets on the bidirectional SendRecv track
+    // if no separate remote audio track was negotiated via onTrack().
+    audio_send_track_->onMessage([this](rtc::message_variant msg) {
+        if (!audio_recv_track_ && std::holds_alternative<rtc::binary>(msg)) {
+            const auto& bin = std::get<rtc::binary>(msg);
+            handle_audio_packet(bin);
+        }
+    });
 
     // Add Video Track (H.264 / H.265, RecvOnly)
     rtc::Description::Video video_desc("video", rtc::Description::Direction::RecvOnly);
@@ -462,6 +466,7 @@ void WebRTCPeer::setup_data_channel() {
             std::cout << "[WebRTCPeer] 📩 DataChannel text msg: " << str << std::endl;
             if (str.find("\"codec\"") != std::string::npos) {
                 send_data_channel_msg("start", "frame");
+                send_data_channel_msg("start", "audio");
             } else if (str.find("\"recv\"") != std::string::npos) {
                 send_data_channel_msg("complete", "");
             }

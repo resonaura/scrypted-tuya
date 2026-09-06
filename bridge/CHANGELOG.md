@@ -2,6 +2,9 @@
 
 ## 2.1.4
 
+- **Camera Inbound Microphone Audio Fix**:
+  - Sent `{"type":"start","msg":"audio"}` over the WebRTC `fmp4Stream` DataChannel upon session setup, explicitly requesting the camera DSP to begin transmitting mic audio packets alongside video.
+  - Restored fallback packet listener on `audio_send_track_` (`SendRecv` track) when a separate remote audio track is not created, preventing incoming camera RTP audio packets from being silently dropped.
 - **Transcoder CPU & Resource Optimizations**:
   - **x264 Deblocking Bypass (`no-deblock=1`)**: Disabled in-loop deblocking filter in `transcoder.service.ts` for real-time H.264 relay, reducing CPU encode time by ~15–20% without noticeable quality degradation.
   - **Disabled Adaptive Quantization (`aq-mode=0`)**: Eliminated unnecessary psychovisual gradient analysis overhead for static security camera streams.
