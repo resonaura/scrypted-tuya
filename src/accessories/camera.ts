@@ -137,10 +137,26 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         ScryptedMimeTypes.FFmpegInput,
       );
 
+      const inputArgs = [...(ffmpegInput.inputArguments ?? [])];
+      // Scrypted media converter serves local RTSP over TCP interleaved.
+      // FFmpeg defaults to UDP for RTSP, causing '461 Unsupported Transport'.
+      // Inject -rtsp_transport tcp before -i for RTSP inputs.
+      const hasRtsp = inputArgs.some(
+        (arg) => typeof arg === "string" && arg.includes("rtsp://")
+      );
+      if (hasRtsp && !inputArgs.includes("-rtsp_transport")) {
+        const iIdx = inputArgs.indexOf("-i");
+        if (iIdx !== -1) {
+          inputArgs.splice(iIdx, 0, "-rtsp_transport", "tcp");
+        } else {
+          inputArgs.unshift("-rtsp_transport", "tcp");
+        }
+      }
+
       const ffmpegArgs = [
         "-hide_banner",
         "-loglevel", "warning",
-        ...(ffmpegInput.inputArguments ?? []),
+        ...inputArgs,
         "-vn",
         "-c:a", "aac",
         "-b:a", "32k",

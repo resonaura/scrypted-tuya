@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.3
+
+- **Fix: Talkback 461 Unsupported Transport from Scrypted RTSP source**:
+  - Automatically inject `-rtsp_transport tcp` before `-i` whenever Scrypted media converter serves the intercom audio as a local RTSP stream (`rtsp://127.0.0.1:...`).
+  - FFmpeg defaults to UDP for RTSP, which caused Scrypted's internal RTSP server to reject playback with `method SETUP failed: 461 Unsupported Transport`, terminating the talkback session before sending any audio to RTMP.
+
 ## 2.1.2
 
 - **Bridge 2.1.1 Update / Audio Stream Resilience**:
