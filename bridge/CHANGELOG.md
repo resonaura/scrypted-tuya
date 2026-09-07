@@ -1,6 +1,17 @@
 # Tuya Camera Bridge — Changelog
 
-## 2.1.8
+## 2.1.9
+
+- **Fix Keyframe Request Flood (RTCP Marker-Bit Filter)**:
+  - Fixed continuous PLI/FIR keyframe request spam caused by an overly broad RTCP filter (`bytes[1] >= 192`) that was incorrectly dropping the last RTP packet of every HEVC video frame (Marker bit: PT=96 | 0x80 = 224 ≥ 192).
+  - Dropping the final FU packet of each frame prevented IDR frame assembly from completing in the RTSP server, causing the keyframe watchdog to continuously fire PLI requests to the camera.
+  - Fixed by narrowing the RTCP drop range to the precise RTCP SR/RR/SDES/BYE/APP payload type range (200–207), leaving video RTP packets with Marker bit set (224, 225, etc.) untouched.
+  - Result: keyframe requests now fire only every 10 seconds (normal watchdog cadence) rather than multiple times per second.
+- **Session Expiry Guards**:
+  - Added `isLoggedIn()` checks before attempting to start/recover camera streams to prevent connection attempts when the Tuya session is expired or logged out.
+  - `CamerasService` now subscribes to `session_expired` events emitted by `TuyaProtectService` and calls `stopAllStreams()` to cleanly tear down active sessions.
+
+
 
 - **Periodic Audio Click Fix (RTCP Demuxing & Filtering)**:
   - Fixed recurring ~5-second audio pop/click caused by unhandled RTCP Sender Report (SR) control packets arriving on the camera WebRTC audio track without `RtcpReceivingSession` media handler.

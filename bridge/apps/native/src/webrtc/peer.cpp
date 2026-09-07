@@ -207,9 +207,11 @@ void WebRTCPeer::handle_rtp_packet(const rtc::binary& packet, bool is_video) {
     if ((bytes[0] >> 6) != 2) return;
 
     const uint8_t pt = bytes[1] & 0x7F;
-    // 2. RFC 5761: Range 64-95 or >= 192 (0xC0) indicates RTCP (e.g. SR/RR/SDES) multiplexed onto media port.
-    // Drop RTCP packets immediately before RTP queueing or decoding.
-    if ((pt >= 64 && pt <= 95) || bytes[1] >= 192) return;
+    // 2. RFC 5761: PT 64-95 is reserved for RTCP. RTCP SR/RR/SDES/BYE/APP use PT 200-207.
+    // IMPORTANT: bytes[1] >= 192 would also match valid HEVC/H264 RTP with Marker bit set
+    // (e.g. PT=96 | M=1 → bytes[1]=0xE0=224), dropping the last packet of every video frame
+    // and breaking IDR assembly. Use the precise RTCP range 200-207 instead.
+    if ((pt >= 64 && pt <= 95) || (bytes[1] >= 200 && bytes[1] <= 207)) return;
 
     // 3. Audio track validation: payload type must match expected audio codecs (0 = PCMU, 8 = PCMA, 10 = L16)
     if (!is_video && pt != 0 && pt != 8 && pt != 10) {
