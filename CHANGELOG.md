@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.7
+
+- **Camera Inbound Microphone Audio Stabilization**:
+  - Overrode camera SDP Answer `a=recvonly` on `m=audio` to `a=sendrecv` in `tuya-streamer`, preventing WebRTC stacks from negotiating a send-only track and dropping microphone audio packets.
+  - Aligned WebRTC SDP audio codec precedence (`PCMU/8000`, `PCMA/8000`, `L16`) with Tuya's native 16-bit linear PCM over PT 0.
+  - Fixed `INT16_MIN` boundary handling in linear PCM to μ-law transcoding.
+  - Unified version numbers across Scrypted plugin and Tuya Bridge monorepo.
+
 ## 2.1.6
 
 - Small fixes
