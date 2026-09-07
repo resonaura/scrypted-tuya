@@ -10,6 +10,7 @@
 [![Scrypted](https://img.shields.io/badge/Scrypted-Plugin-8A2BE2.svg)](https://scrypted.app)
 [![Docker](https://img.shields.io/badge/Docker-GHCR-2496ED?logo=docker&logoColor=white)](https://github.com/resonaura/scrypted-tuya/pkgs/container/tuya-rtsp-bridge)
 
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor%20on%20GitHub-EA4AAA?logo=github-sponsors&logoColor=white)](https://github.com/sponsors/resonaura)
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/resonaura)
 
 Unofficial standalone Scrypted Tuya / Smart Life camera plugin & companion Home Assistant WebRTC-to-RTSP bridge.
