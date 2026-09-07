@@ -11,6 +11,7 @@ import {
   AlertCircle,
   Camera as CameraIcon,
   Plus,
+  QrCode,
   Search,
   WifiOff,
 } from "lucide-react";
@@ -353,6 +354,28 @@ export function App() {
               </Select.Popover>
             </Select>
           </Card>
+          {authState && !authState.loggedIn && cameras.length > 0 && (
+            <Surface className="mb-5 flex items-center justify-between gap-4 rounded-2xl border border-warning/30 bg-warning/10 p-4">
+              <div className="flex items-center gap-3">
+                <QrCode className="size-5 text-warning" />
+                <div>
+                  <p className="text-sm font-semibold text-warning-600 dark:text-warning-400">
+                    Tuya Cloud Session Expired
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Your cameras and configuration are saved. Scan the QR code to re-authenticate and resume streaming.
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="accent"
+                onPress={() => setIsAddModalOpen(true)}
+              >
+                Scan QR Code
+              </Button>
+            </Surface>
+          )}
           {loadError && (
             <Surface className="mb-5 flex items-center justify-between gap-4 rounded-2xl border border-danger/30 bg-danger/10 p-4">
               <div className="flex items-center gap-3">
@@ -431,6 +454,8 @@ export function App() {
                     camera={camera}
                     index={index}
                     total={displayedCameras.length}
+                    isSessionExpired={Boolean(authState && !authState.loggedIn)}
+                    onOpenLogin={() => setIsAddModalOpen(true)}
                     onPlay={setSelectedCamera}
                     onDelete={async (id) => {
                       await deleteCamera(id);

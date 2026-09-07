@@ -5,7 +5,8 @@ import * as fs from "node:fs";
 import QRCode from "qrcode";
 import { SettingEntity } from "../db/entities/setting.entity.js";
 import { CameraEntity } from "../db/entities/camera.entity.js";
-import { cameraRtspPath } from "../utils/camera-slug.js";
+import { cameraRtspPath, cameraSlug } from "../utils/camera-slug.js";
+import { OfflineCardManager } from "../cameras/offline-card.js";
 
 export interface TuyaRegion {
   key: string;
@@ -114,18 +115,6 @@ export class TuyaProtectService implements OnModuleInit {
   }
 
   private getCookieHeader(): string {
-    const cookieFile = "/Users/resonaura/tuya-exp/cookies.txt";
-    if (!this.cookies.has("s-sid") && fs.existsSync(cookieFile)) {
-      try {
-        const raw = fs.readFileSync(cookieFile, "utf8").trim();
-        for (const part of raw.split(";")) {
-          const [k, ...v] = part.split("=");
-          if (k && v.length) {
-            this.cookies.set(k.trim(), v.join("=").trim());
-          }
-        }
-      } catch {}
-    }
     const pairs: string[] = [];
     for (const [k, v] of this.cookies.entries()) {
       pairs.push(`${k}=${v}`);
@@ -194,13 +183,40 @@ export class TuyaProtectService implements OnModuleInit {
         data.errorCode === "USER_SESSION_INVALID" ||
         String(msg).includes("USER_SESSION_INVALID")
       ) {
-        this.logger.warn("Tuya session has expired (USER_SESSION_INVALID). Clearing session.");
-        void this.logout();
+        this.logger.warn("Tuya session has expired (USER_SESSION_INVALID). Preserving cameras and updating cards.");
+        void this.handleSessionExpired();
       }
       throw new Error(msg);
     }
 
     return data;
+  }
+
+  public async handleSessionExpired(): Promise<void> {
+    this.loginResult = null;
+    this.cookies.clear();
+    this.currentQrToken = null;
+    this.currentQrSvg = null;
+    this.currentQrDataUrl = null;
+    this.lastError = "Tuya session expired. Please re-authenticate using the Web UI.";
+    await SettingEntity.delete({ key: "tuya_session" });
+
+    // Mark existing cameras as offline with reason "Session Expired · Please login in Web UI"
+    // and keep their database records intact!
+    try {
+      const cameras = await CameraEntity.find();
+      for (const cam of cameras) {
+        cam.online = false;
+        await cam.save().catch(() => {});
+        const slug = cameraSlug(cam.name, cam.did);
+        OfflineCardManager.getInstance().setOffline({
+          slug,
+          deviceName: cam.name,
+          deviceId: cam.did,
+          reason: "Session Expired · Scan QR in Web UI",
+        });
+      }
+    } catch {}
   }
 
   public async startQrFlow(
@@ -429,6 +445,25 @@ export class TuyaProtectService implements OnModuleInit {
 
   public async loadStoredSession(): Promise<boolean> {
     try {
+      const setting = await SettingEntity.findOne({
+        where: { key: "tuya_session" },
+      });
+      if (setting && setting.value) {
+        const session: StoredSession = JSON.parse(setting.value);
+        this.regionId = session.region || "us";
+        this.host = session.host || TUYA_REGIONS[this.regionId]?.host || TUYA_REGIONS.us.host;
+        this.loginResult = session.loginResult;
+        this.cookies.clear();
+        for (const c of session.cookies || []) {
+          this.cookies.set(c.name, c.value);
+        }
+
+        this.logger.log(
+          `Loaded stored session for ${this.loginResult.email || this.loginResult.username || this.loginResult.uid}`,
+        );
+        return true;
+      }
+
       const cookieFile = "/Users/resonaura/tuya-exp/cookies.txt";
       if (fs.existsSync(cookieFile)) {
         const raw = fs.readFileSync(cookieFile, "utf8").trim();
@@ -445,27 +480,7 @@ export class TuyaProtectService implements OnModuleInit {
         return true;
       }
 
-      const setting = await SettingEntity.findOne({
-        where: { key: "tuya_session" },
-      });
-      if (!setting || !setting.value) return false;
-
-      const session: StoredSession = JSON.parse(setting.value);
-      if (!session || !session.loginResult) return false;
-
-      this.setRegion(session.region || "us");
-      this.host = session.host || this.host;
-      this.loginResult = session.loginResult;
-
-      this.cookies.clear();
-      for (const c of session.cookies || []) {
-        this.cookies.set(c.name, c.value);
-      }
-
-      this.logger.log(
-        `Loaded stored session for ${this.loginResult.email || this.loginResult.username || this.loginResult.uid}`,
-      );
-      return true;
+      return false;
     } catch (e: any) {
       this.logger.warn(`Failed to parse stored session: ${e.message}`);
       return false;

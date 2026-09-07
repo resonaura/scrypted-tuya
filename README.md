@@ -1,4 +1,4 @@
-<img src="icon.png" width="64" height="64" alt="Tuya Bridge Icon" />
+<img src="https://raw.githubusercontent.com/resonaura/scrypted-tuya/main/icon.png" width="64" height="64" alt="Tuya Bridge Icon" />
 
 # scrypted-tuya & Tuya Camera Bridge
 
@@ -23,7 +23,7 @@ Extracted from [`plugins/tuya`](https://github.com/koush/scrypted/tree/main/plug
 > This project is unofficial and is not affiliated with or endorsed by Scrypted or Tuya.
 
 <p align="center">
-  <img src="media/tuya-bridge-dashboard.png" width="800" alt="Tuya Bridge Dashboard" />
+  <img src="https://raw.githubusercontent.com/resonaura/scrypted-tuya/main/media/tuya-bridge-dashboard.png" width="800" alt="Tuya Bridge Dashboard" />
 </p>
 
 ---

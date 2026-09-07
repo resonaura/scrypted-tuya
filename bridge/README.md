@@ -1,4 +1,4 @@
-<img src="icon.png" width="64" height="64" alt="Tuya Bridge Icon" />
+<img src="https://raw.githubusercontent.com/resonaura/scrypted-tuya/main/icon.png" width="64" height="64" alt="Tuya Bridge Icon" />
 
 # Tuya Camera Bridge — Home Assistant Add-on
 

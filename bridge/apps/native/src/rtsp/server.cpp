@@ -739,6 +739,7 @@ static inline uint8_t linear_to_mulaw(int16_t pcm_val) {
     int16_t seg;
     uint8_t uval;
 
+    if (pcm_val == -32768) pcm_val = -32767;
     if (pcm_val < 0) {
         pcm_val = -pcm_val;
         mask = 0x7F;
@@ -980,19 +981,12 @@ static constexpr uint8_t kPcmuSilenceByte = 0xFF;
 // 20 ms @ 8000 Hz = 160 samples for PCMU
 static constexpr size_t kSilenceSamples = 160;
 // How long to wait with no real audio before injecting silence (ms)
-static constexpr int64_t kSilenceThresholdMs = 150;
+// Set to 400 ms so natural conversational pauses in speech are not chopped by silence injection
+static constexpr int64_t kSilenceThresholdMs = 400;
 
 void RTSPServer::silence_loop() {
-    // Per-client state for silence sequence/timestamp so we have proper
-    // monotonically increasing values independent of real-audio timestamps.
-    struct SilenceState {
-        uint16_t seq = 0;
-        uint32_t ts = 0x20000000;
-    };
-    std::unordered_map<int, SilenceState> client_state;
-
     // Pre-build the fixed-size PCMU silence RTP packet payload (no header yet)
-    // Header is filled per-client below.
+    // Header is filled per-client below using the client's unified session seq & ts.
     static constexpr size_t kPktSize = 12 + kSilenceSamples;
     std::array<uint8_t, kPktSize> pkt{};
     // RTP fixed header fields that never change
@@ -1012,45 +1006,32 @@ void RTSPServer::silence_loop() {
         const int64_t now = steady_now_ms();
         const int64_t last = last_audio_feed_ms_.load(std::memory_order_relaxed);
         if (last != 0 && (now - last) < kSilenceThresholdMs) {
-            // Real audio is active — prune stale client states to save memory
-            std::lock_guard<std::mutex> lock(clients_mutex_);
-            for (auto it = client_state.begin(); it != client_state.end(); ) {
-                if (clients_.find(it->first) == clients_.end())
-                    it = client_state.erase(it);
-                else
-                    ++it;
-            }
             continue;
         }
 
         // No real audio for kSilenceThresholdMs — inject silence to every playing client
         std::lock_guard<std::mutex> lock(clients_mutex_);
+        if (clients_.empty()) {
+            continue;
+        }
+
         for (auto& [fd, session] : clients_) {
             if (!session.is_playing) continue;
 
-            auto& cs = client_state[fd];
+            const uint16_t out_seq = session.out_audio_seq++;
+            session.last_audio_out_ts += static_cast<uint32_t>(kSilenceSamples);
+            const uint32_t out_ts = session.last_audio_out_ts;
 
-            // Build RTP packet per client (seq/ts are client-specific)
+            // Build RTP packet per client sharing session's unified monotonic seq & ts
             std::array<uint8_t, kPktSize> cpkt = pkt;
-            cpkt[2] = (cs.seq >> 8) & 0xFF;
-            cpkt[3] =  cs.seq       & 0xFF;
-            cpkt[4] = (cs.ts >> 24) & 0xFF;
-            cpkt[5] = (cs.ts >> 16) & 0xFF;
-            cpkt[6] = (cs.ts >>  8) & 0xFF;
-            cpkt[7] =  cs.ts        & 0xFF;
+            cpkt[2] = (out_seq >> 8) & 0xFF;
+            cpkt[3] =  out_seq       & 0xFF;
+            cpkt[4] = (out_ts >> 24) & 0xFF;
+            cpkt[5] = (out_ts >> 16) & 0xFF;
+            cpkt[6] = (out_ts >>  8) & 0xFF;
+            cpkt[7] =  out_ts        & 0xFF;
 
             send_interleaved_packet(fd, session.audio_rtp_channel, cpkt.data(), cpkt.size());
-
-            cs.seq += 1;
-            cs.ts  += static_cast<uint32_t>(kSilenceSamples); // 160 samples @ 8kHz = 20ms
-        }
-
-        // Prune states for disconnected clients
-        for (auto it = client_state.begin(); it != client_state.end(); ) {
-            if (clients_.find(it->first) == clients_.end())
-                it = client_state.erase(it);
-            else
-                ++it;
         }
     }
 }

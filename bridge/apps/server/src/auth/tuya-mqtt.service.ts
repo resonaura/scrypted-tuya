@@ -126,12 +126,14 @@ export class TuyaMqttService {
       this.sessions.set(did, sessionMeta);
 
       client.on("connect", () => {
-        this.logger.log(`Connected to Tuya MQTT. Subscribing to: ${userInTopic}`);
-        client.subscribe(userInTopic, { qos: 1 }, (err) => {
+        const uid = this.tuyaProtect.getState().user?.uid;
+        const topics = uid && uid !== msid ? [userInTopic, `/av/u/${uid}`] : [userInTopic];
+        this.logger.log(`Connected to Tuya MQTT. Subscribing to: ${topics.join(", ")}`);
+        client.subscribe(topics, { qos: 1 }, (err) => {
           if (err) {
             this.logger.error(`MQTT subscription failed for ${did}: ${err.message}`);
           } else {
-            this.logger.log(`Subscribed to topic ${userInTopic}. Launching C++ WebRTC session...`);
+            this.logger.log(`Subscribed to topic ${topics.join(", ")}. Launching C++ WebRTC session...`);
 
             // Launch C++ WebRTC peer connection
             NativeMediaEngine.getInstance().startP2P({
@@ -242,6 +244,7 @@ export class TuyaMqttService {
             replay: {
               is_replay: 0,
             },
+            audio: 1,
             datachannel_enable: meta.isHEVC,
           },
         },

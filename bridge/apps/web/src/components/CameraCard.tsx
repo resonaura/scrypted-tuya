@@ -7,6 +7,7 @@ import {
   Copy,
   MoreVertical,
   Play,
+  QrCode,
   RefreshCw,
   Trash2,
   Video,
@@ -23,6 +24,8 @@ interface CameraCardProps {
   camera: Camera;
   index: number;
   total: number;
+  isSessionExpired?: boolean;
+  onOpenLogin?: () => void;
   onPlay: (camera: Camera) => void;
   onDelete: (id: string) => void;
   onMove: (id: string, direction: -1 | 1) => void;
@@ -32,6 +35,8 @@ export const CameraCard: React.FC<CameraCardProps> = ({
   camera,
   index,
   total,
+  isSessionExpired = false,
+  onOpenLogin,
   onPlay,
   onDelete,
   onMove,
@@ -123,13 +128,22 @@ export const CameraCard: React.FC<CameraCardProps> = ({
       exit={reduceMotion ? undefined : { opacity: 0, scale: 0.97 }}
       transition={{ duration: 0.22 }}
     >
-      <Card onMouseEnter={handlePreheat} className="group overflow-hidden p-0">
+      <Card
+        onMouseEnter={handlePreheat}
+        className={`group overflow-hidden p-0 transition-all duration-300 ${
+          isSessionExpired ? "opacity-75 grayscale-[35%] hover:opacity-90 hover:grayscale-0" : ""
+        }`}
+      >
         {/* Video preview — strictly flush to card boundaries, no container padding */}
         <div
           className="group/preview relative aspect-video w-full overflow-hidden bg-zinc-950 cursor-pointer select-none"
           onClick={() => {
-            handlePreheat();
-            onPlay(camera);
+            if (isSessionExpired && onOpenLogin) {
+              onOpenLogin();
+            } else {
+              handlePreheat();
+              onPlay(camera);
+            }
           }}
         >
           {!imgError ? (
@@ -153,10 +167,29 @@ export const CameraCard: React.FC<CameraCardProps> = ({
             </div>
           )}
 
-          {/* Hover play overlay — activates ONLY on preview hover, blurs the whole image with no zoom */}
-          <div className="absolute inset-0 z-10 flex items-center justify-center opacity-0 group-hover/preview:opacity-100 backdrop-blur-md bg-black/40 transition-all duration-300 pointer-events-none">
-            <Play className="size-12 fill-white text-white drop-shadow-2xl translate-x-0.5" />
-          </div>
+          {/* Session expired overlay or standard Hover play overlay */}
+          {isSessionExpired ? (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/55 backdrop-blur-[2px] p-4 text-center">
+              <QrCode className="size-8 text-warning mb-2 animate-bounce" />
+              <p className="text-xs font-semibold text-white">Session Expired</p>
+              <p className="text-[10px] text-white/80 mt-0.5 mb-2.5">Click to scan QR & reconnect</p>
+              <Button
+                size="sm"
+                variant="primary"
+                className="h-7 text-xs font-medium px-3"
+                onPress={(e: any) => {
+                  e?.stopPropagation?.();
+                  if (onOpenLogin) onOpenLogin();
+                }}
+              >
+                Scan QR
+              </Button>
+            </div>
+          ) : (
+            <div className="absolute inset-0 z-10 flex items-center justify-center opacity-0 group-hover/preview:opacity-100 backdrop-blur-md bg-black/40 transition-all duration-300 pointer-events-none">
+              <Play className="size-12 fill-white text-white drop-shadow-2xl translate-x-0.5" />
+            </div>
+          )}
 
           {/* Top controls row — always on top of preview, above hover overlay */}
           <div
@@ -167,13 +200,13 @@ export const CameraCard: React.FC<CameraCardProps> = ({
               <Chip
                 size="sm"
                 variant="soft"
-                color={camera.online ? "success" : "danger"}
+                color={isSessionExpired ? "warning" : camera.online ? "success" : "danger"}
                 className="px-2.5 bg-black/45 text-white backdrop-blur-md"
               >
-                {camera.online && (
+                {camera.online && !isSessionExpired && (
                   <span className="mr-1.5 inline-block size-1.5 rounded-full bg-white shadow-[0_0_8px_2px_rgba(255,255,255,0.65)] motion-safe:animate-pulse" />
                 )}
-                {camera.online ? "Online" : "Reconnecting"}
+                {isSessionExpired ? "Session Expired" : camera.online ? "Online" : "Reconnecting"}
               </Chip>
               <Chip
                 size="sm"

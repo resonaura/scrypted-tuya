@@ -246,7 +246,13 @@ void WebRTCPeer::handle_rtp_packet(const rtc::binary& packet, bool is_video) {
         }
 
         const int16_t distance = static_cast<int16_t>(seq - state.expected_seq);
-        if (distance < 0) return;
+        if (distance < -200 || distance > 2000) {
+            // Sequence reset or long pause in stream — resync immediately
+            state.expected_seq = seq;
+            state.pending.clear();
+        } else if (distance < 0) {
+            return;
+        }
 
         state.pending.try_emplace(seq, bytes, bytes + packet.size());
         discontinuity = flush_reordered_packets(is_video, ready);
@@ -401,11 +407,9 @@ void WebRTCPeer::setup_tracks() {
     audio_send_ssrc_ = static_cast<uint32_t>((seed & 0x7fffffffU) | 0x20000000U);
 
     rtc::Description::Audio audio_desc("audio", rtc::Description::Direction::SendRecv);
-    // Camera RX is 640-byte PCM16 stuffed in a G.711 PT. Offer L16 first so
-    // talkback is not μ-law-decoded; keep PCMU for devices that want G.711u.
-    audio_desc.addAudioCodec(10, "L16/8000/1");
     audio_desc.addPCMUCodec(0);
     audio_desc.addPCMACodec(8);
+    audio_desc.addAudioCodec(10, "L16/8000/1");
     audio_desc.addSSRC(audio_send_ssrc_, "tuya-talkback-audio");
     audio_send_track_ = pc_->addTrack(audio_desc);
 
@@ -472,7 +476,17 @@ void WebRTCPeer::setup_data_channel() {
             }
         } else if (std::holds_alternative<rtc::binary>(msg)) {
             const auto& bin = std::get<rtc::binary>(msg);
-            handle_video_packet(bin);
+            if (bin.size() >= 12) {
+                const auto* bytes = reinterpret_cast<const uint8_t*>(bin.data());
+                const uint8_t pt = bytes[1] & 0x7f;
+                if (pt == 0 || pt == 8 || pt == 10) {
+                    handle_audio_packet(bin);
+                } else {
+                    handle_video_packet(bin);
+                }
+            } else {
+                handle_video_packet(bin);
+            }
         }
     });
 }
@@ -505,6 +519,25 @@ void WebRTCPeer::set_remote_description(const std::string& raw_sdp, const std::s
 
         // Fix 4: Malformed custom attributes not in WebRTC standard
         sdp = std::regex_replace(sdp, std::regex(R"(\r?\na=aes-key:[^\r\n]*)"), "");
+
+        // Fix 5: Camera SDP answers 'a=recvonly' for m=audio, which causes libdatachannel to configure
+        // local track as SendOnly (dropping incoming mic audio RTP packets).
+        // Change audio direction in answer to sendrecv so local track accepts incoming microphone RTP.
+        size_t audio_pos = sdp.find("m=audio");
+        if (audio_pos != std::string::npos) {
+            size_t next_m = sdp.find("\r\nm=", audio_pos + 7);
+            if (next_m == std::string::npos) {
+                next_m = sdp.find("\nm=", audio_pos + 7);
+            }
+            size_t len = (next_m != std::string::npos) ? (next_m - audio_pos) : (sdp.length() - audio_pos);
+            std::string audio_sec = sdp.substr(audio_pos, len);
+            size_t recvonly_pos = audio_sec.find("a=recvonly");
+            if (recvonly_pos != std::string::npos) {
+                audio_sec.replace(recvonly_pos, 10, "a=sendrecv");
+                sdp.replace(audio_pos, len, audio_sec);
+                std::cout << "[WebRTCPeer] Overrode camera audio SDP direction: a=recvonly -> a=sendrecv" << std::endl;
+            }
+        }
 
         rtc::Description desc(sdp, type);
         pc_->setRemoteDescription(desc);

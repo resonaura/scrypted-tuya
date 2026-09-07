@@ -1,6 +1,9 @@
 import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
 import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
+import * as path from "node:path";
 import { NativeMediaEngine } from "../engine/native-engine.js";
+import { getDataDir } from "../cameras/offline-card.js";
 
 export interface TranscodeSession {
   did: string;
@@ -14,6 +17,8 @@ export interface TranscodeSession {
   audioRtpPort: number;
   startedAt: number;
   stopped?: boolean;
+  consecutiveFailures: number;
+  isFallback: boolean;
 }
 
 @Injectable()
@@ -38,6 +43,8 @@ export class TranscoderService implements OnModuleDestroy {
     targetRtspPort: number;
     targetRtspPath?: string;
   }): void {
+    const existing = this.sessions.get(options.did);
+    const consecutiveFailures = existing ? existing.consecutiveFailures : 0;
     this.stopTranscode(options.did);
 
     const sourceRtspUrl = `rtsp://127.0.0.1:${options.sourceRtspPort}/${options.sourceRtspPath}`;
@@ -66,6 +73,8 @@ export class TranscoderService implements OnModuleDestroy {
       audioRtpPort,
       startedAt: Date.now(),
       stopped: false,
+      consecutiveFailures,
+      isFallback: false,
     };
     this.sessions.set(options.did, session);
 
@@ -124,18 +133,95 @@ export class TranscoderService implements OnModuleDestroy {
         });
         proc.once("exit", (code, signal) => {
           if (session.stopped || this.sessions.get(options.did) !== session) return;
-          this.logger.warn(`H264 transcoder for ${options.did} exited (code=${code}, signal=${signal}), restarting in 2s...`);
-          session.retryTimer = setTimeout(() => {
-            if (session.stopped || this.sessions.get(options.did) !== session) return;
-            this.startH264Transcode(options);
-          }, 2000);
-          session.retryTimer.unref();
+          session.consecutiveFailures++;
+          this.logger.warn(
+            `H264 transcoder for ${options.did} exited (code=${code}, signal=${signal}), failure count: ${session.consecutiveFailures}`,
+          );
+
+          // If source RTSP stream repeatedly failed, stream fallback card to keep downstream RTSP connection alive
+          if (session.consecutiveFailures >= 2) {
+            this.startFallbackTranscode(options, session);
+          } else {
+            session.retryTimer = setTimeout(() => {
+              if (session.stopped || this.sessions.get(options.did) !== session) return;
+              this.startH264Transcode(options);
+            }, 2000);
+            session.retryTimer.unref();
+          }
         });
       } catch (err: any) {
         this.logger.error(`Failed to spawn H264 transcoder for ${options.did}: ${err.message}`);
       }
     }, 300);
     session.startTimer.unref();
+  }
+
+  private startFallbackTranscode(
+    options: {
+      did: string;
+      slug: string;
+      sourceRtspPort: number;
+      sourceRtspPath: string;
+      targetRtspPort: number;
+      targetRtspPath?: string;
+    },
+    session: TranscodeSession,
+  ): void {
+    if (session.stopped || this.sessions.get(options.did) !== session) return;
+    session.isFallback = true;
+    this.logger.log(`[Transcoder] Streaming fallback placeholder for ${options.did} to preserve RTSP session`);
+
+    const framesDir = path.join(getDataDir(), "frames");
+    const frameFile = path.join(framesDir, `${options.slug}.jpg`);
+    const fallbackImageExists = existsSync(frameFile);
+
+    // Fallback: loop HUD offline image at 1 fps with silent audio track so downstream players don't timeout
+    const inputArgs = fallbackImageExists
+      ? ["-loop", "1", "-framerate", "1", "-re", "-i", frameFile]
+      : ["-re", "-f", "lavfi", "-i", "color=c=0x111116:s=1280x720:r=1"];
+
+    const fallbackArgs = [
+      "-hide_banner", "-loglevel", "warning",
+      ...inputArgs,
+      "-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono",
+      "-c:v", "libx264",
+      "-preset", "ultrafast",
+      "-tune", "stillimage",
+      "-profile:v", "baseline",
+      "-pix_fmt", "yuv420p",
+      "-g", "2",
+      "-r", "1",
+      "-f", "rtp", "-payload_type", "96",
+      `rtp://127.0.0.1:${session.rtpPort}?pkt_size=1200`,
+      "-c:a", "aac",
+      "-ar", "16000",
+      "-ac", "1",
+      "-b:a", "32k",
+      "-f", "rtp", "-payload_type", "97",
+      `rtp://127.0.0.1:${session.audioRtpPort}?pkt_size=1200`,
+    ];
+
+    try {
+      const proc = spawn("ffmpeg", fallbackArgs, { stdio: ["ignore", "ignore", "pipe"] });
+      session.process = proc;
+      proc.stderr?.on("data", (chunk: Buffer) => {
+        const msg = chunk.toString().trim();
+        if (msg && !msg.includes("frame=") && !msg.includes("fps=")) {
+          this.logger.debug(`[FFmpeg Fallback ${options.did}] ${msg}`);
+        }
+      });
+      proc.once("exit", () => {
+        if (session.stopped || this.sessions.get(options.did) !== session) return;
+        // Periodically retry the real live stream
+        session.retryTimer = setTimeout(() => {
+          if (session.stopped || this.sessions.get(options.did) !== session) return;
+          this.startH264Transcode(options);
+        }, 3000);
+        session.retryTimer.unref();
+      });
+    } catch (err: any) {
+      this.logger.error(`Failed to spawn fallback transcoder for ${options.did}: ${err.message}`);
+    }
   }
 
   public stopTranscode(did: string): void {
