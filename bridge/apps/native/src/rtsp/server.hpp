@@ -39,6 +39,9 @@ struct RTSPClientSession {
     uint32_t current_frame_video_ts = 0x10000000;
 
     // Audio timestamp tracking
+    bool has_audio_base_ts = false;
+    uint32_t in_audio_base_ts = 0;
+    uint32_t last_in_audio_ts = 0;
     uint32_t last_audio_out_ts = 0x20000000;
 
     static constexpr uint32_t out_base_video_ts = 0x10000000;

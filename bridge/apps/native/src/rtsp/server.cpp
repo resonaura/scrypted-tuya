@@ -563,13 +563,25 @@ void RTSPServer::send_client_rtp_packet(int fd, RTSPClientSession& session, bool
             session.last_audio_out_ts = calc_ts;
             out_ts = calc_ts;
         } else {
-            const size_t num_samples = (len > 12) ? (len - 12) : 160;
-            if (session.last_audio_out_ts == 0) {
-                session.last_audio_out_ts = session.out_base_audio_ts;
+            // Anchor outbound PCMU timestamps to incoming camera RTP timestamp to guarantee
+            // exact jitter-free pacing and avoid synthetic discontinuities / clicks.
+            if (!session.has_audio_base_ts) {
+                session.has_audio_base_ts = true;
+                session.in_audio_base_ts = in_ts;
+                session.last_in_audio_ts = in_ts;
+                out_ts = session.out_base_audio_ts;
+                session.last_audio_out_ts = out_ts;
             } else {
-                session.last_audio_out_ts += static_cast<uint32_t>(num_samples);
+                int32_t diff = static_cast<int32_t>(in_ts - session.last_in_audio_ts);
+                if (diff > 0 && diff < 8000) {
+                    session.last_audio_out_ts += static_cast<uint32_t>(diff);
+                } else {
+                    const size_t num_samples = (len > 12) ? (len - 12) : 160;
+                    session.last_audio_out_ts += static_cast<uint32_t>(num_samples);
+                }
+                session.last_in_audio_ts = in_ts;
+                out_ts = session.last_audio_out_ts;
             }
-            out_ts = session.last_audio_out_ts;
         }
     }
 
@@ -1009,14 +1021,16 @@ void RTSPServer::silence_loop() {
             continue;
         }
 
-        // No real audio for kSilenceThresholdMs — inject silence to every playing client
+        // No real audio for kSilenceThresholdMs — inject silence to every playing client.
+        // Once live audio has started for a session, never inject synthetic silence into it
+        // to prevent non-monotonic DTS jumps and audible click artifacts.
         std::lock_guard<std::mutex> lock(clients_mutex_);
         if (clients_.empty()) {
             continue;
         }
 
         for (auto& [fd, session] : clients_) {
-            if (!session.is_playing) continue;
+            if (!session.is_playing || session.has_audio_base_ts) continue;
 
             const uint16_t out_seq = session.out_audio_seq++;
             session.last_audio_out_ts += static_cast<uint32_t>(kSilenceSamples);

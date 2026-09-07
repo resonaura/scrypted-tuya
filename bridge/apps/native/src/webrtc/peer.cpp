@@ -201,39 +201,22 @@ void WebRTCPeer::handle_rtp_packet(const rtc::binary& packet, bool is_video) {
     if (packet.size() < 12 || !rtsp_server_) return;
 
     const auto* bytes = reinterpret_cast<const uint8_t*>(packet.data());
-    const uint16_t seq = static_cast<uint16_t>((bytes[2] << 8) | bytes[3]);
-    if (!is_video) {
-        static std::atomic<int> audio_debug_packets{0};
-        const int n = audio_debug_packets.fetch_add(1);
-        const size_t header_len = 12 + static_cast<size_t>(bytes[0] & 0x0f) * 4;
-        const size_t payload_sz = packet.size() > header_len ? packet.size() - header_len : 0;
-        if (n < 50 && payload_sz > 0) {
-            FILE* f = fopen("/tmp/camera_rx_payloads.raw", n == 0 ? "wb" : "ab");
-            if (f) {
-                fwrite(bytes + header_len, 1, payload_sz, f);
-                fclose(f);
-            }
-        }
-        if (n < 20) {
-            static auto prev_time = std::chrono::steady_clock::now();
-            const auto cur_time = std::chrono::steady_clock::now();
-            const auto delta_ms = std::chrono::duration_cast<std::chrono::milliseconds>(cur_time - prev_time).count();
-            prev_time = cur_time;
-            const uint32_t ts = (static_cast<uint32_t>(bytes[4]) << 24) |
-                                (static_cast<uint32_t>(bytes[5]) << 16) |
-                                (static_cast<uint32_t>(bytes[6]) << 8) |
-                                bytes[7];
-            const uint8_t rx_pt = bytes[1] & 0x7f;
-            std::cout << "[WebRTCPeer] AUDIO RX RTP n=" << n
-                      << " len=" << packet.size()
-                      << " delta_ms=" << delta_ms
-                      << " seq=" << seq
-                      << " ts=" << ts
-                      << " pt=" << static_cast<int>(rx_pt)
-                      << " payload=" << payload_sz
-                      << std::endl;
-        }
+
+    // Strict RTP validation:
+    // 1. Version must be 2 (top 2 bits == 10)
+    if ((bytes[0] >> 6) != 2) return;
+
+    const uint8_t pt = bytes[1] & 0x7F;
+    // 2. RFC 5761: Range 64-95 or >= 192 (0xC0) indicates RTCP (e.g. SR/RR/SDES) multiplexed onto media port.
+    // Drop RTCP packets immediately before RTP queueing or decoding.
+    if ((pt >= 64 && pt <= 95) || bytes[1] >= 192) return;
+
+    // 3. Audio track validation: payload type must match expected audio codecs (0 = PCMU, 8 = PCMA, 10 = L16)
+    if (!is_video && pt != 0 && pt != 8 && pt != 10) {
+        return;
     }
+
+    const uint16_t seq = static_cast<uint16_t>((bytes[2] << 8) | bytes[3]);
     std::vector<std::vector<uint8_t>> ready;
 
     bool discontinuity = false;
@@ -412,6 +395,7 @@ void WebRTCPeer::setup_tracks() {
     audio_desc.addAudioCodec(10, "L16/8000/1");
     audio_desc.addSSRC(audio_send_ssrc_, "tuya-talkback-audio");
     audio_send_track_ = pc_->addTrack(audio_desc);
+    audio_send_track_->setMediaHandler(std::make_shared<rtc::RtcpReceivingSession>());
 
     audio_send_track_->onOpen([this]() {
         std::cout << "[WebRTCPeer] 🎙️ Camera WebRTC Audio Send track OPENED for " << config_.did << std::endl;

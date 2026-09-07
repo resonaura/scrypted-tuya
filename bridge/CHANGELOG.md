@@ -1,5 +1,13 @@
 # Tuya Camera Bridge — Changelog
 
+## 2.1.8
+
+- **Periodic Audio Click Fix (RTCP Demuxing & Filtering)**:
+  - Fixed recurring ~5-second audio pop/click caused by unhandled RTCP Sender Report (SR) control packets arriving on the camera WebRTC audio track without `RtcpReceivingSession` media handler.
+  - Attached `rtc::RtcpReceivingSession` handler to `audio_send_track_` in `tuya-streamer`, ensuring RTCP control frames are processed by libdatachannel's RTCP engine rather than forwarded as raw RTP media.
+  - Added strict RFC 5761 multiplexing validation in `handle_rtp_packet` (dropping RTCP PT ranges 64–95 and $\ge 192$) to protect downstream RTP queue and PCM audio pipelines from control packets.
+  - Synchronized audio timestamp anchoring and silenced synthetic silence loop after genuine audio packet arrival.
+
 ## 2.1.7
 
 - **Camera Inbound Microphone Audio Stabilization**:

@@ -108,7 +108,7 @@ export class TranscoderService implements OnModuleDestroy {
         "-f", "rtp", "-payload_type", "96",
         `rtp://127.0.0.1:${rtpPort}?pkt_size=1200`,
         "-map", "0:a:0?",
-        "-af", "aresample=async=1000",
+        "-af", "aresample=async=1:first_pts=0",
         "-c:a", "aac",
         "-profile:a", "aac_low",
         "-ar", "16000",
