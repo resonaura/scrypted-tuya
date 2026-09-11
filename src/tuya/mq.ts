@@ -1,5 +1,12 @@
 import Event from "events";
-import { connect, IClientPublishOptions, MqttClient, OnCloseCallback, OnErrorCallback, OnMessageCallback } from "mqtt";
+import {
+  connect,
+  IClientPublishOptions,
+  MqttClient,
+  OnCloseCallback,
+  OnErrorCallback,
+  OnMessageCallback,
+} from "mqtt";
 import { IPublishPacket } from "mqtt-packet";
 import { EventEmitter } from "events";
 
@@ -10,14 +17,14 @@ export type MqttConfig = {
   password: string;
   topics: string[];
   expires: number;
-}
+};
 
 export type TuyaMQEvent = {
   connected: [];
   message: Parameters<OnMessageCallback>;
-  error: Parameters<OnErrorCallback>
-  close: Parameters<OnCloseCallback>
-}
+  error: Parameters<OnErrorCallback>;
+  close: Parameters<OnCloseCallback>;
+};
 
 export class TuyaMQ extends EventEmitter<TuyaMQEvent> {
   private client?: MqttClient;
@@ -29,7 +36,7 @@ export class TuyaMQ extends EventEmitter<TuyaMQEvent> {
     super();
     this.fetchConfig = fetchConfig;
   }
-  
+
   public async start(): Promise<void> {
     return new Promise((resolve, reject) => {
       this.on("connected", () => {
@@ -64,7 +71,10 @@ export class TuyaMQ extends EventEmitter<TuyaMQEvent> {
 
   private async _connect() {
     this.stop();
-    const config = this.config && (this.config.expires - 60_000) > Date.now() ? this.config : await this.fetchConfig()
+    const config =
+      this.config && this.config.expires - 60_000 > Date.now()
+        ? this.config
+        : await this.fetchConfig();
     const client = connect(config.url, {
       clientId: config.clientId,
       username: config.username,
@@ -83,7 +93,7 @@ export class TuyaMQ extends EventEmitter<TuyaMQEvent> {
       }
     });
     client.on("message", (...args) => {
-        this.emit("message", ...args);
+      this.emit("message", ...args);
     });
     client.on("error", (error: Error) => {
       this.emit("error", error);
@@ -95,7 +105,10 @@ export class TuyaMQ extends EventEmitter<TuyaMQEvent> {
     });
     this.client = client;
     this.config = config;
-    this.retryTimeout = setTimeout(() => this._connect(), (config.expires - 60_000) - Date.now())
+    this.retryTimeout = setTimeout(
+      () => this._connect(),
+      config.expires - 60_000 - Date.now(),
+    );
     return client;
   }
 }

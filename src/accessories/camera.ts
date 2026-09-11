@@ -31,33 +31,45 @@ import { StorageSettings } from "@scrypted/sdk/storage-settings";
 
 // TODO: Allow setting motion info based on dp name?
 const SCHEMA_CODE = {
-  MOTION_ON: ['motion_switch', 'pir_sensitivity', 'motion_sensitivity'],
-  MOTION_DETECT: ['movement_detect_pic'],
+  MOTION_ON: ["motion_switch", "pir_sensitivity", "motion_sensitivity"],
+  MOTION_DETECT: ["movement_detect_pic"],
   // Indicates that this is possibly a doorbell
-  DOORBELL: ['doorbell_ring_exist'],
+  DOORBELL: ["doorbell_ring_exist"],
   // Notifies when a doorbell ring occurs.
-  DOORBELL_RING: ['doorbell_pic'],
+  DOORBELL_RING: ["doorbell_pic"],
   // Notifies when a doorbell ring or motion occurs.
-  ALARM_MESSAGE: ['alarm_message'],
-  LIGHT_ON: ['floodlight_switch'],
-  LIGHT_BRIGHT: ['floodlight_lightness'],
-  INDICATOR: ["basic_indicator"]
+  ALARM_MESSAGE: ["alarm_message"],
+  LIGHT_ON: ["floodlight_switch"],
+  LIGHT_BRIGHT: ["floodlight_lightness"],
+  INDICATOR: ["basic_indicator"],
 };
 
-export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCamera, BinarySensor, MotionSensor, OnOff, Settings, Intercom {
+export class TuyaCamera
+  extends TuyaAccessory
+  implements
+    DeviceProvider,
+    VideoCamera,
+    BinarySensor,
+    MotionSensor,
+    OnOff,
+    Settings,
+    Intercom
+{
   private lightAccessory: ScryptedDeviceBase | undefined;
   private selectedQuality: string | undefined;
   private intercomProcess: ChildProcess | null = null;
   private storageSettings = new StorageSettings(this, {
     p2pRtspUrl: {
       title: "Smart Life P2P HD RTSP URL",
-      description: "Optional HD URL from Tuya RTSP Bridge, for example rtsp://127.0.0.1:8655/live/CameraDID. When configured, this replaces Tuya Cloud RTSP video while keeping Tuya events and controls.",
+      description:
+        "Optional HD URL from Tuya RTSP Bridge, for example rtsp://127.0.0.1:8655/live/CameraDID. When configured, this replaces Tuya Cloud RTSP video while keeping Tuya events and controls.",
       type: "string",
       placeholder: "rtsp://127.0.0.1:8655/live/CameraDID",
     },
     talkbackRtmpUrl: {
       title: "Talkback RTMP URL",
-      description: "Optional RTMP ingest URL for talkback audio (e.g. rtmp://127.0.0.1:1935/talk/CameraDID). ⚠️ Note: talkback is experimental and speaker audio may sound distorted on certain camera models. If blank, automatically resolves from the Smart Life P2P bridge RTSP URL.",
+      description:
+        "Optional RTMP ingest URL for talkback audio (e.g. rtmp://127.0.0.1:1935/talk/CameraDID). ⚠️ Note: talkback is experimental and speaker audio may sound distorted on certain camera models. If blank, automatically resolves from the Smart Life P2P bridge RTSP URL.",
       type: "string",
       placeholder: "rtmp://127.0.0.1:1935/talk/CameraDID",
     },
@@ -109,11 +121,18 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
   get deviceSpecs(): Device {
     const indicatorSchema = !!this.getSchema(...SCHEMA_CODE.INDICATOR);
     const motionSchema = !!this.getSchema(...SCHEMA_CODE.MOTION_ON);
-    const doorbellSchema = !!this.getSchema(...SCHEMA_CODE.DOORBELL) && !!this.getSchema(...SCHEMA_CODE.ALARM_MESSAGE, ...SCHEMA_CODE.DOORBELL_RING);
+    const doorbellSchema =
+      !!this.getSchema(...SCHEMA_CODE.DOORBELL) &&
+      !!this.getSchema(
+        ...SCHEMA_CODE.ALARM_MESSAGE,
+        ...SCHEMA_CODE.DOORBELL_RING,
+      );
 
     return {
       ...super.deviceSpecs,
-      type: doorbellSchema ? ScryptedDeviceType.Doorbell : ScryptedDeviceType.Camera,
+      type: doorbellSchema
+        ? ScryptedDeviceType.Doorbell
+        : ScryptedDeviceType.Camera,
       interfaces: [
         ...super.deviceSpecs.interfaces,
         ScryptedInterface.VideoCamera,
@@ -123,9 +142,8 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         indicatorSchema ? ScryptedInterface.OnOff : null,
         motionSchema ? ScryptedInterface.MotionSensor : null,
         doorbellSchema ? ScryptedInterface.BinarySensor : null,
-      ]
-      .filter((p): p is ScryptedInterface => !!p)
-    }
+      ].filter((p): p is ScryptedInterface => !!p),
+    };
   }
 
   async startIntercom(media: MediaObject): Promise<void> {
@@ -133,29 +151,36 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
 
     const targetUrl = this.resolveTalkbackRtmpUrl();
     if (!targetUrl) {
-      this.console.warn(`[${this.name}] Cannot start talkback: no Talkback RTMP URL configured and could not auto-derive from bridge.`);
+      this.console.warn(
+        `[${this.name}] Cannot start talkback: no Talkback RTMP URL configured and could not auto-derive from bridge.`,
+      );
       throw new Error(`Talkback RTMP URL not configured for ${this.name}`);
     }
 
-    this.console.info(`[${this.name}] Starting talkback session -> ${targetUrl}`);
-    this.console.info(`[${this.name}] Incoming media mimeType: ${media.mimeType}`);
+    this.console.info(
+      `[${this.name}] Starting talkback session -> ${targetUrl}`,
+    );
+    this.console.info(
+      `[${this.name}] Incoming media mimeType: ${media.mimeType}`,
+    );
 
     try {
       // Ask Scrypted for native FFmpeg input args — it handles the format
       // automatically regardless of what HomeKit sends (AAC, Opus, PCM, etc.)
       // This avoids an unnecessary WAV transcode hop and lets FFmpeg receive
       // the stream in its native format directly.
-      const ffmpegInput = await sdk.mediaManager.convertMediaObjectToJSON<FFmpegInput>(
-        media,
-        ScryptedMimeTypes.FFmpegInput,
-      );
+      const ffmpegInput =
+        await sdk.mediaManager.convertMediaObjectToJSON<FFmpegInput>(
+          media,
+          ScryptedMimeTypes.FFmpegInput,
+        );
 
       const inputArgs = [...(ffmpegInput.inputArguments ?? [])];
       // Scrypted media converter serves local RTSP over TCP interleaved.
       // FFmpeg defaults to UDP for RTSP, causing '461 Unsupported Transport'.
       // Inject -rtsp_transport tcp before -i for RTSP inputs.
       const hasRtsp = inputArgs.some(
-        (arg) => typeof arg === "string" && arg.includes("rtsp://")
+        (arg) => typeof arg === "string" && arg.includes("rtsp://"),
       );
       if (hasRtsp && !inputArgs.includes("-rtsp_transport")) {
         const iIdx = inputArgs.indexOf("-i");
@@ -168,19 +193,28 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
 
       const ffmpegArgs = [
         "-hide_banner",
-        "-loglevel", "warning",
+        "-loglevel",
+        "warning",
         ...inputArgs,
         "-vn",
-        "-c:a", "aac",
-        "-b:a", "32k",
-        "-ar", "16000",
-        "-ac", "1",
-        "-flush_packets", "1",
-        "-f", "flv",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "32k",
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        "-flush_packets",
+        "1",
+        "-f",
+        "flv",
         targetUrl,
       ];
 
-      this.console.info(`[${this.name}] FFmpeg talkback args: ffmpeg ${ffmpegArgs.join(" ")}`);
+      this.console.info(
+        `[${this.name}] FFmpeg talkback args: ffmpeg ${ffmpegArgs.join(" ")}`,
+      );
 
       this.intercomProcess = spawn("ffmpeg", ffmpegArgs, {
         stdio: ["pipe", "ignore", "pipe"],
@@ -192,11 +226,16 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
       });
 
       this.intercomProcess.on("error", (err: Error) => {
-        this.console.error(`[${this.name}] Talkback FFmpeg process error:`, err);
+        this.console.error(
+          `[${this.name}] Talkback FFmpeg process error:`,
+          err,
+        );
       });
 
       this.intercomProcess.on("close", (code: number | null) => {
-        this.console.info(`[${this.name}] Talkback session ended (code ${code})`);
+        this.console.info(
+          `[${this.name}] Talkback session ended (code ${code})`,
+        );
         this.intercomProcess = null;
       });
     } catch (e: any) {
@@ -226,17 +265,20 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
       try {
         const u = new URL(rtsp);
         const pathParts = u.pathname.split("/").filter(Boolean);
-        const lastPart = pathParts.length > 0 ? pathParts[pathParts.length - 1] : undefined;
-        const slug = lastPart || cameraName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        const lastPart =
+          pathParts.length > 0 ? pathParts[pathParts.length - 1] : undefined;
+        const slug =
+          lastPart || cameraName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
         return `rtmp://${u.hostname}:1935/talk/${slug}`;
       } catch {}
     }
 
-    const slug = cameraName
-      .toLowerCase()
-      .replace(/\bcamera\b/g, " ")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || this.tuyaDevice.id;
+    const slug =
+      cameraName
+        .toLowerCase()
+        .replace(/\bcamera\b/g, " ")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || this.tuyaDevice.id;
     return `rtmp://127.0.0.1:1935/talk/${slug}`;
   }
 
@@ -244,23 +286,23 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
     if (nativeId === this.nativeId + "-light") {
       return this.lightAccessory;
     } else {
-      throw new Error("Light not found")
+      throw new Error("Light not found");
     }
   }
 
-  async releaseDevice(id: string, nativeId: ScryptedNativeId): Promise<void> { }
+  async releaseDevice(id: string, nativeId: ScryptedNativeId): Promise<void> {}
 
   // OnOff Status Indicator
   async turnOff(): Promise<void> {
     const indicatorSchema = this.getSchema(...SCHEMA_CODE.INDICATOR);
     if (!indicatorSchema || indicatorSchema.mode == "r") return;
-    await this.sendCommands({ code: indicatorSchema.code, value: false })
+    await this.sendCommands({ code: indicatorSchema.code, value: false });
   }
 
   async turnOn(): Promise<void> {
     const indicatorSchema = this.getSchema(...SCHEMA_CODE.INDICATOR);
     if (!indicatorSchema || indicatorSchema.mode == "r") return;
-    await this.sendCommands({ code: indicatorSchema.code, value: true })
+    await this.sendCommands({ code: indicatorSchema.code, value: true });
   }
 
   // Video Camera
@@ -270,13 +312,19 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
 
     if (p2pRtspUrl) {
       if (!/^rtsps?:\/\//i.test(p2pRtspUrl)) {
-        throw new Error(`Invalid Smart Life P2P RTSP URL for ${this.name}. The URL must start with rtsp:// or rtsps://.`);
+        throw new Error(
+          `Invalid Smart Life P2P RTSP URL for ${this.name}. The URL must start with rtsp:// or rtsps://.`,
+        );
       }
       streamUrl = p2pRtspUrl;
-      this.console.info(`[${this.name}] Using Smart Life P2P main/HD stream through the configured RTSP bridge: ${streamUrl}`);
+      this.console.info(
+        `[${this.name}] Using Smart Life P2P main/HD stream through the configured RTSP bridge: ${streamUrl}`,
+      );
     } else {
       if (!this.tuyaDevice.online) {
-        this.log.e(`${this.name} is currently offline. Will not be able to stream until device is back online.`);
+        this.log.e(
+          `${this.name} is currently offline. Will not be able to stream until device is back online.`,
+        );
         throw new Error(`Failed to stream ${this.name}: Camera is offline.`);
       }
 
@@ -287,11 +335,15 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
 
       if (!rtsps) {
         this.log.e("There was an error retrieving the camera live feed.");
-        throw new Error(`Failed to capture stream for ${this.name}: RTSP link not found.`);
+        throw new Error(
+          `Failed to capture stream for ${this.name}: RTSP link not found.`,
+        );
       }
       streamUrl = rtsps.url;
       this.console.info(`[${this.name}] Cloud RTSP stream URL: ${streamUrl}`);
-      this.console.info(`[${this.name}] Probe resolution with: ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 ${streamUrl}`);
+      this.console.info(
+        `[${this.name}] Probe resolution with: ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 ${streamUrl}`,
+      );
     }
 
     const streamOptions = (await this.getVideoStreamOptions())[0];
@@ -301,77 +353,104 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         container: "rtsp",
         mediaStreamOptions: streamOptions,
       } satisfies MediaStreamUrl,
-      ScryptedMimeTypes.MediaStreamUrl
+      ScryptedMimeTypes.MediaStreamUrl,
     );
   }
 
   private async requestMaximumQuality(): Promise<void> {
     const selection = selectMaximumQuality(this.tuyaDevice);
     if (!selection) {
-      this.console.debug(`[${this.name}] Tuya does not expose a writable, recognised video-quality capability. Using the RTSP quality selected by Tuya.`);
+      this.console.debug(
+        `[${this.name}] Tuya does not expose a writable, recognised video-quality capability. Using the RTSP quality selected by Tuya.`,
+      );
       return;
     }
 
     if (selection.current?.value === selection.value) {
-      this.console.debug(`[${this.name}] Tuya quality already at maximum: ${selection.code}=${selection.value}`);
+      this.console.debug(
+        `[${this.name}] Tuya quality already at maximum: ${selection.code}=${selection.value}`,
+      );
       return;
     }
 
     if (this.selectedQuality === selection.value) {
-      this.console.debug(`[${this.name}] Quality already selected this session: ${selection.code}=${selection.value}`);
+      this.console.debug(
+        `[${this.name}] Quality already selected this session: ${selection.code}=${selection.value}`,
+      );
       return;
     }
 
-    this.console.info(`[${this.name}] Requesting maximum advertised Tuya video quality: ${selection.code}=${selection.value}`);
+    this.console.info(
+      `[${this.name}] Requesting maximum advertised Tuya video quality: ${selection.code}=${selection.value}`,
+    );
 
     try {
-      const commands = [{
-        code: selection.code,
-        value: selection.value,
-      }];
-      this.console.debug(`[${this.name}] Sending command: ${JSON.stringify(commands)}`);
-      const changed = await this.plugin.api?.sendCommands(this.tuyaDevice.id, commands);
+      const commands = [
+        {
+          code: selection.code,
+          value: selection.value,
+        },
+      ];
+      this.console.debug(
+        `[${this.name}] Sending command: ${JSON.stringify(commands)}`,
+      );
+      const changed = await this.plugin.api?.sendCommands(
+        this.tuyaDevice.id,
+        commands,
+      );
 
       if (changed) {
         this.selectedQuality = selection.value;
         if (selection.current) {
           selection.current.value = selection.value;
         } else {
-          this.tuyaDevice.status.push({ code: selection.code, value: selection.value });
+          this.tuyaDevice.status.push({
+            code: selection.code,
+            value: selection.value,
+          });
         }
-        this.console.info(`[${this.name}] Maximum quality command accepted: ${selection.code}=${selection.value}`);
+        this.console.info(
+          `[${this.name}] Maximum quality command accepted: ${selection.code}=${selection.value}`,
+        );
       } else {
-        this.console.warn(`[${this.name}] Tuya rejected the maximum-quality command (${selection.code}=${selection.value}). Falling back to Tuya's default RTSP quality.`);
+        this.console.warn(
+          `[${this.name}] Tuya rejected the maximum-quality command (${selection.code}=${selection.value}). Falling back to Tuya's default RTSP quality.`,
+        );
       }
     } catch (e) {
-      this.console.warn(`[${this.name}] Could not select maximum Tuya video quality. Falling back to Tuya's default RTSP quality.`, e);
+      this.console.warn(
+        `[${this.name}] Could not select maximum Tuya video quality. Falling back to Tuya's default RTSP quality.`,
+        e,
+      );
     }
   }
 
-  private qualityToResolution(qualityValue: string): { width?: number; height?: number } | undefined {
+  private qualityToResolution(
+    qualityValue: string,
+  ): { width?: number; height?: number } | undefined {
     const v = qualityValue.toLowerCase().trim();
     const map: Record<string, { width: number; height: number }> = {
-      "ssuper": { width: 3840, height: 2160 },
-      "super_ultra": { width: 3840, height: 2160 },
+      ssuper: { width: 3840, height: 2160 },
+      super_ultra: { width: 3840, height: 2160 },
       "super-ultra": { width: 3840, height: 2160 },
-      "superuhd": { width: 3840, height: 2160 },
-      "super_uhd": { width: 3840, height: 2160 },
-      "ultra": { width: 3840, height: 2160 },
-      "uhd": { width: 3840, height: 2160 },
+      superuhd: { width: 3840, height: 2160 },
+      super_uhd: { width: 3840, height: 2160 },
+      ultra: { width: 3840, height: 2160 },
+      uhd: { width: 3840, height: 2160 },
       "4k": { width: 3840, height: 2160 },
       "2k": { width: 2560, height: 1440 },
-      "super": { width: 2560, height: 1440 },
-      "hd": { width: 1920, height: 1080 },
+      super: { width: 2560, height: 1440 },
+      hd: { width: 1920, height: 1080 },
       "1080p": { width: 1920, height: 1080 },
-      "high": { width: 1280, height: 720 },
+      high: { width: 1280, height: 720 },
       "720p": { width: 1280, height: 720 },
-      "standard": { width: 640, height: 360 },
-      "sd": { width: 640, height: 360 },
-      "medium": { width: 640, height: 360 },
-      "normal": { width: 640, height: 360 },
-      "low": { width: 320, height: 180 },
-      "fluent": { width: 320, height: 180 },
-      "smooth": { width: 320, height: 180 },
+      standard: { width: 640, height: 360 },
+      sd: { width: 640, height: 360 },
+      medium: { width: 640, height: 360 },
+      normal: { width: 640, height: 360 },
+      low: { width: 320, height: 180 },
+      fluent: { width: 320, height: 180 },
+      smooth: { width: 320, height: 180 },
     };
     return map[v];
   }
@@ -379,7 +458,9 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
   async getVideoStreamOptions(): Promise<[ResponseMediaStreamOptions]> {
     const p2pRtspUrl = this.storageSettings.values.p2pRtspUrl?.trim();
     const selection = selectMaximumQuality(this.tuyaDevice);
-    const resolution = selection ? this.qualityToResolution(selection.value) : undefined;
+    const resolution = selection
+      ? this.qualityToResolution(selection.value)
+      : undefined;
     return [
       {
         id: "cloud-rtsp",
@@ -391,7 +472,9 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
         prebuffer: 4000,
         video: {
           codec: "h264",
-          ...(resolution ? { width: resolution.width, height: resolution.height } : {}),
+          ...(resolution
+            ? { width: resolution.width, height: resolution.height }
+            : {}),
         },
         audio: {
           codec: p2pRtspUrl ? "aac" : "pcm_alaw",
@@ -405,30 +488,43 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
 
     const indicatorSchema = this.getSchema(...SCHEMA_CODE.INDICATOR);
     if (indicatorSchema) {
-      const indicatorStatus = status.find(s=> s.code === indicatorSchema.code);
-      indicatorStatus && (this.on = indicatorStatus.value === true)
+      const indicatorStatus = status.find(
+        (s) => s.code === indicatorSchema.code,
+      );
+      indicatorStatus && (this.on = indicatorStatus.value === true);
     }
 
     const motionSchema = this.getSchema(...SCHEMA_CODE.MOTION_DETECT);
     if (this.getSchema(...SCHEMA_CODE.MOTION_ON) && motionSchema) {
-      const motionStatus = status.find(s=> s.code === motionSchema.code);
-      motionStatus && motionStatus.value.toString().length > 1 && this.debounce(
-        motionSchema,
-        10 * 1000,
-        () => this.motionDetected = true, 
-        () => this.motionDetected = false,
-      )
+      const motionStatus = status.find((s) => s.code === motionSchema.code);
+      motionStatus &&
+        motionStatus.value.toString().length > 1 &&
+        this.debounce(
+          motionSchema,
+          10 * 1000,
+          () => (this.motionDetected = true),
+          () => (this.motionDetected = false),
+        );
     }
 
-    const doorbellNotifSchema = this.getSchema(...SCHEMA_CODE.ALARM_MESSAGE, ...SCHEMA_CODE.DOORBELL_RING);
+    const doorbellNotifSchema = this.getSchema(
+      ...SCHEMA_CODE.ALARM_MESSAGE,
+      ...SCHEMA_CODE.DOORBELL_RING,
+    );
     if (this.getSchema(...SCHEMA_CODE.DOORBELL) && doorbellNotifSchema) {
-      const doorbellStatus = status.find(s => [...SCHEMA_CODE.ALARM_MESSAGE, ...SCHEMA_CODE.DOORBELL_RING].includes(s.code));
-      doorbellStatus && doorbellStatus.value.toString().length > 1 && this.debounce(
-        doorbellNotifSchema,
-        10 * 1000,
-        () => this.binaryState = true, 
-        () => this.binaryState = false
+      const doorbellStatus = status.find((s) =>
+        [...SCHEMA_CODE.ALARM_MESSAGE, ...SCHEMA_CODE.DOORBELL_RING].includes(
+          s.code,
+        ),
       );
+      doorbellStatus &&
+        doorbellStatus.value.toString().length > 1 &&
+        this.debounce(
+          doorbellNotifSchema,
+          10 * 1000,
+          () => (this.binaryState = true),
+          () => (this.binaryState = false),
+        );
     }
 
     const lightSchema = this.getSchema(...SCHEMA_CODE.LIGHT_ON);
@@ -441,30 +537,29 @@ export class TuyaCamera extends TuyaAccessory implements DeviceProvider, VideoCa
           new ScryptedDeviceBase(this.tuyaDevice.id + "-light"),
           {
             turnOff: async function () {
-              await plugin.api?.sendCommands(deviceId, [{ code: lightSchema.code, value: false }])
+              await plugin.api?.sendCommands(deviceId, [
+                { code: lightSchema.code, value: false },
+              ]);
             },
             turnOn: async function () {
-              await plugin.api?.sendCommands(deviceId, [{ code: lightSchema.code, value: true }])
+              await plugin.api?.sendCommands(deviceId, [
+                { code: lightSchema.code, value: true },
+              ]);
             },
-          } satisfies OnOff & Online
+          } satisfies OnOff & Online,
         );
 
-        await sdk.deviceManager.onDeviceDiscovered(
-          {
-            providerNativeId: this.tuyaDevice.id,
-            name: this.tuyaDevice.name + " Light",
-            nativeId: this.lightAccessory.nativeId,
-            info: this.deviceSpecs.info,
-            type: ScryptedDeviceType.Light,
-            interfaces: [
-              ScryptedInterface.OnOff,
-              ScryptedInterface.Online
-            ]
-          }
-        )
+        await sdk.deviceManager.onDeviceDiscovered({
+          providerNativeId: this.tuyaDevice.id,
+          name: this.tuyaDevice.name + " Light",
+          nativeId: this.lightAccessory.nativeId,
+          info: this.deviceSpecs.info,
+          type: ScryptedDeviceType.Light,
+          interfaces: [ScryptedInterface.OnOff, ScryptedInterface.Online],
+        });
       }
 
-      const lightStatus = status.find(s=> s.code === lightSchema.code);
+      const lightStatus = status.find((s) => s.code === lightSchema.code);
       lightStatus && (this.lightAccessory.on = !!lightStatus.value);
     }
   }

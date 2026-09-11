@@ -1,11 +1,6 @@
 import { Axios, Method } from "axios";
 import { getEndPointWithCountryName } from "./deprecated";
-import {
-  TuyaDeviceStatus,
-  RTSPToken,
-  TuyaDevice,
-  TuyaResponse
-} from "./const";
+import { TuyaDeviceStatus, RTSPToken, TuyaDevice, TuyaResponse } from "./const";
 import { randomBytes, createHmac, hash } from "node:crypto";
 
 /**
@@ -20,7 +15,7 @@ export type TuyaCloudTokenInfo = {
   country: string;
   clientId: string;
   clientSecret: string;
-}
+};
 
 /**
  * @deprecated Will eventually be removed in favor of Sharing SDK
@@ -33,14 +28,14 @@ export class TuyaCloudAPI {
   private requiresReauthentication: () => void;
 
   constructor(
-    initialTokenInfo: TuyaCloudTokenInfo, 
-    updateToken: (token: TuyaCloudTokenInfo) => void, 
-    requiresReauth: () => void
+    initialTokenInfo: TuyaCloudTokenInfo,
+    updateToken: (token: TuyaCloudTokenInfo) => void,
+    requiresReauth: () => void,
   ) {
     this.tokenInfo = initialTokenInfo;
     this.updateToken = updateToken;
     this.requiresReauthentication = requiresReauth;
-    this.nonce = randomBytes(16).toString('hex');
+    this.nonce = randomBytes(16).toString("hex");
     this.client = new Axios({
       baseURL: getEndPointWithCountryName(this.tokenInfo.country),
       timeout: 5 * 1e3,
@@ -55,22 +50,25 @@ export class TuyaCloudAPI {
 
   public async sendCommands(
     deviceId: string,
-    commands: TuyaDeviceStatus[]
+    commands: TuyaDeviceStatus[],
   ): Promise<boolean> {
     return this._request<boolean>(
       "POST",
       `/v1.0/devices/${deviceId}/commands`,
       undefined,
-      { commands }
+      { commands },
     )
-    .then(r => !!r.success && !!r.result)
-    .catch(() => false)
+      .then((r) => !!r.success && !!r.result)
+      .catch(() => false);
   }
 
   // Get Devices
 
   public async fetchDevices(): Promise<TuyaDevice[]> {
-    let response = await this._request<TuyaDevice[]>("get", `/v1.0/users/${this.tokenInfo.uid}/devices`);
+    let response = await this._request<TuyaDevice[]>(
+      "get",
+      `/v1.0/users/${this.tokenInfo.uid}/devices`,
+    );
 
     if (!response.success) {
       throw Error(`Failed to fetch Device configurations.`);
@@ -80,7 +78,10 @@ export class TuyaCloudAPI {
 
     for (var i = 0; i < devices.length; i++) {
       var device = devices[i];
-      const response = await this._request("get", `/v1.0/devices/${device.id}/functions`);
+      const response = await this._request(
+        "get",
+        `/v1.0/devices/${device.id}/functions`,
+      );
       if (!response.success) continue;
       // TODO: Add schema
       // device.schema = response.result.function;
@@ -95,7 +96,7 @@ export class TuyaCloudAPI {
     const response = await this._request<{ url: string }>(
       "POST",
       `/v1.0/devices/${cameraId}/stream/actions/allocate`,
-      { type: "rtsp" }
+      { type: "rtsp" },
     );
 
     if (response.success) {
@@ -104,7 +105,7 @@ export class TuyaCloudAPI {
         expires: (response?.t ?? 0) + 30_000, // This will expire in 30 seconds.
       };
     } else {
-      throw new Error(`Failed to retrieve RTSP for camera ID: ${cameraId}`)
+      throw new Error(`Failed to retrieve RTSP for camera ID: ${cameraId}`);
     }
   }
 
@@ -114,31 +115,25 @@ export class TuyaCloudAPI {
     method: Method,
     path: string,
     query: { [k: string]: any } = {},
-    body: { [k: string]: any } = {}
+    body: { [k: string]: any } = {},
   ): Promise<TuyaResponse<T>> {
     await this.refreshAccessTokenIfNeeded();
 
     const timestamp = Date.now().toString();
     const headers = { client_id: this.tokenInfo.clientId };
 
-    const stringToSign = getStringToSign(
-      method,
-      path,
-      query,
-      headers,
-      body
-    );
+    const stringToSign = getStringToSign(method, path, query, headers, body);
 
     const hashed = createHmac("sha256", this.tokenInfo.clientSecret);
     hashed.update(
       this.tokenInfo.clientId +
-      this.tokenInfo.accessToken +
-      timestamp +
-      this.nonce +
-      stringToSign,
-    )
+        this.tokenInfo.accessToken +
+        timestamp +
+        this.nonce +
+        stringToSign,
+    );
 
-    const sign = hashed.digest('hex').toUpperCase();
+    const sign = hashed.digest("hex").toUpperCase();
 
     let requestHeaders = {
       client_id: this.tokenInfo.clientId,
@@ -175,10 +170,10 @@ export class TuyaCloudAPI {
     const timestamp = Date.now.toString();
     const stringToSign = getStringToSign("GET", url);
 
-    const sign = createHmac('sha256', this.tokenInfo.clientSecret);
+    const sign = createHmac("sha256", this.tokenInfo.clientSecret);
     sign.update(this.tokenInfo.clientId + timestamp + stringToSign);
 
-    const signString = sign.digest('hex').toUpperCase();
+    const signString = sign.digest("hex").toUpperCase();
 
     const headers = {
       t: timestamp,
@@ -196,14 +191,17 @@ export class TuyaCloudAPI {
       uid: string;
     }>;
 
-    if (!response.success) throw new Error(`Failed to generate access token. Reauthentication required.`);
+    if (!response.success)
+      throw new Error(
+        `Failed to generate access token. Reauthentication required.`,
+      );
 
     this.tokenInfo = {
       ...this.tokenInfo,
       accessToken: response.result.access_token,
       refreshToken: response.result.refresh_token,
       expires: (response.t ?? 0) + (response.result.expire_time ?? 0) * 1000,
-      uid: response.result.uid
+      uid: response.result.uid,
     };
   }
 
@@ -211,9 +209,10 @@ export class TuyaCloudAPI {
     userId?: string,
     clientId?: string,
     clientSecret?: string,
-    country?: string
+    country?: string,
   ): Promise<TuyaCloudTokenInfo> {
-    if (!userId || !clientId || !clientSecret || !country) throw Error('Missing credential information.');
+    if (!userId || !clientId || !clientSecret || !country)
+      throw Error("Missing credential information.");
     return Promise.reject();
   }
 }
@@ -226,7 +225,7 @@ function getStringToSign(
   path: string,
   query: { [k: string]: any } = {},
   headers: { [k: string]: string } = {},
-  body: { [k: string]: any } = {}
+  body: { [k: string]: any } = {},
 ): string {
   const isQueryEmpty = Object.keys(query).length == 0;
   const isHeaderEmpty = Object.keys(headers).length == 0;
@@ -237,9 +236,9 @@ function getStringToSign(
     (isQueryEmpty
       ? ""
       : "?" +
-      Object.keys(query)
-        .map((key) => `${key}=${query[key]}`)
-        .join("&"));
+        Object.keys(query)
+          .map((key) => `${key}=${query[key]}`)
+          .join("&"));
   const contentHashed = hash("sha256", isBodyEmpty ? "" : JSON.stringify(body));
   const headersParsed = Object.keys(headers)
     .map((key) => `${key}:${headers[key]}`)

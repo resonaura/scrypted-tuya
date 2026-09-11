@@ -131,7 +131,9 @@ export const CameraCard: React.FC<CameraCardProps> = ({
       <Card
         onMouseEnter={handlePreheat}
         className={`group overflow-hidden p-0 transition-all duration-300 ${
-          isSessionExpired ? "opacity-75 grayscale-[35%] hover:opacity-90 hover:grayscale-0" : ""
+          isSessionExpired
+            ? "opacity-75 grayscale-[35%] hover:opacity-90 hover:grayscale-0"
+            : ""
         }`}
       >
         {/* Video preview — strictly flush to card boundaries, no container padding */}
@@ -169,10 +171,14 @@ export const CameraCard: React.FC<CameraCardProps> = ({
 
           {/* Session expired overlay or standard Hover play overlay */}
           {isSessionExpired ? (
-            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/55 backdrop-blur-[2px] p-4 text-center">
-              <QrCode className="size-8 text-warning mb-2 animate-bounce" />
-              <p className="text-xs font-semibold text-white">Session Expired</p>
-              <p className="text-[10px] text-white/80 mt-0.5 mb-2.5">Click to scan QR & reconnect</p>
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/60 backdrop-blur-xs p-4 text-center">
+              <QrCode className="size-7 text-zinc-300 mb-2 opacity-90" />
+              <p className="text-xs font-semibold text-white">
+                Session Expired
+              </p>
+              <p className="text-[10px] text-zinc-300 mt-0.5 mb-2.5">
+                Click to scan QR & reconnect
+              </p>
               <Button
                 size="sm"
                 variant="primary"
@@ -200,13 +206,23 @@ export const CameraCard: React.FC<CameraCardProps> = ({
               <Chip
                 size="sm"
                 variant="soft"
-                color={isSessionExpired ? "warning" : camera.online ? "success" : "danger"}
+                color={
+                  isSessionExpired
+                    ? "default"
+                    : camera.online
+                      ? "success"
+                      : "danger"
+                }
                 className="px-2.5 bg-black/45 text-white backdrop-blur-md"
               >
                 {camera.online && !isSessionExpired && (
                   <span className="mr-1.5 inline-block size-1.5 rounded-full bg-white shadow-[0_0_8px_2px_rgba(255,255,255,0.65)] motion-safe:animate-pulse" />
                 )}
-                {isSessionExpired ? "Session Expired" : camera.online ? "Online" : "Reconnecting"}
+                {isSessionExpired
+                  ? "Session Expired"
+                  : camera.online
+                    ? "Online"
+                    : "Reconnecting"}
               </Chip>
               <Chip
                 size="sm"

@@ -15,8 +15,10 @@ import { StartQrSchema, PasswordLoginSchema } from "./dto.js";
 @Controller("api/auth")
 export class AuthController {
   constructor(
-    @Inject(TuyaProtectService) private readonly tuyaProtect: TuyaProtectService,
-    @Inject(forwardRef(() => CamerasService)) private readonly camerasService: CamerasService,
+    @Inject(TuyaProtectService)
+    private readonly tuyaProtect: TuyaProtectService,
+    @Inject(forwardRef(() => CamerasService))
+    private readonly camerasService: CamerasService,
   ) {}
 
   @Get("state")

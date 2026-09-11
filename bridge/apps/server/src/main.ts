@@ -34,7 +34,10 @@ async function bootstrap() {
   });
 
   await app.listen(env.PORT, "0.0.0.0");
-  Logger.log(`Tuya bridge ready: API :${env.PORT}, RTSP :${env.RTSP_BASE_PORT}`, "Bootstrap");
+  Logger.log(
+    `Tuya bridge ready: API :${env.PORT}, RTSP :${env.RTSP_BASE_PORT}`,
+    "Bootstrap",
+  );
 
   let closing = false;
   const shutdown = async (signal: string) => {

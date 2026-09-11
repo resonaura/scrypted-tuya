@@ -29,7 +29,10 @@ export class FrameSnapshotter extends EventEmitter {
   public readonly dataDir: string;
   public readonly intervalMs: number;
   public readonly maxConsecutiveFailures: number;
-  private readonly getSnapshot?: (did: string, timeoutMs?: number) => Promise<string>;
+  private readonly getSnapshot?: (
+    did: string,
+    timeoutMs?: number,
+  ) => Promise<string>;
 
   constructor(options: FrameSnapshotterOptions) {
     super();
@@ -188,11 +191,16 @@ export class FrameSnapshotter extends EventEmitter {
               resolve(true);
               return;
             }
-          } catch {} finally {
-            try { fs.unlinkSync(tempPath); } catch {}
+          } catch {
+          } finally {
+            try {
+              fs.unlinkSync(tempPath);
+            } catch {}
           }
         }
-        try { fs.unlinkSync(tempPath); } catch {}
+        try {
+          fs.unlinkSync(tempPath);
+        } catch {}
         this.handleFailure();
         resolve(false);
       });
@@ -201,7 +209,9 @@ export class FrameSnapshotter extends EventEmitter {
         clearTimeout(killTimer);
         if (this.proc === proc) this.proc = null;
         this.inFlight = false;
-        try { fs.unlinkSync(tempPath); } catch {}
+        try {
+          fs.unlinkSync(tempPath);
+        } catch {}
         this.handleFailure();
         resolve(false);
       });
@@ -222,17 +232,23 @@ export class FrameSnapshotter extends EventEmitter {
       fs.writeFileSync(h265Path, annexb);
 
       const ok = await this.decodeH265ToJpeg(h265Path, jpgPath);
-      try { fs.unlinkSync(h265Path); } catch {}
+      try {
+        fs.unlinkSync(h265Path);
+      } catch {}
 
       if (!ok || !fs.existsSync(jpgPath)) {
-        try { fs.unlinkSync(jpgPath); } catch {}
+        try {
+          fs.unlinkSync(jpgPath);
+        } catch {}
         return false;
       }
 
       try {
         const buf = fs.readFileSync(jpgPath);
         if (buf.length < 1000) {
-          try { fs.unlinkSync(jpgPath); } catch {}
+          try {
+            fs.unlinkSync(jpgPath);
+          } catch {}
           return false;
         }
         // Atomically replace the served snapshot file
@@ -243,14 +259,19 @@ export class FrameSnapshotter extends EventEmitter {
         this.emit("frame", { slug: this.slug, did: this.did, buffer: buf });
         return true;
       } finally {
-        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+        try {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+        } catch {}
       }
     } catch {
       return false;
     }
   }
 
-  private decodeH265ToJpeg(h265Path: string, jpgPath: string): Promise<boolean> {
+  private decodeH265ToJpeg(
+    h265Path: string,
+    jpgPath: string,
+  ): Promise<boolean> {
     return new Promise((resolve) => {
       const args = [
         "-hide_banner",
@@ -276,7 +297,9 @@ export class FrameSnapshotter extends EventEmitter {
         return;
       }
       const killTimer = setTimeout(() => {
-        try { proc.kill("SIGKILL"); } catch {}
+        try {
+          proc.kill("SIGKILL");
+        } catch {}
       }, 8000);
       proc.on("exit", (code) => {
         clearTimeout(killTimer);

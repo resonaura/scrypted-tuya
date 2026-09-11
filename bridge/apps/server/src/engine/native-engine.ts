@@ -48,7 +48,11 @@ export class NativeMediaEngine extends EventEmitter {
 
   private pendingSnapshots: Map<
     string,
-    { resolve: (b64: string) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
+    {
+      resolve: (b64: string) => void;
+      reject: (e: Error) => void;
+      timer: NodeJS.Timeout;
+    }
   > = new Map();
   private talkbackPorts: Map<string, number> = new Map();
 
@@ -113,7 +117,9 @@ export class NativeMediaEngine extends EventEmitter {
         this.emit("error", err);
       });
 
-      console.log(`🚀 [NativeEngine] Spawned C++ native engine (tuya-streamer) from ${binPath}`);
+      console.log(
+        `🚀 [NativeEngine] Spawned C++ native engine (tuya-streamer) from ${binPath}`,
+      );
       return true;
     } catch (e) {
       console.error(`❌ [NativeEngine] Failed to spawn binary:`, e);
@@ -176,7 +182,9 @@ export class NativeMediaEngine extends EventEmitter {
       if (pending) {
         clearTimeout(pending.timer);
         this.pendingSnapshots.delete(msg.did);
-        pending.resolve(typeof msg.data_base64 === "string" ? msg.data_base64 : "");
+        pending.resolve(
+          typeof msg.data_base64 === "string" ? msg.data_base64 : "",
+        );
       }
     } else if (msg.event === "error") {
       const pending = this.pendingSnapshots.get(msg.did);
@@ -201,7 +209,8 @@ export class NativeMediaEngine extends EventEmitter {
         }
       });
     } catch (err: any) {
-      if (err?.code !== "EPIPE" && err?.code !== "ERR_STREAM_DESTROYED") throw err;
+      if (err?.code !== "EPIPE" && err?.code !== "ERR_STREAM_DESTROYED")
+        throw err;
     }
   }
 
@@ -328,11 +337,15 @@ export class NativeMediaEngine extends EventEmitter {
           stdin.end(`${JSON.stringify({ cmd: "exit" })}\n`);
         }
         const killTimer = setTimeout(() => {
-          try { proc.kill("SIGTERM"); } catch {}
+          try {
+            proc.kill("SIGTERM");
+          } catch {}
         }, 750);
         killTimer.unref();
       } catch {
-        try { proc.kill("SIGTERM"); } catch {}
+        try {
+          proc.kill("SIGTERM");
+        } catch {}
       }
     }
   }

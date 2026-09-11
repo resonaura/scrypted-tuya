@@ -44,13 +44,19 @@ export async function createCamera(data: Partial<Camera>): Promise<Camera> {
   return res.json();
 }
 
-export async function updateCamera(camera: Camera, patch: Partial<Camera>): Promise<Camera> {
+export async function updateCamera(
+  camera: Camera,
+  patch: Partial<Camera>,
+): Promise<Camera> {
   const targetId = camera.id || camera.did;
-  const res = await fetch(`${getApiBase()}/api/cameras/${encodeURIComponent(targetId)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  });
+  const res = await fetch(
+    `${getApiBase()}/api/cameras/${encodeURIComponent(targetId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    },
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.message || "Failed to update camera");
@@ -145,31 +151,56 @@ export interface SystemConfig {
 
 export async function fetchSystemConfig(): Promise<SystemConfig> {
   const res = await fetch(`${getApiBase()}/api/system/config`);
-  if (!res.ok) return { rtspBasePort: 8655, serverPort: 6766, webPort: 6767, core: "C++23 ZeroLatency", version: "1.0.0" };
+  if (!res.ok)
+    return {
+      rtspBasePort: 8655,
+      serverPort: 6766,
+      webPort: 6767,
+      core: "C++23 ZeroLatency",
+      version: "1.0.0",
+    };
   return res.json();
 }
 
-
-export async function createWebRtcViewer(did: string, offer: RTCSessionDescriptionInit): Promise<{ sessionId: string; answer: RTCSessionDescriptionInit }> {
-  const res = await fetch(`${getApiBase()}/api/streaming/${encodeURIComponent(did)}/webrtc`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(offer),
-  });
-  if (!res.ok) throw new Error((await res.json().catch(() => null))?.message || "Failed to create WebRTC viewer");
+export async function createWebRtcViewer(
+  did: string,
+  offer: RTCSessionDescriptionInit,
+): Promise<{ sessionId: string; answer: RTCSessionDescriptionInit }> {
+  const res = await fetch(
+    `${getApiBase()}/api/streaming/${encodeURIComponent(did)}/webrtc`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(offer),
+    },
+  );
+  if (!res.ok)
+    throw new Error(
+      (await res.json().catch(() => null))?.message ||
+        "Failed to create WebRTC viewer",
+    );
   return res.json();
 }
 
 export async function preheatWebRtc(did: string): Promise<void> {
-  await fetch(`${getApiBase()}/api/streaming/${encodeURIComponent(did)}/preheat`, {
-    method: "POST",
-    keepalive: true,
-  }).catch(() => {});
+  await fetch(
+    `${getApiBase()}/api/streaming/${encodeURIComponent(did)}/preheat`,
+    {
+      method: "POST",
+      keepalive: true,
+    },
+  ).catch(() => {});
 }
 
-export async function stopWebRtcViewer(did: string, sessionId: string): Promise<void> {
-  await fetch(`${getApiBase()}/api/streaming/${encodeURIComponent(did)}/webrtc/${encodeURIComponent(sessionId)}`, {
-    method: "DELETE",
-    keepalive: true,
-  }).catch(() => {});
+export async function stopWebRtcViewer(
+  did: string,
+  sessionId: string,
+): Promise<void> {
+  await fetch(
+    `${getApiBase()}/api/streaming/${encodeURIComponent(did)}/webrtc/${encodeURIComponent(sessionId)}`,
+    {
+      method: "DELETE",
+      keepalive: true,
+    },
+  ).catch(() => {});
 }

@@ -1,5 +1,28 @@
 # Tuya Camera Bridge — Changelog
 
+## 2.1.10
+
+- **Continuous RTSP Stream & Seamless Offline Fallback**:
+  - Implemented `switchToFallback` in `TranscoderService` ensuring the public RTSP relay (port 8655+) is pre-warmed and continuously streaming compliant H.264 Baseline + AAC audio packets 24/7.
+  - Downstream RTSP clients (Scrypted, HomeKit, VLC, WebRTC browser player) never encounter socket reset, `Connection refused`, or RTP silence timeout during camera re-connections, Tuya signaling delays, or transient stream drops.
+  - Offline video stream features Gaussian-blurred last-known live frame (`last_live.jpg`) or clean dark HUD overlay with live ticking clock (`%{pts:hms}`) and advancing RTP timestamps (1 fps).
+  - Seamlessly transitions back to live camera transcode upon WebRTC/P2P `session_started` event without closing or resetting the RTSP socket.
+- **Tuya Protect Session Resilience & Keep-Alive**:
+  - Added background keep-alive ping (every 20 minutes to `/api/common/user/info`) preventing idle session expiry on Tuya Protect web platform (`protect-*.ismartlife.me`).
+  - Added automatic debounced persistence of updated session cookies whenever Tuya returns `Set-Cookie` headers.
+  - Fixed HTTP 401/403 status handling in `postApi()`: immediately emits `session_expired`, clears stale credentials, and prevents watchdog infinite reconnection storms.
+  - Added `session_authenticated` event that automatically revives and connects all registered cameras immediately after QR scan or password login without server restart.
+  - Added exponential backoff (up to 120s) and skip-recovery guards when logged out for cameras without local credentials.
+- **Preserved Camera Configurations on Profile Logout**:
+  - `logoutProfile()` no longer deletes registered camera entities or destroys RTSP relays. Cameras transition gracefully to offline HUD status ("Logged Out · Login in Web UI") while maintaining open RTSP sockets and database state.
+- **RTP Fallback Muxer Fix**:
+  - Fixed FFmpeg `[rtp @ ...] Only one stream supported in the RTP muxer` / `Error initializing output stream 0:1` by explicitly mapping `-map 0:v:0` for video and `-map 1:a:0` for audio RTP destinations.
+- **Transcoder Failure Counter Reset**:
+  - Automatically reset `consecutiveFailures = 0` whenever active `frame=` progress is received, avoiding spurious fallback locks after regular 10-minute Tuya P2P session renegotiations.
+- **Frontend UI Polish**:
+  - Removed jarring `animate-bounce` bouncing animation from the QR code icon on expired camera cards in `CameraCard.tsx`.
+  - Replaced aggressive warning colors with clean, subtle neutral typography and status chips (`text-zinc-300`, neutral chip).
+
 ## 2.1.9
 
 - **Fix Keyframe Request Flood (RTCP Marker-Bit Filter)**:
@@ -10,8 +33,6 @@
 - **Session Expiry Guards**:
   - Added `isLoggedIn()` checks before attempting to start/recover camera streams to prevent connection attempts when the Tuya session is expired or logged out.
   - `CamerasService` now subscribes to `session_expired` events emitted by `TuyaProtectService` and calls `stopAllStreams()` to cleanly tear down active sessions.
-
-
 
 - **Periodic Audio Click Fix (RTCP Demuxing & Filtering)**:
   - Fixed recurring ~5-second audio pop/click caused by unhandled RTCP Sender Report (SR) control packets arriving on the camera WebRTC audio track without `RtcpReceivingSession` media handler.

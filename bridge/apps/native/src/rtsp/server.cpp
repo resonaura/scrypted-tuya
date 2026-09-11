@@ -15,15 +15,12 @@
 namespace tuya {
 
 static inline int64_t steady_now_ms() {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+        .count();
 }
 
-
-RTSPServer::RTSPServer(int port, const std::string& path, KeyframeCallback kf_cb, bool is_hevc,
-                       bool audio_is_aac)
-    : port_(port), path_(path), kf_req_cb_(std::move(kf_cb)), is_hevc_(is_hevc),
-      audio_is_aac_(audio_is_aac) {}
+RTSPServer::RTSPServer(int port, const std::string& path, KeyframeCallback kf_cb, bool is_hevc, bool audio_is_aac)
+    : port_(port), path_(path), kf_req_cb_(std::move(kf_cb)), is_hevc_(is_hevc), audio_is_aac_(audio_is_aac) {}
 
 RTSPServer::~RTSPServer() {
     stop();
@@ -52,7 +49,8 @@ void RTSPServer::rebuild_snapshot_annexb() {
 
     auto append_single_nal = [&](const std::vector<uint8_t>& pkt) {
         // pkt = [12B RTP header][2B NAL header + payload]
-        if (pkt.size() < 14) return;
+        if (pkt.size() < 14)
+            return;
         append_annexb_unit(annexb, pkt.data() + 12, pkt.size() - 12);
     };
 
@@ -67,19 +65,23 @@ void RTSPServer::rebuild_snapshot_annexb() {
     {
         std::lock_guard<std::mutex> lock(idr_cache_mutex_);
         for (const auto& pkt : idr_cache_pkts_) {
-            if (pkt.size() < 14) continue;
+            if (pkt.size() < 14)
+                continue;
             uint8_t h0 = pkt[12];
             uint8_t nal_type = (h0 >> 1) & 0x3F;
 
             if (nal_type == 32 || nal_type == 33 || nal_type == 34) {
-                if (nal_open) { nal_open = false; }
+                if (nal_open) {
+                    nal_open = false;
+                }
                 append_single_nal(pkt);
                 continue;
             }
 
             if ((h0 & 0xFE) == 0x62) {
                 // Fragmentation Unit
-                if (pkt.size() < 15) continue;
+                if (pkt.size() < 15)
+                    continue;
                 uint8_t fu = pkt[14];
                 bool start = (fu & 0x80) != 0;
                 bool end = (fu & 0x40) != 0;
@@ -103,7 +105,8 @@ void RTSPServer::rebuild_snapshot_annexb() {
                 }
             } else {
                 // Single NAL (unfragmented) — treat as Annex-B unit directly
-                if (nal_open) nal_open = false;
+                if (nal_open)
+                    nal_open = false;
                 const uint8_t* unit = pkt.data() + 12;
                 size_t unit_len = pkt.size() - 12;
                 // Unit may be [2B NAL header + payload]
@@ -154,7 +157,8 @@ bool RTSPServer::start() {
 
 static int bind_udp_ingest_socket(int port) {
     const int fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd < 0) return -1;
+    if (fd < 0)
+        return -1;
 
     int opt = 1;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
@@ -170,11 +174,13 @@ static int bind_udp_ingest_socket(int port) {
 }
 
 bool RTSPServer::start_udp_ingest(int video_port, int audio_port) {
-    if (!running_ || (udp_fd_ >= 0 && audio_udp_fd_ >= 0)) return false;
+    if (!running_ || (udp_fd_ >= 0 && audio_udp_fd_ >= 0))
+        return false;
 
     if (video_port > 0 && udp_fd_ < 0) {
         udp_fd_ = bind_udp_ingest_socket(video_port);
-        if (udp_fd_ < 0) return false;
+        if (udp_fd_ < 0)
+            return false;
         udp_thread_ = std::thread(&RTSPServer::udp_ingest_loop, this, udp_fd_, true);
     }
 
@@ -193,7 +199,8 @@ void RTSPServer::udp_ingest_loop(int socket_fd, bool is_video) {
     while (running_) {
         const ssize_t len = recv(socket_fd, packet.data(), packet.size(), 0);
         if (len <= 0) {
-            if (running_) usleep(1000);
+            if (running_)
+                usleep(1000);
             continue;
         }
         feed_raw_rtp(packet.data(), static_cast<size_t>(len), is_video);
@@ -203,14 +210,16 @@ void RTSPServer::udp_ingest_loop(int socket_fd, bool is_video) {
 void RTSPServer::notify_video_discontinuity() {
     {
         std::lock_guard<std::mutex> lock(clients_mutex_);
-        for (auto& entry : clients_) entry.second.wait_idr = true;
+        for (auto& entry : clients_)
+            entry.second.wait_idr = true;
     }
     {
         std::lock_guard<std::mutex> lock(idr_cache_mutex_);
         current_idr_pkts_.clear();
         collecting_idr_ = false;
     }
-    if (kf_req_cb_) kf_req_cb_();
+    if (kf_req_cb_)
+        kf_req_cb_();
 }
 
 void RTSPServer::stop() {
@@ -232,16 +241,22 @@ void RTSPServer::stop() {
     }
     {
         std::lock_guard<std::mutex> lock(clients_mutex_);
-        for (auto& [fd, session] : clients_) shutdown(fd, SHUT_RDWR);
+        for (auto& [fd, session] : clients_)
+            shutdown(fd, SHUT_RDWR);
     }
-    if (accept_thread_.joinable()) accept_thread_.join();
-    if (udp_thread_.joinable()) udp_thread_.join();
-    if (audio_udp_thread_.joinable()) audio_udp_thread_.join();
-    if (silence_thread_.joinable()) silence_thread_.join();
+    if (accept_thread_.joinable())
+        accept_thread_.join();
+    if (udp_thread_.joinable())
+        udp_thread_.join();
+    if (audio_udp_thread_.joinable())
+        audio_udp_thread_.join();
+    if (silence_thread_.joinable())
+        silence_thread_.join();
     {
         std::lock_guard<std::mutex> lock(client_threads_mutex_);
         for (auto& thread : client_threads_) {
-            if (thread.joinable()) thread.join();
+            if (thread.joinable())
+                thread.join();
         }
         client_threads_.clear();
     }
@@ -319,8 +334,10 @@ static std::string base64_encode(const uint8_t* data, size_t len) {
             valb -= 6;
         }
     }
-    if (valb > -6) ret.push_back(tbl[((val << 8) >> (valb + 8)) & 0x3F]);
-    while (ret.size() % 4) ret.push_back('=');
+    if (valb > -6)
+        ret.push_back(tbl[((val << 8) >> (valb + 8)) & 0x3F]);
+    while (ret.size() % 4)
+        ret.push_back('=');
     return ret;
 }
 
@@ -366,7 +383,8 @@ void RTSPServer::handle_rtsp_request(int client_fd, const std::string& req, RTSP
                 std::string b64_vps = base64_encode(vps_pkt_.data() + 12, vps_pkt_.size() - 12);
                 std::string b64_sps = base64_encode(sps_pkt_.data() + 12, sps_pkt_.size() - 12);
                 std::string b64_pps = base64_encode(pps_pkt_.data() + 12, pps_pkt_.size() - 12);
-                sdp << "a=fmtp:96 sprop-vps=" << b64_vps << ";sprop-sps=" << b64_sps << ";sprop-pps=" << b64_pps << "\r\n";
+                sdp << "a=fmtp:96 sprop-vps=" << b64_vps << ";sprop-sps=" << b64_sps << ";sprop-pps=" << b64_pps
+                    << "\r\n";
             }
         } else {
             sdp << "a=rtpmap:96 H264/90000\r\n"
@@ -376,7 +394,9 @@ void RTSPServer::handle_rtsp_request(int client_fd, const std::string& req, RTSP
         if (audio_is_aac_) {
             sdp << "m=audio 0 RTP/AVP 97\r\n"
                 << "a=rtpmap:97 MPEG4-GENERIC/16000/1\r\n"
-                << "a=fmtp:97 profile-level-id=1;mode=AAC-hbr;sizelength=13;indexlength=3;indexdeltalength=3;config=140856E500\r\n"
+                << "a=fmtp:97 "
+                   "profile-level-id=1;mode=AAC-hbr;sizelength=13;indexlength=3;indexdeltalength=3;config="
+                   "140856E500\r\n"
                 << "a=control:track1\r\n";
         } else {
             sdp << "m=audio 0 RTP/AVP 0\r\n"
@@ -395,7 +415,8 @@ void RTSPServer::handle_rtsp_request(int client_fd, const std::string& req, RTSP
         std::string transport = "";
         bool is_tcp = false;
         size_t tr_pos = req.find("Transport:");
-        if (tr_pos == std::string::npos) tr_pos = req.find("transport:");
+        if (tr_pos == std::string::npos)
+            tr_pos = req.find("transport:");
         if (tr_pos != std::string::npos) {
             size_t eol = req.find("\r\n", tr_pos);
             std::string tr_line = req.substr(tr_pos, eol - tr_pos);
@@ -438,7 +459,7 @@ void RTSPServer::handle_rtsp_request(int client_fd, const std::string& req, RTSP
              << "Transport: " << transport << "\r\n\r\n";
     } else if (method == "PLAY") {
         session.is_playing = true;
-        session.wait_idr = true; // Wait for clean keyframe start so zero image artifacts
+        session.wait_idr = true;  // Wait for clean keyframe start so zero image artifacts
         session.out_video_seq = 0;
         session.out_audio_seq = 0;
         session.play_started = true;
@@ -483,7 +504,8 @@ void RTSPServer::handle_rtsp_request(int client_fd, const std::string& req, RTSP
         }
 
         // Also ask for a fresh keyframe so the cached GOP is replaced immediately.
-        if (kf_req_cb_) kf_req_cb_();
+        if (kf_req_cb_)
+            kf_req_cb_();
         return;
     } else if (method == "TEARDOWN") {
         session.is_playing = false;
@@ -496,34 +518,30 @@ void RTSPServer::handle_rtsp_request(int client_fd, const std::string& req, RTSP
 }
 
 void RTSPServer::send_interleaved_packet(int fd, uint8_t channel, const uint8_t* rtp_data, size_t len) {
-    if (fd < 0 || !rtp_data || len == 0) return;
-    const uint8_t header[4] = {
-        '$',
-        channel,
-        static_cast<uint8_t>((len >> 8) & 0xFF),
-        static_cast<uint8_t>(len & 0xFF)
-    };
+    if (fd < 0 || !rtp_data || len == 0)
+        return;
+    const uint8_t header[4] = {'$', channel, static_cast<uint8_t>((len >> 8) & 0xFF), static_cast<uint8_t>(len & 0xFF)};
     struct iovec iov[2];
     iov[0].iov_base = const_cast<uint8_t*>(header);
     iov[0].iov_len = 4;
     iov[1].iov_base = const_cast<uint8_t*>(rtp_data);
     iov[1].iov_len = len;
 
-    struct msghdr msg{};
+    struct msghdr msg {};
     msg.msg_iov = iov;
     msg.msg_iovlen = 2;
     sendmsg(fd, &msg, MSG_NOSIGNAL);
 }
 
-void RTSPServer::send_client_rtp_packet(int fd, RTSPClientSession& session, bool is_video, const uint8_t* data, size_t len) {
-    if (fd < 0 || !data || len < 12) return;
+void RTSPServer::send_client_rtp_packet(int fd, RTSPClientSession& session, bool is_video, const uint8_t* data,
+                                        size_t len) {
+    if (fd < 0 || !data || len < 12)
+        return;
 
     uint8_t channel = is_video ? session.video_rtp_channel : session.audio_rtp_channel;
 
-    uint32_t in_ts = (static_cast<uint32_t>(data[4]) << 24) |
-                     (static_cast<uint32_t>(data[5]) << 16) |
-                     (static_cast<uint32_t>(data[6]) << 8)  |
-                      static_cast<uint32_t>(data[7]);
+    uint32_t in_ts = (static_cast<uint32_t>(data[4]) << 24) | (static_cast<uint32_t>(data[5]) << 16) |
+                     (static_cast<uint32_t>(data[6]) << 8) | static_cast<uint32_t>(data[7]);
 
     const auto now = std::chrono::steady_clock::now();
     if (!session.play_started) {
@@ -532,7 +550,8 @@ void RTSPServer::send_client_rtp_packet(int fd, RTSPClientSession& session, bool
     }
 
     int64_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - session.play_start_time).count();
-    if (elapsed_ms < 0) elapsed_ms = 0;
+    if (elapsed_ms < 0)
+        elapsed_ms = 0;
 
     uint16_t out_seq = 0;
     uint32_t out_ts = 0;
@@ -751,7 +770,8 @@ static inline uint8_t linear_to_mulaw(int16_t pcm_val) {
     int16_t seg;
     uint8_t uval;
 
-    if (pcm_val == -32768) pcm_val = -32767;
+    if (pcm_val == -32768)
+        pcm_val = -32767;
     if (pcm_val < 0) {
         pcm_val = -pcm_val;
         mask = 0x7F;
@@ -759,24 +779,34 @@ static inline uint8_t linear_to_mulaw(int16_t pcm_val) {
         mask = 0xFF;
     }
 
-    if (pcm_val > 32635) pcm_val = 32635;
+    if (pcm_val > 32635)
+        pcm_val = 32635;
     pcm_val += 0x84;
 
-    if (pcm_val >= (0x4000)) seg = 7;
-    else if (pcm_val >= (0x2000)) seg = 6;
-    else if (pcm_val >= (0x1000)) seg = 5;
-    else if (pcm_val >= (0x0800)) seg = 4;
-    else if (pcm_val >= (0x0400)) seg = 3;
-    else if (pcm_val >= (0x0200)) seg = 2;
-    else if (pcm_val >= (0x0100)) seg = 1;
-    else seg = 0;
+    if (pcm_val >= (0x4000))
+        seg = 7;
+    else if (pcm_val >= (0x2000))
+        seg = 6;
+    else if (pcm_val >= (0x1000))
+        seg = 5;
+    else if (pcm_val >= (0x0800))
+        seg = 4;
+    else if (pcm_val >= (0x0400))
+        seg = 3;
+    else if (pcm_val >= (0x0200))
+        seg = 2;
+    else if (pcm_val >= (0x0100))
+        seg = 1;
+    else
+        seg = 0;
 
     uval = static_cast<uint8_t>((seg << 4) | ((pcm_val >> (seg + 3)) & 0x0F));
     return (uval ^ mask);
 }
 
 void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
-    if (!data || len < 12) return;
+    if (!data || len < 12)
+        return;
 
     if (!is_video) {
         if (!audio_is_aac_ && len > 12) {
@@ -797,8 +827,8 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
                 const size_t num_samples = payload_len / 2;
                 std::vector<uint8_t> pcmu_rtp(12 + num_samples);
                 std::memcpy(pcmu_rtp.data(), data, 12);
-                pcmu_rtp[0] = 0x80; // Standard RTP v2 header without extensions/CSRC in outbound RTSP
-                pcmu_rtp[1] = (data[1] & 0x80) | 0x00; // PT=0 (PCMU)
+                pcmu_rtp[0] = 0x80;  // Standard RTP v2 header without extensions/CSRC in outbound RTSP
+                pcmu_rtp[1] = (data[1] & 0x80) | 0x00;  // PT=0 (PCMU)
 
                 const uint8_t* pcm_bytes = data + header_len;
                 for (size_t i = 0; i < num_samples; ++i) {
@@ -809,7 +839,8 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
                 last_audio_feed_ms_.store(steady_now_ms(), std::memory_order_relaxed);
                 std::lock_guard<std::mutex> lock(clients_mutex_);
                 for (auto& [fd, session] : clients_) {
-                    if (!session.is_playing) continue;
+                    if (!session.is_playing)
+                        continue;
                     send_client_rtp_packet(fd, session, false, pcmu_rtp.data(), pcmu_rtp.size());
                 }
             }
@@ -819,7 +850,8 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
         last_audio_feed_ms_.store(steady_now_ms(), std::memory_order_relaxed);
         std::lock_guard<std::mutex> lock(clients_mutex_);
         for (auto& [fd, session] : clients_) {
-            if (!session.is_playing) continue;
+            if (!session.is_playing)
+                continue;
             send_client_rtp_packet(fd, session, false, data, len);
         }
         return;
@@ -840,7 +872,8 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
             while (offset + 2 <= len) {
                 const size_t nalu_len = (static_cast<size_t>(data[offset]) << 8) | data[offset + 1];
                 offset += 2;
-                if (nalu_len == 0 || offset + nalu_len > len) break;
+                if (nalu_len == 0 || offset + nalu_len > len)
+                    break;
                 const uint8_t stap_type = data[offset] & 0x1F;
                 is_sps = is_sps || stap_type == 7;
                 is_pps = is_pps || stap_type == 8;
@@ -855,16 +888,21 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
 
         {
             std::lock_guard<std::mutex> lock(param_mutex_);
-            if (is_sps) sps_pkt_.assign(data, data + len);
-            if (is_pps && !is_sps) pps_pkt_.assign(data, data + len);
-            if (is_sps && is_pps) pps_pkt_.clear();
+            if (is_sps)
+                sps_pkt_.assign(data, data + len);
+            if (is_pps && !is_sps)
+                pps_pkt_.assign(data, data + len);
+            if (is_sps && is_pps)
+                pps_pkt_.clear();
         }
         if (is_idr_start) {
             collecting_idr_ = true;
             current_idr_pkts_.clear();
             std::lock_guard<std::mutex> lock(param_mutex_);
-            if (!sps_pkt_.empty()) current_idr_pkts_.push_back(sps_pkt_);
-            if (!pps_pkt_.empty()) current_idr_pkts_.push_back(pps_pkt_);
+            if (!sps_pkt_.empty())
+                current_idr_pkts_.push_back(sps_pkt_);
+            if (!pps_pkt_.empty())
+                current_idr_pkts_.push_back(pps_pkt_);
         }
         if (collecting_idr_ && is_idr_packet) {
             current_idr_pkts_.emplace_back(data, data + len);
@@ -877,11 +915,13 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
 
         std::lock_guard<std::mutex> lock(clients_mutex_);
         for (auto& [fd, session] : clients_) {
-            if (!session.is_playing) continue;
+            if (!session.is_playing)
+                continue;
             if (session.wait_idr) {
                 if (is_parameter_packet || is_idr_packet) {
                     send_client_rtp_packet(fd, session, true, data, len);
-                    if (is_idr_end) session.wait_idr = false;
+                    if (is_idr_end)
+                        session.wait_idr = false;
                 }
                 continue;
             }
@@ -929,8 +969,8 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
             // Copy 12-byte RTP header
             std::memcpy(rtp_out.data(), data, 12);
             // Standard RFC 7798 HEVC FU Header
-            rtp_out[12] = 0x62; // FU type 49, LayerId high = 0
-            rtp_out[13] = 0x01; // LayerId low = 0, TID = 1
+            rtp_out[12] = 0x62;  // FU type 49, LayerId high = 0
+            rtp_out[13] = 0x01;  // LayerId low = 0, TID = 1
             rtp_out[14] = (start_bit ? 0x80 : 0x00) | (end_bit ? 0x40 : 0x00) | (real_nal & 0x3F);
             std::memcpy(rtp_out.data() + 15, data + payload_offset, payload_len);
         }
@@ -948,7 +988,8 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
         rtp_out.assign(data, data + len);
     }
 
-    if (rtp_out.empty()) return;
+    if (rtp_out.empty())
+        return;
 
     bool is_param_set = (nal_type == 32 || nal_type == 33 || nal_type == 34);
     bool is_idr_frag = (nal_type == 30);
@@ -957,26 +998,31 @@ void RTSPServer::feed_raw_rtp(const uint8_t* data, size_t len, bool is_video) {
 
     if (!collecting_idr_ && (is_idr_start || is_idr_end)) {
         // Either the IDR just finished (already cached) or we are mid-GOP; refresh snapshot
-        if (is_idr_end) rebuild_snapshot_annexb();
+        if (is_idr_end)
+            rebuild_snapshot_annexb();
     }
 
     std::lock_guard<std::mutex> lock(clients_mutex_);
     for (auto& [fd, session] : clients_) {
-        if (!session.is_playing) continue;
+        if (!session.is_playing)
+            continue;
 
         if (session.wait_idr) {
             if (is_idr_start) {
                 // Send cached parameter sets (VPS, SPS, PPS) right before IDR so decoder is immediately primed
                 std::lock_guard<std::mutex> plock(param_mutex_);
-                if (!vps_pkt_.empty()) send_client_rtp_packet(fd, session, true, vps_pkt_.data(), vps_pkt_.size());
-                if (!sps_pkt_.empty()) send_client_rtp_packet(fd, session, true, sps_pkt_.data(), sps_pkt_.size());
-                if (!pps_pkt_.empty()) send_client_rtp_packet(fd, session, true, pps_pkt_.data(), pps_pkt_.size());
+                if (!vps_pkt_.empty())
+                    send_client_rtp_packet(fd, session, true, vps_pkt_.data(), vps_pkt_.size());
+                if (!sps_pkt_.empty())
+                    send_client_rtp_packet(fd, session, true, sps_pkt_.data(), sps_pkt_.size());
+                if (!pps_pkt_.empty())
+                    send_client_rtp_packet(fd, session, true, pps_pkt_.data(), pps_pkt_.size());
             }
 
             if (is_param_set || is_idr_frag) {
                 send_client_rtp_packet(fd, session, true, rtp_out.data(), rtp_out.size());
                 if (is_idr_end) {
-                    session.wait_idr = false; // Successfully synchronized on a clean keyframe!
+                    session.wait_idr = false;  // Successfully synchronized on a clean keyframe!
                 }
             }
             // Do not forward P-slices to clients waiting for an IDR
@@ -1002,17 +1048,20 @@ void RTSPServer::silence_loop() {
     static constexpr size_t kPktSize = 12 + kSilenceSamples;
     std::array<uint8_t, kPktSize> pkt{};
     // RTP fixed header fields that never change
-    pkt[0] = 0x80;           // V=2, no padding, no ext, CC=0
-    pkt[1] = 0x80 | 0x00;   // Marker=1, PT=0 (PCMU)
+    pkt[0] = 0x80;         // V=2, no padding, no ext, CC=0
+    pkt[1] = 0x80 | 0x00;  // Marker=1, PT=0 (PCMU)
     // SSRC – use the audio SSRC constant
-    pkt[8]  = 0x98; pkt[9]  = 0x76;
-    pkt[10] = 0x54; pkt[11] = 0x32;
+    pkt[8] = 0x98;
+    pkt[9] = 0x76;
+    pkt[10] = 0x54;
+    pkt[11] = 0x32;
     std::fill(pkt.begin() + 12, pkt.end(), kPcmuSilenceByte);
 
     while (running_) {
         // Sleep 20 ms (one PCMU frame interval)
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        if (!running_) break;
+        if (!running_)
+            break;
 
         // Skip silence injection while real audio is flowing
         const int64_t now = steady_now_ms();
@@ -1030,7 +1079,8 @@ void RTSPServer::silence_loop() {
         }
 
         for (auto& [fd, session] : clients_) {
-            if (!session.is_playing || session.has_audio_base_ts) continue;
+            if (!session.is_playing || session.has_audio_base_ts)
+                continue;
 
             const uint16_t out_seq = session.out_audio_seq++;
             session.last_audio_out_ts += static_cast<uint32_t>(kSilenceSamples);
@@ -1039,11 +1089,11 @@ void RTSPServer::silence_loop() {
             // Build RTP packet per client sharing session's unified monotonic seq & ts
             std::array<uint8_t, kPktSize> cpkt = pkt;
             cpkt[2] = (out_seq >> 8) & 0xFF;
-            cpkt[3] =  out_seq       & 0xFF;
+            cpkt[3] = out_seq & 0xFF;
             cpkt[4] = (out_ts >> 24) & 0xFF;
             cpkt[5] = (out_ts >> 16) & 0xFF;
-            cpkt[6] = (out_ts >>  8) & 0xFF;
-            cpkt[7] =  out_ts        & 0xFF;
+            cpkt[6] = (out_ts >> 8) & 0xFF;
+            cpkt[7] = out_ts & 0xFF;
 
             send_interleaved_packet(fd, session.audio_rtp_channel, cpkt.data(), cpkt.size());
         }

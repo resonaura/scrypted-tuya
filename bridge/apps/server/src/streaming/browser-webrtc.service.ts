@@ -25,12 +25,18 @@ export class BrowserWebRtcService implements OnModuleDestroy {
   private generation = 0;
 
   constructor() {
-    this.engine.on("viewer_state", (viewerId: string, _did: string, state: string) => {
-      if (state === "closed") this.stop(viewerId);
-    });
+    this.engine.on(
+      "viewer_state",
+      (viewerId: string, _did: string, state: string) => {
+        if (state === "closed") this.stop(viewerId);
+      },
+    );
   }
 
-  async create(did: string, browserOffer: string): Promise<{ sessionId: string; answer: RTCSessionDescriptionInit }> {
+  async create(
+    did: string,
+    browserOffer: string,
+  ): Promise<{ sessionId: string; answer: RTCSessionDescriptionInit }> {
     const cam = await CameraEntity.findOne({ where: [{ id: did }, { did }] });
     if (!cam) throw new Error("Camera not found");
 
@@ -39,9 +45,20 @@ export class BrowserWebRtcService implements OnModuleDestroy {
     const rtspUrl = `rtsp://127.0.0.1:${cam.rtspPort || env.RTSP_BASE_PORT}/${cam.rtspPath || `live/${cam.did}`}`;
     const cleanupTimer = setTimeout(() => this.stop(id), 10 * 60_000);
     cleanupTimer.unref();
-    this.sessions.set(id, { id, did: cam.did, rtspUrl, createdAt: Date.now(), cleanupTimer, generation });
+    this.sessions.set(id, {
+      id,
+      did: cam.did,
+      rtspUrl,
+      createdAt: Date.now(),
+      cleanupTimer,
+      generation,
+    });
 
-    const offer = await new Promise<{ sdp: string; rtpPort: number; audioRtpPort: number }>((resolve, reject) => {
+    const offer = await new Promise<{
+      sdp: string;
+      rtpPort: number;
+      audioRtpPort: number;
+    }>((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
         reject(new Error("Timed out waiting for native WebRTC answer"));
@@ -64,7 +81,9 @@ export class BrowserWebRtcService implements OnModuleDestroy {
         this.engine.off("viewer_offer", onOffer);
       };
       this.engine.on("viewer_offer", onOffer);
-      this.logger.log(`[BrowserWebRtcService] Requesting native viewer for ${cam.did}, id=${id}`);
+      this.logger.log(
+        `[BrowserWebRtcService] Requesting native viewer for ${cam.did}, id=${id}`,
+      );
       this.engine.requestKeyframe(cam.did);
       this.engine.startViewer(id, cam.did, browserOffer);
     }).catch((error) => {
@@ -73,7 +92,8 @@ export class BrowserWebRtcService implements OnModuleDestroy {
     });
 
     const session = this.sessions.get(id);
-    if (!session || session.generation !== generation) throw new Error("Viewer session was cancelled");
+    if (!session || session.generation !== generation)
+      throw new Error("Viewer session was cancelled");
     session.rtpPort = offer.rtpPort;
     session.audioRtpPort = offer.audioRtpPort;
     this.startFfmpeg(session);
@@ -95,10 +115,14 @@ export class BrowserWebRtcService implements OnModuleDestroy {
     clearTimeout(session.cleanupTimer);
     if (session.ffmpeg) {
       session.ffmpeg.removeAllListeners();
-      try { session.ffmpeg.kill("SIGTERM"); } catch {}
+      try {
+        session.ffmpeg.kill("SIGTERM");
+      } catch {}
       const proc = session.ffmpeg;
       const killTimer = setTimeout(() => {
-        try { proc.kill("SIGKILL"); } catch {}
+        try {
+          proc.kill("SIGKILL");
+        } catch {}
       }, 1500);
       killTimer.unref();
     }
@@ -112,39 +136,63 @@ export class BrowserWebRtcService implements OnModuleDestroy {
 
   private startFfmpeg(session: ViewerSession): void {
     const args = [
-      "-hide_banner", "-loglevel", "warning",
-      "-rtsp_transport", "tcp",
-      "-fflags", "nobuffer+discardcorrupt+fastseek",
-      "-flags", "low_delay",
-      "-max_delay", "0",
-      "-analyzeduration", "500000",
-      "-probesize", "500000",
-      "-i", session.rtspUrl,
-      "-map", "0:v:0",
-      "-c:v", "copy",
-      "-bsf:v", "dump_extra=freq=keyframe",
-      "-f", "rtp",
-      "-payload_type", "96",
+      "-hide_banner",
+      "-loglevel",
+      "warning",
+      "-rtsp_transport",
+      "tcp",
+      "-fflags",
+      "nobuffer+discardcorrupt+fastseek",
+      "-flags",
+      "low_delay",
+      "-max_delay",
+      "0",
+      "-analyzeduration",
+      "500000",
+      "-probesize",
+      "500000",
+      "-i",
+      session.rtspUrl,
+      "-map",
+      "0:v:0",
+      "-c:v",
+      "copy",
+      "-bsf:v",
+      "dump_extra=freq=keyframe",
+      "-f",
+      "rtp",
+      "-payload_type",
+      "96",
       `rtp://127.0.0.1:${session.rtpPort}?pkt_size=1200`,
     ];
 
     if (session.audioRtpPort) {
       args.push(
-        "-map", "0:a:0?",
-        "-c:a", "libopus",
-        "-ar", "48000",
-        "-ac", "1",
-        "-b:a", "48k",
-        "-application", "lowdelay",
-        "-f", "rtp",
-        "-payload_type", "111",
+        "-map",
+        "0:a:0?",
+        "-c:a",
+        "libopus",
+        "-ar",
+        "48000",
+        "-ac",
+        "1",
+        "-b:a",
+        "48k",
+        "-application",
+        "lowdelay",
+        "-f",
+        "rtp",
+        "-payload_type",
+        "111",
         `rtp://127.0.0.1:${session.audioRtpPort}?pkt_size=1200`,
       );
     } else {
       args.push("-an");
     }
 
-    this.logger.log(`Spawning browser transcoder for ${session.did} (rtp=${session.rtpPort}, audioRtp=${session.audioRtpPort}, url=${session.rtspUrl})`);
+    this.logger.log(
+      `Spawning browser transcoder for ${session.did} (rtp=${session.rtpPort}, audioRtp=${session.audioRtpPort}, url=${session.rtspUrl})`,
+    );
     const proc = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
     session.ffmpeg = proc;
     let lastError = "";
@@ -157,15 +205,23 @@ export class BrowserWebRtcService implements OnModuleDestroy {
       }
     });
     proc.once("error", (error) => {
-      if (this.sessions.get(session.id)?.generation !== session.generation) return;
-      this.logger.warn(`Browser transcoder failed for ${session.did}: ${error.message}`);
+      if (this.sessions.get(session.id)?.generation !== session.generation)
+        return;
+      this.logger.warn(
+        `Browser transcoder failed for ${session.did}: ${error.message}`,
+      );
       this.stop(session.id);
     });
     proc.once("exit", (code, signal) => {
-      this.logger.log(`Browser transcoder exited for ${session.did} (code=${code}, signal=${signal})`);
-      if (this.sessions.get(session.id)?.generation !== session.generation) return;
+      this.logger.log(
+        `Browser transcoder exited for ${session.did} (code=${code}, signal=${signal})`,
+      );
+      if (this.sessions.get(session.id)?.generation !== session.generation)
+        return;
       if (code !== 0 && signal !== "SIGTERM") {
-        this.logger.warn(`Browser transcoder error for ${session.did}: ${lastError}`);
+        this.logger.warn(
+          `Browser transcoder error for ${session.did}: ${lastError}`,
+        );
       }
       this.stop(session.id);
     });

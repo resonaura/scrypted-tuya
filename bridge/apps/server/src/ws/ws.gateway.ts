@@ -222,9 +222,7 @@ export class AppWebSocketGateway
 
     while (session.pcmRemainder.length >= TALKBACK_S16_BYTES) {
       const s16 = session.pcmRemainder.subarray(0, TALKBACK_S16_BYTES);
-      session.pcmRemainder = session.pcmRemainder.subarray(
-        TALKBACK_S16_BYTES,
-      );
+      session.pcmRemainder = session.pcmRemainder.subarray(TALKBACK_S16_BYTES);
 
       if (!this.talkback.shouldSend(session.did, "web")) continue;
 

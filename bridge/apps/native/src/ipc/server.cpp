@@ -177,7 +177,8 @@ void IpcServer::handle_command(const std::string& line) {
         std::lock_guard<std::mutex> lock(sessions_mutex_);
         relays_.erase(cmd_dto.did);
     } else if (cmd == "start_viewer") {
-        std::cout << "[IPC] Received start_viewer for did=" << cmd_dto.did << " viewer_id=" << cmd_dto.viewer_id << " sdp_len=" << cmd_dto.sdp.size() << std::endl;
+        std::cout << "[IPC] Received start_viewer for did=" << cmd_dto.did << " viewer_id=" << cmd_dto.viewer_id
+                  << " sdp_len=" << cmd_dto.sdp.size() << std::endl;
         if (cmd_dto.viewer_id.empty() || cmd_dto.did.empty() || cmd_dto.sdp.empty()) {
             std::cout << "[IPC] Missing viewer_id, did, or sdp!" << std::endl;
             send_event(to_json(EventError{.did = cmd_dto.did, .message = "Missing viewer_id, did, or browser offer"}));
@@ -195,10 +196,7 @@ void IpcServer::handle_command(const std::string& line) {
             ice_servers.push_back(srv);
         }
         auto viewer = std::make_unique<BrowserPeer>(
-            cmd_dto.viewer_id,
-            cmd_dto.did,
-            [this](const std::string& evt) { send_event(evt); },
-            ice_servers);
+            cmd_dto.viewer_id, cmd_dto.did, [this](const std::string& evt) { send_event(evt); }, ice_servers);
         if (!viewer->start(cmd_dto.sdp)) {
             send_event(to_json(EventError{.did = cmd_dto.did, .message = "Failed to start browser WebRTC viewer"}));
             return;

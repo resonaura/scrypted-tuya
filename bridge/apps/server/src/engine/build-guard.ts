@@ -71,11 +71,16 @@ export function ensureNativeBinary(): string {
 
   if (!fs.existsSync(binPath) && fs.existsSync(nativeDir)) {
     try {
-      console.log(`🔨 [NativeEngine] Building C++ native engine (tuya-streamer)...`);
+      console.log(
+        `🔨 [NativeEngine] Building C++ native engine (tuya-streamer)...`,
+      );
       fs.mkdirSync(buildDir, { recursive: true });
-      execSync(`cmake -B "${buildDir}" "${nativeDir}" && cmake --build "${buildDir}" -j`, {
-        stdio: "inherit",
-      });
+      execSync(
+        `cmake -B "${buildDir}" "${nativeDir}" && cmake --build "${buildDir}" -j`,
+        {
+          stdio: "inherit",
+        },
+      );
       console.log(`✅ [NativeEngine] tuya-streamer ready -> ${binPath}`);
     } catch (e: any) {
       console.error("❌ [NativeEngine] C++ build failed:", e.message);

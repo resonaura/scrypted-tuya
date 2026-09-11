@@ -55,9 +55,7 @@ export const TOGGLE_BLINK_ACCENT = "rs-toggle-blink-accent";
  * through here rather than at four separate call sites.
  */
 export type ClassNameProp<RenderProps> =
-  | string
-  | ((renderProps: RenderProps) => string)
-  | undefined;
+  string | ((renderProps: RenderProps) => string) | undefined;
 
 function join(a: string | undefined, b: string | undefined): string {
   return a && b ? `${a} ${b}` : (a ?? b ?? "");

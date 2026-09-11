@@ -18,7 +18,9 @@ import type { FastifyReply } from "fastify";
 
 @Controller("api/cameras")
 export class CamerasController {
-  constructor(@Inject(CamerasService) private readonly camerasService: CamerasService) {}
+  constructor(
+    @Inject(CamerasService) private readonly camerasService: CamerasService,
+  ) {}
 
   @Get()
   async getAll() {
@@ -91,8 +93,8 @@ export class CamerasController {
     res.raw.writeHead(200, {
       "Content-Type": "multipart/x-mixed-replace; boundary=--frame",
       "Cache-Control": "no-cache, no-store, must-revalidate",
-      "Pragma": "no-cache",
-      "Connection": "close",
+      Pragma: "no-cache",
+      Connection: "close",
     });
 
     let active = true;
@@ -101,7 +103,9 @@ export class CamerasController {
       try {
         const { buffer } = await this.camerasService.getSnapshot(id);
         if (active && buffer && buffer.length > 0) {
-          res.raw.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${buffer.length}\r\n\r\n`);
+          res.raw.write(
+            `--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${buffer.length}\r\n\r\n`,
+          );
           res.raw.write(buffer);
           res.raw.write("\r\n");
         }

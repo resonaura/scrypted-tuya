@@ -2,7 +2,10 @@ import { Injectable, Logger, Inject, forwardRef } from "@nestjs/common";
 import mqtt, { MqttClient } from "mqtt";
 import * as crypto from "node:crypto";
 import { TuyaProtectService } from "./tuya-protect.service.js";
-import { NativeMediaEngine, type IceServerConfig } from "../engine/native-engine.js";
+import {
+  NativeMediaEngine,
+  type IceServerConfig,
+} from "../engine/native-engine.js";
 
 interface SessionMeta {
   client: MqttClient;
@@ -36,9 +39,12 @@ export class TuyaMqttService {
     engine.on("webrtc_connected", (did: string) => {
       this.handleWebRTCConnected(did);
     });
-    engine.on("ice_candidate", (did: string, candidate: string, mid: string) => {
-      this.handleLocalCandidate(did, candidate, mid);
-    });
+    engine.on(
+      "ice_candidate",
+      (did: string, candidate: string, mid: string) => {
+        this.handleLocalCandidate(did, candidate, mid);
+      },
+    );
   }
 
   public async startCameraSession(
@@ -97,7 +103,9 @@ export class TuyaMqttService {
       }
 
       const mqttUrl = `wss://${username}:${password}@m1.tuyaus.com:443/mqtt`;
-      this.logger.log(`Connecting to Tuya MQTT signaling: ${userInTopic} -> ${deviceOutTopic}`);
+      this.logger.log(
+        `Connecting to Tuya MQTT signaling: ${userInTopic} -> ${deviceOutTopic}`,
+      );
 
       const client = mqtt.connect(mqttUrl, {
         username,
@@ -127,13 +135,20 @@ export class TuyaMqttService {
 
       client.on("connect", () => {
         const uid = this.tuyaProtect.getState().user?.uid;
-        const topics = uid && uid !== msid ? [userInTopic, `/av/u/${uid}`] : [userInTopic];
-        this.logger.log(`Connected to Tuya MQTT. Subscribing to: ${topics.join(", ")}`);
+        const topics =
+          uid && uid !== msid ? [userInTopic, `/av/u/${uid}`] : [userInTopic];
+        this.logger.log(
+          `Connected to Tuya MQTT. Subscribing to: ${topics.join(", ")}`,
+        );
         client.subscribe(topics, { qos: 1 }, (err) => {
           if (err) {
-            this.logger.error(`MQTT subscription failed for ${did}: ${err.message}`);
+            this.logger.error(
+              `MQTT subscription failed for ${did}: ${err.message}`,
+            );
           } else {
-            this.logger.log(`Subscribed to topic ${topics.join(", ")}. Launching C++ WebRTC session...`);
+            this.logger.log(
+              `Subscribed to topic ${topics.join(", ")}. Launching C++ WebRTC session...`,
+            );
 
             // Launch C++ WebRTC peer connection
             NativeMediaEngine.getInstance().startP2P({
@@ -154,7 +169,9 @@ export class TuyaMqttService {
           const msg = JSON.parse(str);
           this.handleMqttMessage(did, msg);
         } catch (e: any) {
-          this.logger.warn(`Failed to parse MQTT message on ${topic}: ${e.message}`);
+          this.logger.warn(
+            `Failed to parse MQTT message on ${topic}: ${e.message}`,
+          );
         }
       });
 
@@ -197,7 +214,11 @@ export class TuyaMqttService {
             },
           },
         };
-        meta.client.publish(meta.deviceOutTopic, JSON.stringify(disconnectPayload), { qos: 1 });
+        meta.client.publish(
+          meta.deviceOutTopic,
+          JSON.stringify(disconnectPayload),
+          { qos: 1 },
+        );
       } catch {}
       try {
         meta.client.end(true);
@@ -214,7 +235,9 @@ export class TuyaMqttService {
     meta.lastOfferSdp = sdp;
     meta.answered = false;
 
-    this.logger.log(`Sending WebRTC SDP Offer to Tuya camera ${did} via ${meta.deviceOutTopic} (isHEVC=${meta.isHEVC}, streamType=${meta.streamType})`);
+    this.logger.log(
+      `Sending WebRTC SDP Offer to Tuya camera ${did} via ${meta.deviceOutTopic} (isHEVC=${meta.isHEVC}, streamType=${meta.streamType})`,
+    );
 
     const sendOfferPayload = () => {
       if (meta.answered) return;
@@ -250,7 +273,9 @@ export class TuyaMqttService {
         },
       };
 
-      meta.client.publish(meta.deviceOutTopic, JSON.stringify(offerPayload), { qos: 1 });
+      meta.client.publish(meta.deviceOutTopic, JSON.stringify(offerPayload), {
+        qos: 1,
+      });
     };
 
     sendOfferPayload();
@@ -271,7 +296,11 @@ export class TuyaMqttService {
     meta.retryTimer.unref();
   }
 
-  private handleLocalCandidate(did: string, candidate: string, mid: string): void {
+  private handleLocalCandidate(
+    did: string,
+    candidate: string,
+    mid: string,
+  ): void {
     const meta = this.sessions.get(did);
     if (!meta) return;
 
@@ -303,7 +332,9 @@ export class TuyaMqttService {
       },
     };
 
-    meta.client.publish(meta.deviceOutTopic, JSON.stringify(candPayload), { qos: 1 });
+    meta.client.publish(meta.deviceOutTopic, JSON.stringify(candPayload), {
+      qos: 1,
+    });
   }
 
   private handleMqttMessage(did: string, msg: any): void {
@@ -321,7 +352,9 @@ export class TuyaMqttService {
       }
       const sdp = dataMsg?.sdp || (typeof dataMsg === "string" ? dataMsg : "");
       if (sdp) {
-        this.logger.log(`✅ Received WebRTC SDP Answer from Tuya camera ${did}:\n${sdp}`);
+        this.logger.log(
+          `✅ Received WebRTC SDP Answer from Tuya camera ${did}:\n${sdp}`,
+        );
         NativeMediaEngine.getInstance().sendLine({
           cmd: "set_remote_answer",
           did,
@@ -343,9 +376,13 @@ export class TuyaMqttService {
         });
       }
     } else if (type === "speaker") {
-      this.logger.log(`🎙️ [Tuya MQTT] Camera ${did} responded to speaker command: ${JSON.stringify(dataMsg)}`);
+      this.logger.log(
+        `🎙️ [Tuya MQTT] Camera ${did} responded to speaker command: ${JSON.stringify(dataMsg)}`,
+      );
     } else if (type === "disconnect") {
-      this.logger.warn(`Camera ${did} sent disconnect: ${JSON.stringify(dataMsg)}`);
+      this.logger.warn(
+        `Camera ${did} sent disconnect: ${JSON.stringify(dataMsg)}`,
+      );
       this.stopCameraSession(did);
       NativeMediaEngine.getInstance().emit("webrtc_disconnected", did);
     }
@@ -354,7 +391,9 @@ export class TuyaMqttService {
   public sendSpeaker(did: string, enabled: boolean): void {
     const meta = this.sessions.get(did);
     if (!meta) {
-      this.logger.warn(`🎙️ [Tuya MQTT] Cannot send speaker command: no active session for camera ${did}`);
+      this.logger.warn(
+        `🎙️ [Tuya MQTT] Cannot send speaker command: no active session for camera ${did}`,
+      );
       return;
     }
 
@@ -385,9 +424,13 @@ export class TuyaMqttService {
       `🎙️ [Tuya MQTT] Sending speaker ${enabled ? "ON (1)" : "OFF (0)"} command (protocol 312) to camera ${did}`,
     );
     try {
-      meta.client.publish(meta.deviceOutTopic, JSON.stringify(speakerPayload), { qos: 1 });
+      meta.client.publish(meta.deviceOutTopic, JSON.stringify(speakerPayload), {
+        qos: 1,
+      });
     } catch (err: any) {
-      this.logger.warn(`🎙️ [Tuya MQTT] Failed to publish speaker command: ${err.message}`);
+      this.logger.warn(
+        `🎙️ [Tuya MQTT] Failed to publish speaker command: ${err.message}`,
+      );
     }
   }
 
@@ -399,6 +442,8 @@ export class TuyaMqttService {
     const meta = this.sessions.get(did);
     if (!meta) return;
 
-    this.logger.log(`🎉 WebRTC peer connection established and streaming for camera ${did}`);
+    this.logger.log(
+      `🎉 WebRTC peer connection established and streaming for camera ${did}`,
+    );
   }
 }

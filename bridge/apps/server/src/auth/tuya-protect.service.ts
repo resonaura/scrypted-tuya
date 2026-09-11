@@ -1,4 +1,10 @@
-import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import EventEmitter from "node:events";
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from "@nestjs/common";
 import axios from "axios";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
@@ -73,11 +79,13 @@ export interface StoredSession {
 }
 
 @Injectable()
-export class TuyaProtectService implements OnModuleInit {
+export class TuyaProtectService implements OnModuleInit, OnModuleDestroy {
+  public readonly events = new EventEmitter();
+
   isLoggedIn(): boolean {
-    const cookieFile = "/Users/resonaura/tuya-exp/cookies.txt";
-    if (fs.existsSync(cookieFile)) return true;
-    return Boolean(this.loginResult && (this.loginResult.uid || this.loginResult.token));
+    return Boolean(
+      this.loginResult && (this.loginResult.uid || this.loginResult.token),
+    );
   }
   private readonly logger = new Logger(TuyaProtectService.name);
   private regionId = "us";
@@ -88,9 +96,34 @@ export class TuyaProtectService implements OnModuleInit {
   private loginResult: TuyaLoginResult | null = null;
   private cookies: Map<string, string> = new Map();
   private lastError: string | null = null;
+  private keepAliveInterval: NodeJS.Timeout | null = null;
+  private sessionSaveTimeout: NodeJS.Timeout | null = null;
 
   async onModuleInit() {
     await this.loadStoredSession();
+    this.startKeepAlive();
+  }
+
+  onModuleDestroy() {
+    if (this.keepAliveInterval) clearInterval(this.keepAliveInterval);
+    if (this.sessionSaveTimeout) clearTimeout(this.sessionSaveTimeout);
+  }
+
+  private startKeepAlive(): void {
+    if (this.keepAliveInterval) clearInterval(this.keepAliveInterval);
+    // Ping Tuya API every 20 minutes to prevent web session from expiring due to inactivity
+    this.keepAliveInterval = setInterval(
+      async () => {
+        if (!this.isLoggedIn()) return;
+        try {
+          await this.postApi("/api/common/user/info", {}, "/playback").catch(
+            () => {},
+          );
+        } catch {}
+      },
+      20 * 60 * 1000,
+    );
+    this.keepAliveInterval.unref();
   }
 
   public getRegionId(): string {
@@ -126,13 +159,24 @@ export class TuyaProtectService implements OnModuleInit {
     const setCookie = headers["set-cookie"];
     if (!setCookie) return;
     const list = Array.isArray(setCookie) ? setCookie : [setCookie];
+    let changed = false;
     for (const item of list) {
       const parts = String(item).split(";")[0].split("=");
       if (parts.length >= 2) {
         const name = parts[0].trim();
         const value = parts.slice(1).join("=").trim();
-        if (name) this.cookies.set(name, value);
+        if (name && this.cookies.get(name) !== value) {
+          this.cookies.set(name, value);
+          changed = true;
+        }
       }
+    }
+    if (changed && this.loginResult) {
+      if (this.sessionSaveTimeout) clearTimeout(this.sessionSaveTimeout);
+      this.sessionSaveTimeout = setTimeout(() => {
+        void this.saveSession().catch(() => {});
+      }, 5000);
+      this.sessionSaveTimeout.unref();
     }
   }
 
@@ -168,6 +212,14 @@ export class TuyaProtectService implements OnModuleInit {
 
     this.updateCookiesFromResponse(res.headers);
 
+    if (res.status === 401 || res.status === 403) {
+      this.logger.warn(
+        `Tuya session is unauthorized (${res.status}). Preserving cameras and triggering re-auth.`,
+      );
+      void this.handleSessionExpired();
+      throw new Error(`Tuya API error (${res.status}): Unauthorized`);
+    }
+
     if (res.status >= 400) {
       throw new Error(`Tuya API error (${res.status}): ${res.statusText}`);
     }
@@ -183,7 +235,9 @@ export class TuyaProtectService implements OnModuleInit {
         data.errorCode === "USER_SESSION_INVALID" ||
         String(msg).includes("USER_SESSION_INVALID")
       ) {
-        this.logger.warn("Tuya session has expired (USER_SESSION_INVALID). Preserving cameras and updating cards.");
+        this.logger.warn(
+          "Tuya session has expired (USER_SESSION_INVALID). Preserving cameras and updating cards.",
+        );
         void this.handleSessionExpired();
       }
       throw new Error(msg);
@@ -198,8 +252,10 @@ export class TuyaProtectService implements OnModuleInit {
     this.currentQrToken = null;
     this.currentQrSvg = null;
     this.currentQrDataUrl = null;
-    this.lastError = "Tuya session expired. Please re-authenticate using the Web UI.";
+    this.lastError =
+      "Tuya session expired. Please re-authenticate using the Web UI.";
     await SettingEntity.delete({ key: "tuya_session" });
+    this.events.emit("session_expired");
 
     // Mark existing cameras as offline with reason "Session Expired · Please login in Web UI"
     // and keep their database records intact!
@@ -298,6 +354,7 @@ export class TuyaProtectService implements OnModuleInit {
         this.logger.log(
           `Successfully authenticated as ${result.email || result.username || result.uid}`,
         );
+        this.events.emit("session_authenticated");
         return { loggedIn: true, loginResult: result };
       }
 
@@ -307,6 +364,7 @@ export class TuyaProtectService implements OnModuleInit {
           this.loginResult = userInfo;
           this.currentQrToken = null;
           await this.saveSession();
+          this.events.emit("session_authenticated");
           return { loggedIn: true, loginResult: userInfo };
         }
       }
@@ -387,6 +445,7 @@ export class TuyaProtectService implements OnModuleInit {
       this.loginResult = login;
       await this.saveSession();
       this.logger.log(`Logged in successfully with password as ${cleanEmail}`);
+      this.events.emit("session_authenticated");
       return login;
     } catch (e: any) {
       this.lastError = e.message;
@@ -451,7 +510,10 @@ export class TuyaProtectService implements OnModuleInit {
       if (setting && setting.value) {
         const session: StoredSession = JSON.parse(setting.value);
         this.regionId = session.region || "us";
-        this.host = session.host || TUYA_REGIONS[this.regionId]?.host || TUYA_REGIONS.us.host;
+        this.host =
+          session.host ||
+          TUYA_REGIONS[this.regionId]?.host ||
+          TUYA_REGIONS.us.host;
         this.loginResult = session.loginResult;
         this.cookies.clear();
         for (const c of session.cookies || []) {
@@ -461,22 +523,6 @@ export class TuyaProtectService implements OnModuleInit {
         this.logger.log(
           `Loaded stored session for ${this.loginResult.email || this.loginResult.username || this.loginResult.uid}`,
         );
-        return true;
-      }
-
-      const cookieFile = "/Users/resonaura/tuya-exp/cookies.txt";
-      if (fs.existsSync(cookieFile)) {
-        const raw = fs.readFileSync(cookieFile, "utf8").trim();
-        this.cookies.clear();
-        for (const part of raw.split(";")) {
-          const [k, ...v] = part.split("=");
-          if (k && v.length) {
-            this.cookies.set(k.trim(), v.join("=").trim());
-          }
-        }
-        this.setRegion("us");
-        this.loginResult = { uid: "az1727388496362z0d7d", username: "SmartLifeUser" };
-        this.logger.log(`Loaded active Tuya cookies from ${cookieFile}`);
         return true;
       }
 
@@ -495,6 +541,7 @@ export class TuyaProtectService implements OnModuleInit {
     this.currentQrDataUrl = null;
     await SettingEntity.delete({ key: "tuya_session" });
     this.logger.log("Logged out of Tuya session.");
+    this.events.emit("session_expired");
   }
 
   public getState() {
@@ -705,18 +752,21 @@ export class TuyaProtectService implements OnModuleInit {
       }
       return cfg.result;
     } catch (e: any) {
-      this.logger.warn(`Failed to get WebRTC config for ${deviceId}: ${e.message}`);
+      this.logger.warn(
+        `Failed to get WebRTC config for ${deviceId}: ${e.message}`,
+      );
       return null;
     }
   }
 
-  public async getMqttCredentials(): Promise<{ msid: string; password: string } | null> {
+  public async getMqttCredentials(): Promise<{
+    msid: string;
+    password: string;
+  } | null> {
     try {
-      const res = await this.postApi<{ result: { msid: string; password: string } }>(
-        "/api/jarvis/mqtt",
-        {},
-        "/playback",
-      );
+      const res = await this.postApi<{
+        result: { msid: string; password: string };
+      }>("/api/jarvis/mqtt", {}, "/playback");
       return res.result;
     } catch (e: any) {
       this.logger.warn(`Failed to get MQTT credentials: ${e.message}`);

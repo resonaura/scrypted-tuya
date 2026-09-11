@@ -18,7 +18,9 @@ import path from "node:path";
 
 export function getDataDir(): string {
   if (process.env.DATA_DIR) return path.resolve(process.env.DATA_DIR);
-  return process.env.NODE_ENV === "production" ? "/data" : path.resolve(process.cwd(), "data");
+  return process.env.NODE_ENV === "production"
+    ? "/data"
+    : path.resolve(process.cwd(), "data");
 }
 
 export interface OfflineCardOptions {

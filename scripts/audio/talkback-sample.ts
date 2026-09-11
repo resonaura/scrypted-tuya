@@ -55,13 +55,21 @@ async function main() {
         .replace(/^-+|-+$/g, "") || targetCam.did
     : targetFilter || "tuya-cam";
 
-  console.log(`🎯 Targeting Camera: ${targetCam?.name || slug} (${targetCam?.did || slug})\n`);
+  console.log(
+    `🎯 Targeting Camera: ${targetCam?.name || slug} (${targetCam?.did || slug})\n`,
+  );
 
-  const wavArgs = process.argv.slice(2).filter((a) => a.toLowerCase().endsWith(".wav"));
+  const wavArgs = process.argv
+    .slice(2)
+    .filter((a) => a.toLowerCase().endsWith(".wav"));
   const defaultWav = path.resolve(__dirname, "../../audio/plop.wav");
   const wavList = wavArgs.length
     ? wavArgs.map((w) => {
-        const cands = [w, path.resolve(process.cwd(), w), path.resolve(__dirname, "../../audio", path.basename(w))];
+        const cands = [
+          w,
+          path.resolve(process.cwd(), w),
+          path.resolve(__dirname, "../../audio", path.basename(w)),
+        ];
         const found = cands.find((c) => fs.existsSync(c));
         return found || w;
       })
@@ -80,15 +88,22 @@ async function main() {
       // Stream audio with low-delay flags matching talkback specification
       const ffmpegArgs = [
         "-hide_banner",
-        "-loglevel", "info",
+        "-loglevel",
+        "info",
         "-re",
-        "-i", wav,
+        "-i",
+        wav,
         "-vn",
-        "-c:a", "aac",
-        "-b:a", "16k",
-        "-ar", "16000",
-        "-ac", "1",
-        "-f", "flv",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "16k",
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        "-f",
+        "flv",
         rtmpUrl,
       ];
 

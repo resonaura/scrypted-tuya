@@ -70,7 +70,7 @@ export class TuyaPulsar {
         timeout: 30000,
         logger: console.log,
       },
-      config
+      config,
     );
     this.event = new Event();
     this.retryTimes = 0;
@@ -145,7 +145,7 @@ export class TuyaPulsar {
       `?${buildQuery({
         subscriptionType: "Failover",
         ackTimeoutMillis: 30000,
-      })}`
+      })}`,
     );
     const password = buildPassword(accessId, accessKey);
     this.server = new WebSocket(topicUrl, {
@@ -169,7 +169,7 @@ export class TuyaPulsar {
       this.keepAlive(server);
       this.event.emit(
         isInit ? TuyaPulsar.open : TuyaPulsar.reconnect,
-        this.server
+        this.server,
       );
     });
   }
@@ -242,7 +242,7 @@ function getTopicUrl(
   websocketUrl: string,
   accessId: string,
   env: string,
-  query: string
+  query: string,
 ) {
   return `${websocketUrl}ws/v2/consumer/persistent/${accessId}/out/${env}/${accessId}-sub${query}`;
 }
@@ -260,8 +260,12 @@ function buildQuery(query: { [key: string]: number | string }) {
  * @deprecated Will eventually be removed in favor of Sharing SDK
  */
 function buildPassword(accessId: string, accessKey: string) {
-  const key = createHash('md5').update(accessKey).digest().toString();
-  return createHash('md5').update((`${accessId}${key}`)).digest().toString().substring(8, 16);
+  const key = createHash("md5").update(accessKey).digest().toString();
+  return createHash("md5")
+    .update(`${accessId}${key}`)
+    .digest()
+    .toString()
+    .substring(8, 16);
 }
 
 /**
@@ -269,14 +273,14 @@ function buildPassword(accessId: string, accessKey: string) {
  */
 function decrypt(
   data: string,
-  accessKey: string
+  accessKey: string,
 ): TuyaPulsarMessage | undefined {
   try {
-    const key = Buffer.from(accessKey.substring(8, 24), 'utf-8');
-    const decrypt = createDecipheriv('aes-256-ecb', key, null);
-    decrypt.setAutoPadding(true)
-    decrypt.update(data, 'utf-8');
-    const dataStr = decrypt.final().toString('utf-8');
+    const key = Buffer.from(accessKey.substring(8, 24), "utf-8");
+    const decrypt = createDecipheriv("aes-256-ecb", key, null);
+    decrypt.setAutoPadding(true);
+    decrypt.update(data, "utf-8");
+    const dataStr = decrypt.final().toString("utf-8");
     return JSON.parse(dataStr);
   } catch (e) {
     return undefined;
@@ -288,12 +292,12 @@ function decrypt(
  */
 function encrypt(data: any, accessKey: string) {
   try {
-    const key = Buffer.from(accessKey.substring(8, 24), 'utf-8');
+    const key = Buffer.from(accessKey.substring(8, 24), "utf-8");
     const stringData = JSON.stringify(data);
-    const encrypt = createCipheriv('aes-128-ecb', key, null);
+    const encrypt = createCipheriv("aes-128-ecb", key, null);
     encrypt.setAutoPadding(true);
-    encrypt.update(stringData, 'utf-8');
-    return encrypt.final().toString('base64');
+    encrypt.update(stringData, "utf-8");
+    return encrypt.final().toString("base64");
   } catch (e) {
     return "";
   }

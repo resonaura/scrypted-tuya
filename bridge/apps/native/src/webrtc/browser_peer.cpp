@@ -14,7 +14,9 @@ namespace tuya {
 
 BrowserPeer::BrowserPeer(std::string viewer_id, std::string did, EventCallback event_cb,
                          std::vector<rtc::IceServer> ice_servers)
-    : viewer_id_(std::move(viewer_id)), did_(std::move(did)), event_cb_(std::move(event_cb)),
+    : viewer_id_(std::move(viewer_id)),
+      did_(std::move(did)),
+      event_cb_(std::move(event_cb)),
       ice_servers_(std::move(ice_servers)) {
     const auto seed = std::hash<std::string>{}(viewer_id_);
     ssrc_ = static_cast<uint32_t>((seed & 0x7fffffffU) | 0x10000000U);
@@ -28,11 +30,13 @@ BrowserPeer::~BrowserPeer() {
 bool BrowserPeer::start(const std::string& remote_offer) {
     std::lock_guard<std::mutex> lock(mutex_);
     std::cout << "[BrowserPeer] Starting for " << did_ << " remote_offer_len=" << remote_offer.size() << std::endl;
-    if (running_) return true;
+    if (running_)
+        return true;
 
     auto bind_receiver = [](int& socket_fd, int& port) {
         socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
-        if (socket_fd < 0) return false;
+        if (socket_fd < 0)
+            return false;
 
         sockaddr_in addr{};
         addr.sin_family = AF_INET;
@@ -57,8 +61,10 @@ bool BrowserPeer::start(const std::string& remote_offer) {
     };
 
     if (!bind_receiver(socket_fd_, rtp_port_) || !bind_receiver(audio_socket_fd_, audio_rtp_port_)) {
-        if (socket_fd_ >= 0) close(socket_fd_);
-        if (audio_socket_fd_ >= 0) close(audio_socket_fd_);
+        if (socket_fd_ >= 0)
+            close(socket_fd_);
+        if (audio_socket_fd_ >= 0)
+            close(audio_socket_fd_);
         socket_fd_ = -1;
         audio_socket_fd_ = -1;
         return false;
@@ -73,13 +79,14 @@ bool BrowserPeer::start(const std::string& remote_offer) {
     pc_ = std::make_shared<rtc::PeerConnection>(config);
 
     pc_->onStateChange([this](rtc::PeerConnection::State state) {
-        std::cout << "[BrowserPeer " << viewer_id_ << "] PeerConnection state: " << static_cast<int>(state) << std::endl;
-        if (!event_cb_) return;
+        std::cout << "[BrowserPeer " << viewer_id_ << "] PeerConnection state: " << static_cast<int>(state)
+                  << std::endl;
+        if (!event_cb_)
+            return;
         if (state == rtc::PeerConnection::State::Connected) {
             std::cout << "[BrowserPeer " << viewer_id_ << "] WebRTC CONNECTED to browser!" << std::endl;
             event_cb_(to_json(EventViewerState{.viewer_id = viewer_id_, .did = did_, .state = "connected"}));
-        } else if (state == rtc::PeerConnection::State::Failed ||
-                   state == rtc::PeerConnection::State::Closed) {
+        } else if (state == rtc::PeerConnection::State::Failed || state == rtc::PeerConnection::State::Closed) {
             std::cout << "[BrowserPeer " << viewer_id_ << "] WebRTC CLOSED/FAILED!" << std::endl;
             event_cb_(to_json(EventViewerState{.viewer_id = viewer_id_, .did = did_, .state = "closed"}));
         }
@@ -87,11 +94,14 @@ bool BrowserPeer::start(const std::string& remote_offer) {
 
     answer_sent_ = false;
     auto emit_answer_if_ready = [this]() {
-        if (!event_cb_ || !pc_) return;
+        if (!event_cb_ || !pc_)
+            return;
         auto description = pc_->localDescription();
-        if (!description) return;
+        if (!description)
+            return;
         bool expected = false;
-        if (!answer_sent_.compare_exchange_strong(expected, true)) return;
+        if (!answer_sent_.compare_exchange_strong(expected, true))
+            return;
 
         std::string sdp_str = std::string(*description);
         if (sdp_str.find("a=candidate:") == std::string::npos) {
@@ -108,10 +118,10 @@ bool BrowserPeer::start(const std::string& remote_offer) {
 
         // Ensure SSRC mapping exists for both tracks
         if (sdp_str.find("a=ssrc:") == std::string::npos) {
-            std::string video_ssrc = "a=ssrc:" + std::to_string(ssrc_) + " cname:tuya-browser-video\r\n"
-                                   + "a=ssrc:" + std::to_string(ssrc_) + " msid:tuya-stream video0\r\n";
-            std::string audio_ssrc = "a=ssrc:" + std::to_string(audio_ssrc_) + " cname:tuya-browser-audio\r\n"
-                                   + "a=ssrc:" + std::to_string(audio_ssrc_) + " msid:tuya-stream audio0\r\n";
+            std::string video_ssrc = "a=ssrc:" + std::to_string(ssrc_) + " cname:tuya-browser-video\r\n" +
+                                     "a=ssrc:" + std::to_string(ssrc_) + " msid:tuya-stream video0\r\n";
+            std::string audio_ssrc = "a=ssrc:" + std::to_string(audio_ssrc_) + " cname:tuya-browser-audio\r\n" +
+                                     "a=ssrc:" + std::to_string(audio_ssrc_) + " msid:tuya-stream audio0\r\n";
 
             auto audio_pos = sdp_str.find("m=audio");
             if (audio_pos != std::string::npos) {
@@ -122,7 +132,9 @@ bool BrowserPeer::start(const std::string& remote_offer) {
             }
         }
 
-        std::cout << "[BrowserPeer " << viewer_id_ << "] Emitting WebRTC answer (sdp_len=" << sdp_str.size() << ", has_cand=" << (sdp_str.find("a=candidate:") != std::string::npos) << ", ssrc=" << ssrc_ << ")" << std::endl;
+        std::cout << "[BrowserPeer " << viewer_id_ << "] Emitting WebRTC answer (sdp_len=" << sdp_str.size()
+                  << ", has_cand=" << (sdp_str.find("a=candidate:") != std::string::npos) << ", ssrc=" << ssrc_ << ")"
+                  << std::endl;
         event_cb_(to_json(EventViewerOffer{
             .viewer_id = viewer_id_,
             .did = did_,
@@ -165,7 +177,8 @@ bool BrowserPeer::start(const std::string& remote_offer) {
             audio_pt_ = static_cast<uint8_t>(std::stoi(a_match[1].str()));
         }
 
-        std::cout << "[BrowserPeer " << viewer_id_ << "] Selected PTs: video=" << int(video_pt_) << ", audio=" << int(audio_pt_) << std::endl;
+        std::cout << "[BrowserPeer " << viewer_id_ << "] Selected PTs: video=" << int(video_pt_)
+                  << ", audio=" << int(audio_pt_) << std::endl;
 
         pc_->setRemoteDescription(rtc::Description(remote_offer, "offer"));
 
@@ -174,17 +187,18 @@ bool BrowserPeer::start(const std::string& remote_offer) {
         video.addSSRC(ssrc_, "tuya-browser-video");
         video_track_ = pc_->addTrack(video);
         video_track_->onOpen([this]() {
-            std::cout << "[BrowserPeer " << viewer_id_ << "] Video track OPENED (WebRTC streaming active)!" << std::endl;
-            if (event_cb_) event_cb_(to_json(EventKeyframeRequested{.did = did_}));
+            std::cout << "[BrowserPeer " << viewer_id_ << "] Video track OPENED (WebRTC streaming active)!"
+                      << std::endl;
+            if (event_cb_)
+                event_cb_(to_json(EventKeyframeRequested{.did = did_}));
         });
 
         rtc::Description::Audio audio("1", rtc::Description::Direction::SendOnly);
         audio.addOpusCodec(audio_pt_);
         audio.addSSRC(audio_ssrc_, "tuya-browser-audio");
         audio_track_ = pc_->addTrack(audio);
-        audio_track_->onOpen([this]() {
-            std::cout << "[BrowserPeer " << viewer_id_ << "] Audio track OPENED!" << std::endl;
-        });
+        audio_track_->onOpen(
+            [this]() { std::cout << "[BrowserPeer " << viewer_id_ << "] Audio track OPENED!" << std::endl; });
 
         pc_->setLocalDescription();
         answer_timer_thread_ = std::thread([this, emit_answer_if_ready]() {
@@ -204,7 +218,9 @@ bool BrowserPeer::start(const std::string& remote_offer) {
         });
     } catch (const std::exception& e) {
         running_ = false;
-        if (event_cb_) event_cb_(to_json(EventError{.did = did_, .message = "Browser WebRTC offer rejected: " + std::string(e.what())}));
+        if (event_cb_)
+            event_cb_(
+                to_json(EventError{.did = did_, .message = "Browser WebRTC offer rejected: " + std::string(e.what())}));
         return false;
     }
     return true;
@@ -215,18 +231,22 @@ void BrowserPeer::receive_loop(int socket_fd, bool is_video) {
     while (running_) {
         const auto len = recv(socket_fd, buffer.data(), buffer.size(), 0);
         if (len <= 0) {
-            if (running_) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            if (running_)
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
         }
-        if (len < static_cast<ssize_t>(sizeof(rtc::RtpHeader))) continue;
+        if (len < static_cast<ssize_t>(sizeof(rtc::RtpHeader)))
+            continue;
 
         auto* header = reinterpret_cast<rtc::RtpHeader*>(buffer.data());
-        if (header->version() != 2) continue;
+        if (header->version() != 2)
+            continue;
         header->setPayloadType(is_video ? video_pt_ : audio_pt_);
         header->setSsrc(is_video ? ssrc_ : audio_ssrc_);
 
         auto track = is_video ? video_track_ : audio_track_;
-        if (!track || !track->isOpen()) continue;
+        if (!track || !track->isOpen())
+            continue;
         try {
             track->send(buffer.data(), static_cast<size_t>(len));
         } catch (...) {
@@ -246,21 +266,33 @@ void BrowserPeer::stop() {
         close(audio_socket_fd_);
         audio_socket_fd_ = -1;
     }
-    if (receiver_thread_.joinable()) receiver_thread_.join();
-    if (audio_receiver_thread_.joinable()) audio_receiver_thread_.join();
-    if (answer_timer_thread_.joinable()) answer_timer_thread_.join();
+    if (receiver_thread_.joinable())
+        receiver_thread_.join();
+    if (audio_receiver_thread_.joinable())
+        audio_receiver_thread_.join();
+    if (answer_timer_thread_.joinable())
+        answer_timer_thread_.join();
 
     std::lock_guard<std::mutex> lock(mutex_);
     if (video_track_) {
-        try { video_track_->close(); } catch (...) {}
+        try {
+            video_track_->close();
+        } catch (...) {
+        }
         video_track_.reset();
     }
     if (audio_track_) {
-        try { audio_track_->close(); } catch (...) {}
+        try {
+            audio_track_->close();
+        } catch (...) {
+        }
         audio_track_.reset();
     }
     if (pc_) {
-        try { pc_->close(); } catch (...) {}
+        try {
+            pc_->close();
+        } catch (...) {
+        }
         pc_.reset();
     }
 }

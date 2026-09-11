@@ -60,7 +60,8 @@ export type ToggleButtonVariant = HeroVariant | Tone;
  * per call site (the timeline scales them with vertical zoom), since an inline
  * style outranks the class.
  */
-export type ToggleButtonSize = NonNullable<HeroToggleButtonProps["size"]> | "xs";
+export type ToggleButtonSize =
+  NonNullable<HeroToggleButtonProps["size"]> | "xs";
 
 const XS_CLASS = "rs-toggle--xs";
 

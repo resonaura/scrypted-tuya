@@ -9,9 +9,7 @@ namespace tuya {
 StreamSession::StreamSession(const SessionConfig& config, std::function<void(const std::string&)> event_cb)
     : config_(config), event_cb_(std::move(event_cb)) {
     reassembler_ = std::make_shared<AVIOReassembler>();
-    rtsp_server_ = std::make_shared<RTSPServer>(config_.rtsp_port, config_.rtsp_path, [this]() {
-        request_keyframe();
-    });
+    rtsp_server_ = std::make_shared<RTSPServer>(config_.rtsp_port, config_.rtsp_path, [this]() { request_keyframe(); });
 
     reassembler_->set_frame_callback([this](const MediaFrame& frame) {
         if (frame.is_video && frame.is_keyframe && !seen_first_keyframe_) {

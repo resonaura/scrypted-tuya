@@ -1,9 +1,20 @@
-import { Controller, Get, Post, Param, Body, NotFoundException, Inject } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  Body,
+  NotFoundException,
+  Inject,
+} from "@nestjs/common";
 import { StreamingService } from "./streaming.service.js";
 
 @Controller("api/streaming")
 export class StreamingController {
-  constructor(@Inject(StreamingService) private readonly streamingService: StreamingService) {}
+  constructor(
+    @Inject(StreamingService)
+    private readonly streamingService: StreamingService,
+  ) {}
 
   @Get("status")
   async getAll() {

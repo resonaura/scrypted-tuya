@@ -49,37 +49,40 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
       this.autoStartCameras();
     });
 
-    this.engine.on("session_started", async (did: string, internalPort: number) => {
-      this.logger.log(
-        `Internal H.265 session started for camera ${did} on hidden port ${internalPort}`,
-      );
-      this.activeStreams.add(did);
-      this.recoveryAttempts.delete(did);
-      const pendingRecovery = this.recoveryTimers.get(did);
-      if (pendingRecovery) clearTimeout(pendingRecovery);
-      this.recoveryTimers.delete(did);
-      const cam = await CameraEntity.findOne({ where: { did } });
-      if (cam) {
-        cam.online = true;
-        cam.lastSeen = new Date();
-        const slug = this.getSlug(cam);
-        cam.rtspPath = cameraRtspPath(cam.name, cam.did);
-        await cam.save();
-        OfflineCardManager.getInstance().setOnline(slug);
+    this.engine.on(
+      "session_started",
+      async (did: string, internalPort: number) => {
+        this.logger.log(
+          `Internal H.265 session started for camera ${did} on hidden port ${internalPort}`,
+        );
+        this.activeStreams.add(did);
+        this.recoveryAttempts.delete(did);
+        const pendingRecovery = this.recoveryTimers.get(did);
+        if (pendingRecovery) clearTimeout(pendingRecovery);
+        this.recoveryTimers.delete(did);
+        const cam = await CameraEntity.findOne({ where: { did } });
+        if (cam) {
+          cam.online = true;
+          cam.lastSeen = new Date();
+          const slug = this.getSlug(cam);
+          cam.rtspPath = cameraRtspPath(cam.name, cam.did);
+          await cam.save();
+          OfflineCardManager.getInstance().setOnline(slug);
 
-        // Transcode H.265 internal stream into standard H.264 Baseline + AAC on the public port
-        this.transcoder.startH264Transcode({
-          did: cam.did,
-          slug,
-          sourceRtspPort: internalPort,
-          sourceRtspPath: `internal/${slug}`,
-          targetRtspPort: cam.rtspPort,
-          targetRtspPath: cam.rtspPath,
-        });
+          // Transcode H.265 internal stream into standard H.264 Baseline + AAC on the public port
+          this.transcoder.startH264Transcode({
+            did: cam.did,
+            slug,
+            sourceRtspPort: internalPort,
+            sourceRtspPath: `internal/${slug}`,
+            targetRtspPort: cam.rtspPort,
+            targetRtspPath: cam.rtspPath,
+          });
 
-        this.ensureSnapshotter(cam);
-      }
-    });
+          this.ensureSnapshotter(cam);
+        }
+      },
+    );
 
     this.engine.on(
       "p2p_connected",
@@ -98,11 +101,26 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
 
     this.engine.on("webrtc_disconnected", async (did: string) => {
       this.activeStreams.delete(did);
-      this.logger.warn(`⚠️ [CamerasService] WebRTC disconnected for camera ${did}! Scheduling automatic stream recovery...`);
+      this.logger.warn(
+        `⚠️ [CamerasService] WebRTC disconnected for camera ${did}! Switching to fallback RTSP and scheduling automatic stream recovery...`,
+      );
       const cam = await CameraEntity.findOne({ where: { did } });
       if (cam) {
         cam.online = false;
         await cam.save();
+        const slug = this.getSlug(cam);
+        OfflineCardManager.getInstance().setOffline({
+          slug,
+          deviceName: cam.name,
+          deviceId: cam.did,
+          reason: "Stream Disconnected · Reconnecting...",
+        });
+        this.transcoder.switchToFallback({
+          did: cam.did,
+          slug,
+          targetRtspPort: cam.rtspPort || env.RTSP_BASE_PORT,
+          targetRtspPath: cam.rtspPath,
+        });
         this.scheduleStreamRecovery(cam, 2000);
       }
     });
@@ -110,7 +128,7 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     this.engine.on("unhealthy", async (did: string) => {
       this.activeStreams.delete(did);
       this.logger.warn(
-        `Camera stream ${did} reported unhealthy! Attempting self-healing recovery...`,
+        `Camera stream ${did} reported unhealthy! Switching to fallback RTSP and attempting self-healing recovery...`,
       );
       const cam = await CameraEntity.findOne({ where: { did } });
       if (cam) {
@@ -122,8 +140,50 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
           deviceId: cam.did,
           reason: "Stream Unhealthy · Reconnecting...",
         });
+        this.transcoder.switchToFallback({
+          did: cam.did,
+          slug,
+          targetRtspPort: cam.rtspPort || env.RTSP_BASE_PORT,
+          targetRtspPath: cam.rtspPath,
+        });
         this.scheduleStreamRecovery(cam, 1000);
       }
+    });
+
+    this.tuyaProtect.events.on("session_expired", async () => {
+      this.logger.warn(
+        "Tuya protect session expired. Keeping RTSP relays running in fallback mode.",
+      );
+      for (const timer of this.recoveryTimers.values()) clearTimeout(timer);
+      this.recoveryTimers.clear();
+      this.activeStreams.clear();
+      const cameras = await CameraEntity.find();
+      for (const cam of cameras) {
+        cam.online = false;
+        await cam.save().catch(() => {});
+        this.stopSnapshotter(cam.did);
+        this.tuyaMqtt.stopCameraSession(cam.did);
+        const slug = this.getSlug(cam);
+        OfflineCardManager.getInstance().setOffline({
+          slug,
+          deviceName: cam.name,
+          deviceId: cam.did,
+          reason: "Session Expired · Scan QR in Web UI",
+        });
+        this.transcoder.switchToFallback({
+          did: cam.did,
+          slug,
+          targetRtspPort: cam.rtspPort || env.RTSP_BASE_PORT,
+          targetRtspPath: cam.rtspPath,
+        });
+      }
+    });
+
+    this.tuyaProtect.events.on("session_authenticated", async () => {
+      this.logger.log(
+        "Tuya session authenticated! Re-starting camera streams...",
+      );
+      await this.autoStartCameras();
     });
 
     this.startWatchdog();
@@ -133,10 +193,20 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
   private watchdogInterval: NodeJS.Timeout | null = null;
 
   public scheduleStreamRecovery(cam: CameraEntity, delayMs = 250): void {
+    if (!this.tuyaProtect.isLoggedIn() && (!cam.localKey || !cam.ip)) {
+      this.logger.debug(
+        `Skipping stream recovery for ${cam.name}: not logged in and no local IP/key`,
+      );
+      return;
+    }
     if (this.recoveryTimers.has(cam.did)) return;
     const attempt = (this.recoveryAttempts.get(cam.did) || 0) + 1;
     this.recoveryAttempts.set(cam.did, attempt);
-    const backoff = attempt === 1 ? delayMs : Math.min(1000 * 2 ** Math.min(attempt - 2, 5), 30_000);
+    const maxBackoff = attempt > 10 ? 120_000 : 30_000;
+    const backoff =
+      attempt === 1
+        ? delayMs
+        : Math.min(1000 * 2 ** Math.min(attempt - 2, 5), maxBackoff);
     const jitteredDelay = Math.round(backoff * (0.8 + Math.random() * 0.2));
     OfflineCardManager.getInstance().updateStatus(
       this.getSlug(cam),
@@ -144,13 +214,17 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     );
     const timer = setTimeout(async () => {
       this.recoveryTimers.delete(cam.did);
-      this.logger.warn(`Reconnecting ${cam.name} (${cam.did}), attempt ${attempt}`);
+      this.logger.warn(
+        `Reconnecting ${cam.name} (${cam.did}), attempt ${attempt}`,
+      );
       try {
         this.stopSnapshotter(cam.did);
         this.tuyaMqtt.stopCameraSession(cam.did);
         await this.startStream(cam);
       } catch (err: any) {
-        this.logger.warn(`Reconnect attempt ${attempt} failed for ${cam.did}: ${err.message}`);
+        this.logger.warn(
+          `Reconnect attempt ${attempt} failed for ${cam.did}: ${err.message}`,
+        );
         this.scheduleStreamRecovery(cam);
       }
     }, jitteredDelay);
@@ -164,9 +238,15 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
       try {
         const cameras = await CameraEntity.find();
         for (const cam of cameras) {
-          const isStreaming = this.activeStreams.has(cam.did) || this.tuyaMqtt.isSessionActive(cam.did);
+          if (!this.tuyaProtect.isLoggedIn() && (!cam.localKey || !cam.ip))
+            continue;
+          const isStreaming =
+            this.activeStreams.has(cam.did) ||
+            this.tuyaMqtt.isSessionActive(cam.did);
           if (!isStreaming && !this.recoveryTimers.has(cam.did)) {
-            this.logger.debug(`[Watchdog] Camera ${cam.name} stream inactive, auto-reviving...`);
+            this.logger.debug(
+              `[Watchdog] Camera ${cam.name} stream inactive, auto-reviving...`,
+            );
             this.scheduleStreamRecovery(cam, 1000);
           }
         }
@@ -199,15 +279,31 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
       // Port 8554 is the legacy default that was shipped in early versions.
       // In HAOS environments port 8554 is commonly occupied by another service.
       // Force-migrate any camera still using that old default to RTSP_BASE_PORT.
-      if (!cam.rtspPort || !isPortAllowed(cam.rtspPort) || cam.rtspPort === 8554) {
+      if (
+        !cam.rtspPort ||
+        !isPortAllowed(cam.rtspPort) ||
+        cam.rtspPort === 8554
+      ) {
         cam.rtspPort = env.RTSP_BASE_PORT;
       }
       cam.rtspPath = cameraRtspPath(cam.name, cam.did);
       await cam.save();
+
+      const slug = this.getSlug(cam);
+      // Pre-warm fallback transcode so public RTSP port is alive and streaming immediately
+      this.transcoder.switchToFallback({
+        did: cam.did,
+        slug,
+        targetRtspPort: cam.rtspPort,
+        targetRtspPath: cam.rtspPath,
+      });
+
       try {
         await this.startStream(cam);
       } catch (err: any) {
-        this.logger.warn(`Failed to auto-start stream for ${cam.name} (${cam.did}): ${err.message}`);
+        this.logger.warn(
+          `Failed to auto-start stream for ${cam.name} (${cam.did}): ${err.message}`,
+        );
       }
     }
   }
@@ -217,7 +313,9 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getById(idOrSlug: string): Promise<CameraEntity | null> {
-    const cam = await CameraEntity.findOne({ where: [{ id: idOrSlug }, { did: idOrSlug }] });
+    const cam = await CameraEntity.findOne({
+      where: [{ id: idOrSlug }, { did: idOrSlug }],
+    });
     if (cam) return cam;
     const all = await CameraEntity.find();
     return all.find((c) => this.getSlug(c) === idOrSlug) || null;
@@ -229,7 +327,11 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     }
     const cameras = await this.tuyaProtect.discoverCameras();
     for (const cam of cameras) {
-      if (!cam.rtspPort || !isPortAllowed(cam.rtspPort) || cam.rtspPort === 8554) {
+      if (
+        !cam.rtspPort ||
+        !isPortAllowed(cam.rtspPort) ||
+        cam.rtspPort === 8554
+      ) {
         cam.rtspPort = env.RTSP_BASE_PORT;
       }
       cam.rtspPath = cameraRtspPath(cam.name, cam.did);
@@ -271,14 +373,20 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     return cam;
   }
 
-  async update(id: string, patch: Partial<CameraEntity>): Promise<CameraEntity> {
+  async update(
+    id: string,
+    patch: Partial<CameraEntity>,
+  ): Promise<CameraEntity> {
     const cam = await this.getById(id);
     if (!cam) throw new Error(`Camera ${id} not found`);
 
     if (patch.name !== undefined) cam.name = patch.name;
-    if (patch.quality !== undefined) cam.quality = (patch.quality.toLowerCase() as "hd" | "sd");
-    if (patch.audioEnabled !== undefined) cam.audioEnabled = Boolean(patch.audioEnabled);
-    if (patch.rtspPort !== undefined && isPortAllowed(patch.rtspPort)) cam.rtspPort = patch.rtspPort;
+    if (patch.quality !== undefined)
+      cam.quality = patch.quality.toLowerCase() as "hd" | "sd";
+    if (patch.audioEnabled !== undefined)
+      cam.audioEnabled = Boolean(patch.audioEnabled);
+    if (patch.rtspPort !== undefined && isPortAllowed(patch.rtspPort))
+      cam.rtspPort = patch.rtspPort;
 
     cam.rtspPath = cameraRtspPath(cam.name, cam.did);
     await cam.save();
@@ -286,24 +394,37 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
   }
 
   async logoutProfile(): Promise<void> {
-    this.logger.log("Logging out profile and stopping all camera streams...");
-    for (const did of Array.from(this.activeStreams)) {
-      this.stopSnapshotter(did);
-      this.transcoder.stopTranscode(did);
-      this.engine.stopP2P(did);
-    }
-    this.activeStreams.clear();
-    this.recoveryAttempts.clear();
+    this.logger.log(
+      "Logging out profile. Preserving cameras and switching RTSP to offline cards...",
+    );
     for (const timer of this.recoveryTimers.values()) {
       clearTimeout(timer);
     }
     this.recoveryTimers.clear();
+    this.activeStreams.clear();
+    this.recoveryAttempts.clear();
 
     const cameras = await CameraEntity.find();
     for (const cam of cameras) {
+      cam.online = false;
+      await cam.save().catch(() => {});
+      this.stopSnapshotter(cam.did);
+      this.tuyaMqtt.stopCameraSession(cam.did);
+      this.engine.stopP2P(cam.did);
+
       const slug = this.getSlug(cam);
-      OfflineCardManager.getInstance().setOnline(slug);
-      await cam.remove();
+      OfflineCardManager.getInstance().setOffline({
+        slug,
+        deviceName: cam.name,
+        deviceId: cam.did,
+        reason: "Logged Out · Login in Web UI",
+      });
+      this.transcoder.switchToFallback({
+        did: cam.did,
+        slug,
+        targetRtspPort: cam.rtspPort || env.RTSP_BASE_PORT,
+        targetRtspPath: cam.rtspPath,
+      });
     }
   }
 
@@ -334,11 +455,15 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
           (cam.quality as "hd" | "sd") || "hd",
         );
         if (!started) {
-          this.logger.warn(`Tuya signaling session did not start for ${cam.name} (${cam.did})`);
+          this.logger.warn(
+            `Tuya signaling session did not start for ${cam.name} (${cam.did})`,
+          );
           return;
         }
       } catch (err: any) {
-        this.logger.warn(`Failed to start Tuya signaling for ${cam.name} (${cam.did}): ${err.message}`);
+        this.logger.warn(
+          `Failed to start Tuya signaling for ${cam.name} (${cam.did}): ${err.message}`,
+        );
         return;
       }
     } else {
@@ -365,8 +490,14 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     });
     this.activeStreams.delete(cam.did);
     this.stopSnapshotter(cam.did);
-    this.transcoder.stopTranscode(cam.did);
     this.tuyaMqtt.stopCameraSession(cam.did);
+    this.engine.stopP2P(cam.did);
+    this.transcoder.switchToFallback({
+      did: cam.did,
+      slug,
+      targetRtspPort: cam.rtspPort || env.RTSP_BASE_PORT,
+      targetRtspPath: cam.rtspPath,
+    });
   }
 
   requestKeyframe(did: string): void {
@@ -391,12 +522,18 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
       cam.online = true;
       cam.lastSeen = new Date();
       void cam.save().catch(() => {});
-      if (buffer.length > 0) this.logger.debug(`Snapshot refreshed for ${cam.name}`);
+      if (buffer.length > 0)
+        this.logger.debug(`Snapshot refreshed for ${cam.name}`);
     });
-    snapshotter.on("failure", ({ count, max }: { count: number; max: number }) => {
-      this.logger.debug(`Snapshot unavailable for ${cam.name}, retry ${count}/${max}`);
-      if (count >= max) this.engine.requestKeyframe(cam.did);
-    });
+    snapshotter.on(
+      "failure",
+      ({ count, max }: { count: number; max: number }) => {
+        this.logger.debug(
+          `Snapshot unavailable for ${cam.name}, retry ${count}/${max}`,
+        );
+        if (count >= max) this.engine.requestKeyframe(cam.did);
+      },
+    );
     snapshotter.on("unhealthy", () => {
       // Snapshot generation is downstream of the live stream. Keep serving
       // the last good frame and let the next interval retry without tearing
@@ -429,7 +566,11 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     const buffer = await generateOfflineCardImage({
       slug,
       deviceName: cam?.name || "Tuya Camera",
-      statusText: cam ? (cam.online ? "WAITING FOR VIDEO" : "OFFLINE") : "CAMERA NOT FOUND",
+      statusText: cam
+        ? cam.online
+          ? "WAITING FOR VIDEO"
+          : "OFFLINE"
+        : "CAMERA NOT FOUND",
       durationSeconds: 1,
     });
     return { buffer: buffer || Buffer.from(""), mimeType: "image/jpeg" };

@@ -1,11 +1,9 @@
-import { createContext, useContext, ReactNode } from 'react';
-import { Icon, IconifyIconProps } from '@iconify-icon/react';
-import {
-  MaterialSymbolBase,
-} from '../material-symbols';
-import json from '@iconify-json/material-symbols/icons.json'; // Runtime icon set
+import { createContext, useContext, ReactNode } from "react";
+import { Icon, IconifyIconProps } from "@iconify-icon/react";
+import { MaterialSymbolBase } from "../material-symbols";
+import json from "@iconify-json/material-symbols/icons.json"; // Runtime icon set
 
-export interface IMaterialIcon extends Omit<IconifyIconProps, 'ref' | 'icon'> {
+export interface IMaterialIcon extends Omit<IconifyIconProps, "ref" | "icon"> {
   icon: MaterialSymbolBase;
   size?: number;
   width?: number;
@@ -45,7 +43,7 @@ export function MaterialIcon({
   const context = useIconContext();
   const finalSize = size ?? context.size ?? 20;
 
-  const pack = 'material-symbols';
+  const pack = "material-symbols";
 
   // Build candidate icon names in priority order
   const candidates: string[] = [];
@@ -66,12 +64,12 @@ export function MaterialIcon({
       `${pack}:${icon}-outline-rounded`,
       `${pack}:${icon}-outline`,
       `${pack}:${icon}-rounded`,
-      `${pack}:${icon}`
+      `${pack}:${icon}`,
     );
   }
 
   // Pick the first existing icon
-  const found = candidates.find(c => (json as any).icons[c.split(':')[1]]);
+  const found = candidates.find((c) => (json as any).icons[c.split(":")[1]]);
   const finalIcon = found ?? `${pack}:${icon}`; // fallback
 
   return (

@@ -3,17 +3,19 @@ import { TuyaSharingTokenInfo } from "./sharing";
 
 export enum TuyaLoginMethod {
   App = "Tuya (Smart Life) App",
-  Account = "Tuya Developer Account"
+  Account = "Tuya Developer Account",
 }
 
-export type TuyaTokenInfo = (TuyaSharingTokenInfo & { type: TuyaLoginMethod.App }) | (TuyaCloudTokenInfo & { type: TuyaLoginMethod.Account });
+export type TuyaTokenInfo =
+  | (TuyaSharingTokenInfo & { type: TuyaLoginMethod.App })
+  | (TuyaCloudTokenInfo & { type: TuyaLoginMethod.Account });
 
 export type TuyaResponse<T> = {
   success?: boolean;
   t?: number;
   result: T;
   tid?: string;
-}
+};
 
 export type TuyaDevice = {
   id: string;
@@ -40,16 +42,17 @@ export type TuyaDevice = {
   biz_type: number;
   model?: string;
   owner_id: string;
-}
+};
 
 export type TuyaDeviceSchema = {
   code: string;
   mode: "rw" | "r" | "w";
 } & (
-    {
+  | {
       type: "Boolean";
       specs: never;
-    } | {
+    }
+  | {
       type: "Integer";
       specs: {
         unit?: string;
@@ -57,30 +60,34 @@ export type TuyaDeviceSchema = {
         max: number;
         scale: number;
         step: number;
-      }
-    } | {
+      };
+    }
+  | {
       type: "Enum";
       specs: {
-        range: string[]
-      }
-    } | {
+        range: string[];
+      };
+    }
+  | {
       type: "String";
       specs: {
-        maxlen: number
+        maxlen: number;
       };
-    } | {
+    }
+  | {
       type: "Json";
       specs: object;
-    } | {
+    }
+  | {
       type: "Raw";
       specs: any;
     }
-  )
+);
 
 export type TuyaDeviceStatus = {
   code: string;
   value: string | number | boolean;
-}
+};
 
 export type TuyaDeviceFunction = {
   code: string;
@@ -88,11 +95,11 @@ export type TuyaDeviceFunction = {
   name?: string;
   desc?: string;
   values: string;
-}
+};
 
 export enum TuyaMessageProtocol {
   DEVICE = 4,
-  OTHER = 30
+  OTHER = 30,
 }
 
 export type TuyaMessage = {
@@ -104,25 +111,32 @@ export type TuyaMessage = {
   sign?: string;
   t: number;
 } & (
-  {
-    protocol: TuyaMessageProtocol.DEVICE;
-    data: {
-      devId: string;
-      status: (TuyaDeviceStatus & { t: number })[]
-    }
-  } | {
-    protocol: TuyaMessageProtocol.OTHER;
-    data: {
-      bizData: {
+  | {
+      protocol: TuyaMessageProtocol.DEVICE;
+      data: {
         devId: string;
-        name?: string;
+        status: (TuyaDeviceStatus & { t: number })[];
       };
-      bizCode: "online" | "offline" | "nameUpdate" | "dpNameUpdate" | "bindUser" | "delete";
     }
-  }
-)
+  | {
+      protocol: TuyaMessageProtocol.OTHER;
+      data: {
+        bizData: {
+          devId: string;
+          name?: string;
+        };
+        bizCode:
+          | "online"
+          | "offline"
+          | "nameUpdate"
+          | "dpNameUpdate"
+          | "bindUser"
+          | "delete";
+      };
+    }
+);
 
 export type RTSPToken = {
   url: string;
   expires: number;
-}
+};

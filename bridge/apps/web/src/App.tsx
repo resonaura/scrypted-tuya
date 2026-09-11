@@ -363,7 +363,8 @@ export function App() {
                     Tuya Cloud Session Expired
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Your cameras and configuration are saved. Scan the QR code to re-authenticate and resume streaming.
+                    Your cameras and configuration are saved. Scan the QR code
+                    to re-authenticate and resume streaming.
                   </p>
                 </div>
               </div>
