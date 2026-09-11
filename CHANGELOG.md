@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.1
+
+- **Zero-Dip Continuous RTSP Relay & Instant Fallback on Reconnects**:
+  - Preserved the native C++ RTSP relay server alive across all stream reconnects, transient drops, and session recoveries without tearing down the RTSP port (8655+) or dropping downstream RTSP players (HomeKit, Scrypted, VLC).
+  - FFmpeg live and fallback processes now seamlessly hot-swap into the exact same UDP ingestion ports (9655 & 9656) without interrupting the client RTSP socket.
+  - Stream fallback placeholder card starts immediately with zero delay (0ms) upon live transcoder exit, eliminating black screen gaps or RTP silence timeouts before reconnect retry attempts.
+  - In `CamerasService.scheduleStreamRecovery()`, fallback card generation with live ticking timestamp is triggered on every retry attempt to ensure continuous RTP packet delivery until the camera feed is restored.
+
 ## 2.2.0
 
 - **Continuous RTSP Stream & Seamless Offline Fallback**:

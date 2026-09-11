@@ -202,16 +202,28 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     if (this.recoveryTimers.has(cam.did)) return;
     const attempt = (this.recoveryAttempts.get(cam.did) || 0) + 1;
     this.recoveryAttempts.set(cam.did, attempt);
+    const slug = this.getSlug(cam);
+
+    // Keep stream continuously streaming fallback card so downstream players have ZERO drops
+    OfflineCardManager.getInstance().setOffline({
+      slug,
+      deviceName: cam.name,
+      deviceId: cam.did,
+      reason: `Reconnecting stream · attempt ${attempt}`,
+    });
+    this.transcoder.switchToFallback({
+      did: cam.did,
+      slug,
+      targetRtspPort: cam.rtspPort || env.RTSP_BASE_PORT,
+      targetRtspPath: cam.rtspPath,
+    });
+
     const maxBackoff = attempt > 10 ? 120_000 : 30_000;
     const backoff =
       attempt === 1
         ? delayMs
         : Math.min(1000 * 2 ** Math.min(attempt - 2, 5), maxBackoff);
     const jitteredDelay = Math.round(backoff * (0.8 + Math.random() * 0.2));
-    OfflineCardManager.getInstance().updateStatus(
-      this.getSlug(cam),
-      `Reconnecting P2P stream · attempt ${attempt}`,
-    );
     const timer = setTimeout(async () => {
       this.recoveryTimers.delete(cam.did);
       this.logger.warn(

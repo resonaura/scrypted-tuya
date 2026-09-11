@@ -35,6 +35,25 @@ export class TranscoderService implements OnModuleDestroy {
     return this.sessions.has(did);
   }
 
+  private stopSessionProcess(session: TranscodeSession): void {
+    session.stopped = true;
+    if (session.startTimer) clearTimeout(session.startTimer);
+    if (session.retryTimer) clearTimeout(session.retryTimer);
+    if (session.process) {
+      session.process.removeAllListeners();
+      try {
+        session.process.kill("SIGTERM");
+        const proc = session.process;
+        setTimeout(() => {
+          try {
+            proc.kill("SIGKILL");
+          } catch {}
+        }, 1000).unref();
+      } catch {}
+      session.process = null;
+    }
+  }
+
   public startH264Transcode(options: {
     did: string;
     slug: string;
@@ -45,23 +64,35 @@ export class TranscoderService implements OnModuleDestroy {
   }): void {
     const existing = this.sessions.get(options.did);
     const consecutiveFailures = existing ? existing.consecutiveFailures : 0;
-    this.stopTranscode(options.did);
+    const relayAlreadyRunning = Boolean(
+      existing &&
+      !existing.stopped &&
+      existing.targetRtspPort === options.targetRtspPort,
+    );
+
+    if (existing) {
+      this.stopSessionProcess(existing);
+      this.sessions.delete(options.did);
+    }
 
     const sourceRtspUrl = `rtsp://127.0.0.1:${options.sourceRtspPort}/${options.sourceRtspPath}`;
     const targetPath = options.targetRtspPath || `live/${options.slug}`;
     const rtpPort = options.targetRtspPort + 1000;
     const audioRtpPort = rtpPort + 1;
-    this.logger.log(
-      `[Transcoder] Starting H264 relay for ${options.did} (${sourceRtspUrl} -> rtsp://127.0.0.1:${options.targetRtspPort}/${targetPath})`,
-    );
 
-    this.engine.startH264Relay(
-      options.did,
-      options.targetRtspPort,
-      targetPath,
-      rtpPort,
-      audioRtpPort,
-    );
+    if (!relayAlreadyRunning) {
+      this.logger.log(
+        `[Transcoder] Starting H264 relay for ${options.did} (${sourceRtspUrl} -> rtsp://127.0.0.1:${options.targetRtspPort}/${targetPath})`,
+      );
+      this.engine.startH264Relay(
+        options.did,
+        options.targetRtspPort,
+        targetPath,
+        rtpPort,
+        audioRtpPort,
+      );
+    }
+
     const session: TranscodeSession = {
       did: options.did,
       slug: options.slug,
@@ -78,6 +109,7 @@ export class TranscoderService implements OnModuleDestroy {
     };
     this.sessions.set(options.did, session);
 
+    const spawnDelay = relayAlreadyRunning ? 0 : 250;
     session.startTimer = setTimeout(() => {
       session.startTimer = null;
       if (session.stopped || this.sessions.get(options.did) !== session) return;
@@ -187,24 +219,16 @@ export class TranscoderService implements OnModuleDestroy {
             `H264 transcoder for ${options.did} exited (code=${code}, signal=${signal}), failure count: ${session.consecutiveFailures}`,
           );
 
-          // If source RTSP stream repeatedly failed, stream fallback card to keep downstream RTSP connection alive
-          if (session.consecutiveFailures >= 2) {
-            this.startFallbackTranscode(options, session);
-          } else {
-            session.retryTimer = setTimeout(() => {
-              if (session.stopped || this.sessions.get(options.did) !== session)
-                return;
-              this.startH264Transcode(options);
-            }, 2000);
-            session.retryTimer.unref();
-          }
+          // Stream fallback card IMMEDIATELY to keep downstream RTSP connection alive without drops
+          this.startFallbackTranscode(options, session);
         });
       } catch (err: any) {
         this.logger.error(
           `Failed to spawn H264 transcoder for ${options.did}: ${err.message}`,
         );
+        this.startFallbackTranscode(options, session);
       }
-    }, 300);
+    }, spawnDelay);
     session.startTimer.unref();
   }
 
@@ -228,13 +252,21 @@ export class TranscoderService implements OnModuleDestroy {
     const rtpPort = options.targetRtspPort + 1000;
     const audioRtpPort = rtpPort + 1;
 
-    this.engine.startH264Relay(
-      options.did,
-      options.targetRtspPort,
-      targetPath,
-      rtpPort,
-      audioRtpPort,
+    const relayAlreadyRunning = Boolean(
+      session &&
+      !session.stopped &&
+      session.targetRtspPort === options.targetRtspPort,
     );
+
+    if (!relayAlreadyRunning) {
+      this.engine.startH264Relay(
+        options.did,
+        options.targetRtspPort,
+        targetPath,
+        rtpPort,
+        audioRtpPort,
+      );
+    }
 
     if (session) {
       if (session.startTimer) clearTimeout(session.startTimer);
@@ -414,21 +446,7 @@ export class TranscoderService implements OnModuleDestroy {
   public stopTranscode(did: string): void {
     const session = this.sessions.get(did);
     if (session) {
-      session.stopped = true;
-      if (session.startTimer) clearTimeout(session.startTimer);
-      if (session.retryTimer) clearTimeout(session.retryTimer);
-      if (session.process) {
-        session.process.removeAllListeners();
-        try {
-          session.process.kill("SIGTERM");
-          const proc = session.process;
-          setTimeout(() => {
-            try {
-              proc.kill("SIGKILL");
-            } catch {}
-          }, 1500).unref();
-        } catch {}
-      }
+      this.stopSessionProcess(session);
       this.sessions.delete(did);
       this.engine.stopH264Relay(did);
     }
