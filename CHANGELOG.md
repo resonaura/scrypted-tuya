@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.10
+## 2.2.0
 
 - **Continuous RTSP Stream & Seamless Offline Fallback**:
   - Implemented `switchToFallback` in `TranscoderService` ensuring the public RTSP relay (port 8655+) is pre-warmed and continuously streaming compliant H.264 Baseline + AAC audio packets 24/7.
