@@ -27,6 +27,7 @@ import React, {
 import { toast } from "sonner";
 import {
   createCamera,
+  getApiBase,
   initCaptcha,
   loginWithPassword,
   pollQr,
@@ -360,10 +361,15 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
       // 2. Request verification challenge for selected region
       const captchaData = await initCaptcha(region);
 
-      // 3. Trigger interactive slider puzzle
+      // 3. Route apiServer through our backend proxy to bypass Tuya origin blocking
+      if (captchaData && captchaData.apiServer) {
+        captchaData.apiServer = `${getApiBase()}/api/auth/captcha/proxy`;
+      }
+
+      // 4. Trigger interactive slider puzzle
       const securekey = await triggerTuyaCaptcha(captchaData);
 
-      // 4. Authenticate with credentials + verified securekey
+      // 5. Authenticate with credentials + verified securekey
       await loginWithPassword(email, password, numericCode, region, securekey);
       toast.success("Logged in successfully!");
       await refreshCameras().catch(() => {});
