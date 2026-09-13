@@ -507,30 +507,47 @@ export class TuyaProtectService implements OnModuleInit, OnModuleDestroy {
 
   public async initCaptcha(regionId?: string): Promise<any> {
     const reg = regionId || this.regionId || "us";
-    const regionConfig = TUYA_REGIONS[reg] || TUYA_REGIONS.us;
-    const host = regionConfig.host;
+    const candidateRegions = [reg];
+    if (reg === "us") candidateRegions.push("ue");
+    else if (reg === "ue") candidateRegions.push("us");
+    else if (reg === "eu") candidateRegions.push("we");
+    else if (reg === "we") candidateRegions.push("eu");
 
-    await axios
-      .get(`https://${host}/login`, {
-        headers: this.getHeaders("/login"),
-        timeout: 10000,
-      })
-      .then((r) => this.updateCookiesFromResponse(r.headers))
-      .catch(() => {});
+    let lastError: any = null;
 
-    const res = await axios.post(
-      `https://${host}/api/jy/init`,
-      {},
-      {
-        headers: this.getHeaders("/login"),
-        timeout: 10000,
-      },
-    );
-    this.updateCookiesFromResponse(res.headers);
-    if (!res.data?.result) {
-      throw new Error(res.data?.errorMsg || "Failed to initialize Tuya captcha");
+    for (const r of candidateRegions) {
+      const regionConfig = TUYA_REGIONS[r] || TUYA_REGIONS.us;
+      const host = regionConfig.host;
+
+      try {
+        const res = await axios.post(
+          `https://${host}/api/jy/init`,
+          {},
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "User-Agent":
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              Origin: `https://${host}`,
+              Referer: `https://${host}/login`,
+            },
+            timeout: 8000,
+          },
+        );
+
+        if (res.data?.result) {
+          this.setRegion(r);
+          this.updateCookiesFromResponse(res.headers);
+          return res.data.result;
+        }
+      } catch (err) {
+        lastError = err;
+      }
     }
-    return res.data.result;
+
+    throw new Error(
+      lastError?.message || "Failed to initialize Tuya verification captcha",
+    );
   }
 
   public async passwordLogin(
