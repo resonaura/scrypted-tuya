@@ -1,6 +1,6 @@
 {
   "name": "@tuya-bridge/web",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -16,6 +16,7 @@
     "@iconify-icon/react": "^3.0.3",
     "@iconify-json/material-symbols": "^1.2.90",
     "@tailwindcss/vite": "^4",
+    "classnames": "^2.5.1",
     "clsx": "^2.1.1",
     "framer-motion": "^12.4.7",
     "hls.js": "^1.5.20",

@@ -8,6 +8,8 @@ export interface CountryCodeItem {
   section?: string;
 }
 
+export type Country = CountryCodeItem;
+
 /**
  * Pinned & Popular Countries (US & Canada at top, Europe, Ukraine, etc.)
  */
@@ -3460,18 +3462,9 @@ export function detectUserLocation(): {
     ) {
       detectedRegion = "eu";
     } else if (
-      [
-        "RU",
-        "BY",
-        "KZ",
-        "UZ",
-        "KG",
-        "TJ",
-        "TM",
-        "AZ",
-        "AM",
-        "GE",
-      ].includes(detectedIso)
+      ["RU", "BY", "KZ", "UZ", "KG", "TJ", "TM", "AZ", "AM", "GE"].includes(
+        detectedIso,
+      )
     ) {
       detectedRegion = "we";
     } else if (["CN", "HK", "MO", "TW"].includes(detectedIso)) {

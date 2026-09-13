@@ -1,6 +1,26 @@
 # Changelog
 
-## 2.2.1
+## 2.2.3
+
+- **Frontend & Modal Polish**:
+  - Restructured Add Camera modal tabs with responsive flex layouts, consistent button placement, and smooth fade-in transitions.
+  - Exported `Country` / `CountryCodeItem` type definitions and unified location detection across all tabs.
+  - Synchronized package versions across Scrypted plugin and Tuya Bridge monorepo.
+
+## 2.2.2
+
+- **Tuya Password Login with Automated Re-Authentication**:
+  - Added full email/password login support (`/api/private/email/login`) with RSA PKCS#1 encrypted MD5 password hashes matching Tuya Protect web specifications.
+  - Implemented automatic token refresh and background re-authentication on session expiry (HTTP 401/403 or `USER_SESSION_INVALID`), allowing unattended 24/7 camera streaming without manual QR code re-scans.
+  - Encrypted credential persistence in SQLite database (`SettingEntity`) with user-friendly error mappings for bad passwords, account lockouts, and rate limits.
+- **HeroUI Autocomplete Country Dial Code Selector**:
+  - Replaced manual numeric country input with HeroUI's official `Autocomplete` component featuring real-time search, flag emojis, and international dial codes.
+  - Prioritized country ordering with top popularity ranking (USA & Canada first, followed by European nations with Ukraine prioritized, then all remaining countries alphabetically).
+  - Cleaned up layout: removed clear button, expanded popover width (`min-w-[340px]`), and padded checkmark indicators to prevent text truncation or collision.
+- **Zero-Permission Timezone & Locale Location Detection**:
+  - Implemented `detectUserLocation()` to auto-detect the user's country code and nearest Tuya cloud region (`eu`, `we`, `us`, `ue`, `cn`, `in`) from `Intl.DateTimeFormat().resolvedOptions().timeZone` and browser locale without triggering geolocation permission popups.
+- **Warning-Soft Session Expiry Footnote**:
+  - Enhanced QR Code tab with a `warning-soft` Alert component informing users about Tuya cloud token expiration and recommending password login for permanent background streaming.
 
 - **Zero-Dip Continuous RTSP Relay & Instant Fallback on Reconnects**:
   - Preserved the native C++ RTSP relay server alive across all stream reconnects, transient drops, and session recoveries without tearing down the RTSP port (8655+) or dropping downstream RTSP players (HomeKit, Scrypted, VLC).

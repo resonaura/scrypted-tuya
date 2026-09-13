@@ -1,6 +1,7 @@
 import type { Key } from "@heroui/react";
 import {
   Autocomplete,
+  cn,
   EmptyState,
   Header,
   Input,
@@ -15,8 +16,14 @@ import {
   TextField,
   useFilter,
 } from "@heroui/react";
-import { AlertCircle, QrCode, RefreshCw } from "lucide-react";
-import React, { useEffect, useRef, useState } from "react";
+import { AlertCircle, RefreshCw } from "lucide-react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import {
   createCamera,
@@ -26,13 +33,22 @@ import {
   startQrFlow,
 } from "../api/client.js";
 import {
-  POPULAR_COUNTRIES,
-  REMAINING_COUNTRIES,
   cleanCountryCode,
   detectUserLocation,
+  POPULAR_COUNTRIES,
+  REMAINING_COUNTRIES,
+  type Country,
 } from "../country-codes.js";
 import { StyledQrCode } from "./StyledQrCode.js";
 import { Alert, Button, Tabs } from "./ui/index.js";
+
+export const AddCameraTab = {
+  QR: "qr",
+  PASSWORD: "password",
+  MANUAL: "manual",
+} as const;
+
+export type AddCameraTabType = (typeof AddCameraTab)[keyof typeof AddCameraTab];
 
 interface AddCameraModalProps {
   isOpen: boolean;
@@ -48,43 +64,50 @@ const REGIONS = [
   { key: "ue", label: "USA East" },
   { key: "cn", label: "China" },
   { key: "in", label: "India" },
-];
+] as const;
+
+const EU_FALLBACK_ISOS = new Set([
+  "UA",
+  "PL",
+  "DE",
+  "FR",
+  "GB",
+  "IT",
+  "ES",
+  "NL",
+  "CH",
+  "AT",
+  "SE",
+  "NO",
+]);
+
+function resolveInitialRegion(initialRegion?: string): string {
+  return (
+    initialRegion ||
+    localStorage.getItem("tuya-bridge.region") ||
+    detectUserLocation().region ||
+    "us"
+  );
+}
 
 function getDefaultCountrySelection(reg: string): string {
   const detected = detectUserLocation();
-  if (detected.region === reg) {
-    return detected.countryKey;
-  }
+
+  if (detected.region === reg) return detected.countryKey;
   if (
     (reg === "us" || reg === "ue") &&
     (detected.iso === "US" || detected.iso === "CA")
   ) {
     return detected.countryKey;
   }
+
   switch (reg) {
     case "eu":
-      return detected.iso &&
-        [
-          "UA",
-          "PL",
-          "DE",
-          "FR",
-          "GB",
-          "IT",
-          "ES",
-          "NL",
-          "CH",
-          "AT",
-          "SE",
-          "NO",
-        ].includes(detected.iso)
+      return detected.iso && EU_FALLBACK_ISOS.has(detected.iso)
         ? detected.countryKey
         : "49-DE";
     case "we":
       return "7-RU";
-    case "us":
-    case "ue":
-      return "1-US";
     case "cn":
       return "86-CN";
     case "in":
@@ -101,39 +124,30 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
   onAdded,
 }) => {
   const { contains } = useFilter({ sensitivity: "base" });
-  const [selectedTab, setSelectedTab] = useState<string>("qr");
-  const [region, setRegion] = useState<string>(() => {
-    const detected = detectUserLocation();
-    return (
-      initialRegion ||
-      localStorage.getItem("tuya-bridge.region") ||
-      detected.region ||
-      "us"
-    );
-  });
+
+  const [selectedTab, setSelectedTab] = useState<AddCameraTabType>(
+    AddCameraTab.QR,
+  );
+  const [region, setRegion] = useState<string>(() =>
+    resolveInitialRegion(initialRegion),
+  );
+  const [countrySelection, setCountrySelection] = useState<Key | null>(() =>
+    getDefaultCountrySelection(resolveInitialRegion(initialRegion)),
+  );
 
   // QR Flow State
   const [qrToken, setQrToken] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrPayload, setQrPayload] = useState<string | null>(null);
   const [isQrLoading, setIsQrLoading] = useState(false);
-  const pollIntervalRef = useRef<any>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Password Flow State
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [countrySelection, setCountrySelection] = useState<Key | null>(() => {
-    const detected = detectUserLocation();
-    const initialReg =
-      initialRegion ||
-      localStorage.getItem("tuya-bridge.region") ||
-      detected.region ||
-      "us";
-    return getDefaultCountrySelection(initialReg);
-  });
   const [isPasswordLoading, setIsPasswordLoading] = useState(false);
 
-  // Manual Camera State
+  // Manual Flow State
   const [manualName, setManualName] = useState("");
   const [manualDid, setManualDid] = useState("");
   const [manualLocalKey, setManualLocalKey] = useState("");
@@ -141,78 +155,93 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
   const [manualQuality, setManualQuality] = useState<"hd" | "sd">("hd");
   const [isManualSubmitting, setIsManualSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const detected = detectUserLocation();
-    const nextRegion =
-      initialRegion ||
-      localStorage.getItem("tuya-bridge.region") ||
-      detected.region ||
-      "us";
-    setRegion(nextRegion);
-    setCountrySelection(getDefaultCountrySelection(nextRegion));
-  }, [initialRegion, isOpen]);
+  // O(1) lookup map для стран
+  const countriesMap = useMemo(() => {
+    const map = new Map<string, Country>();
+    for (const c of POPULAR_COUNTRIES) map.set(`${c.code}-${c.iso}`, c);
+    for (const c of REMAINING_COUNTRIES) map.set(`${c.code}-${c.iso}`, c);
+    return map;
+  }, []);
 
-  useEffect(() => {
-    localStorage.setItem("tuya-bridge.region", region);
-  }, [region]);
+  const stopPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  }, []);
 
   const handleRegionChange = (newRegion: string) => {
     setRegion(newRegion);
     setCountrySelection(getDefaultCountrySelection(newRegion));
   };
 
-  const fetchQr = async (selectedRegion = region) => {
-    setIsQrLoading(true);
-    setQrToken(null);
-    setQrDataUrl(null);
-    setQrPayload(null);
-    try {
-      const res = await startQrFlow(selectedRegion);
-      setQrToken(res.token);
-      setQrDataUrl(res.qrDataUrl);
-      setQrPayload(res.qrPayload || `tuyaSmart--qrLogin?token=${res.token}`);
-    } catch (e: any) {
-      toast.error(`Failed to generate QR: ${e.message}`);
-    } finally {
-      setIsQrLoading(false);
+  useEffect(() => {
+    if (!isOpen) {
+      stopPolling();
+      return;
     }
-  };
+    const nextRegion = resolveInitialRegion(initialRegion);
+    setRegion(nextRegion);
+    setCountrySelection(getDefaultCountrySelection(nextRegion));
+  }, [initialRegion, isOpen, stopPolling]);
 
   useEffect(() => {
-    if (isOpen && selectedTab === "qr") {
+    localStorage.setItem("tuya-bridge.region", region);
+  }, [region]);
+
+  const fetchQr = useCallback(
+    async (targetRegion = region) => {
+      setIsQrLoading(true);
+      setQrToken(null);
+      setQrDataUrl(null);
+      setQrPayload(null);
+
+      try {
+        const res = await startQrFlow(targetRegion);
+        setQrToken(res.token);
+        setQrDataUrl(res.qrDataUrl);
+        setQrPayload(res.qrPayload || `tuyaSmart--qrLogin?token=${res.token}`);
+      } catch (e: any) {
+        toast.error(`Failed to generate QR: ${e.message}`);
+      } finally {
+        setIsQrLoading(false);
+      }
+    },
+    [region],
+  );
+
+  useEffect(() => {
+    if (isOpen && selectedTab === AddCameraTab.QR) {
       fetchQr(region);
     } else {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      stopPolling();
     }
-
-    return () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    };
-  }, [isOpen, selectedTab, region]);
+  }, [isOpen, selectedTab, region, fetchQr, stopPolling]);
 
   useEffect(() => {
-    if (qrToken && isOpen && selectedTab === "qr") {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-
-      pollIntervalRef.current = setInterval(async () => {
-        try {
-          const res = await pollQr(qrToken);
-          if (res.loggedIn) {
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-            toast.success("Tuya Smart Life linked successfully!");
-            await refreshCameras().catch(() => {});
-            onAdded();
-            onClose();
-          }
-        } catch {}
-      }, 1500);
+    if (!qrToken || !isOpen || selectedTab !== AddCameraTab.QR) {
+      stopPolling();
+      return;
     }
 
-    return () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    };
-  }, [qrToken, isOpen, selectedTab]);
+    stopPolling();
+    pollIntervalRef.current = setInterval(async () => {
+      try {
+        const res = await pollQr(qrToken);
+        if (res.loggedIn) {
+          stopPolling();
+          toast.success("Tuya Smart Life linked successfully!");
+          await refreshCameras().catch(() => {});
+          onAdded();
+          onClose();
+        }
+      } catch {
+        // Игнорируем сетевые ошибки поллинга
+      }
+    }, 1500);
+
+    return stopPolling;
+  }, [qrToken, isOpen, selectedTab, onAdded, onClose, stopPolling]);
 
   const handlePasswordSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -264,6 +293,24 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
     }
   };
 
+  const renderCountryItem = (c: Country) => (
+    <ListBox.Item
+      key={`${c.code}-${c.iso}`}
+      id={`${c.code}-${c.iso}`}
+      textValue={`${c.flag} ${c.name} (+${c.code})`}
+    >
+      <div className="flex items-center justify-between w-full gap-2 text-left pr-6">
+        <span className="truncate">
+          {c.flag} {c.name}
+        </span>
+        <span className="text-xs text-muted-foreground font-mono shrink-0">
+          +{c.code}
+        </span>
+      </div>
+      <ListBox.ItemIndicator />
+    </ListBox.Item>
+  );
+
   return (
     <Modal.Backdrop
       isOpen={isOpen}
@@ -271,35 +318,37 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
       variant="blur"
     >
       <Modal.Container placement="center" size="md">
-        <Modal.Dialog className="rs-card-surface sm:max-w-md max-h-[85vh] overflow-y-auto">
+        <Modal.Dialog
+          className={cn(
+            "rs-card-surface max-h-[90vh] overflow-hidden transition-all duration-200 ease",
+            selectedTab === AddCameraTab.QR ? "w-135 h-167.5" : "w-115 h-130",
+          )}
+        >
           <Modal.CloseTrigger />
           <Modal.Header>
-            <Modal.Icon className="bg-foreground/5 text-primary">
-              <QrCode className="size-5" />
-            </Modal.Icon>
             <Modal.Heading>Connect Tuya profile</Modal.Heading>
           </Modal.Header>
 
-          <Modal.Body className="p-4">
+          <Modal.Body className="p-5 overflow-y-auto h-[calc(100%-64px)]">
             <Tabs
               selectedKey={selectedTab}
-              onSelectionChange={(key) => setSelectedTab(key as string)}
-              className="w-full"
+              onSelectionChange={(key) =>
+                setSelectedTab(key as AddCameraTabType)
+              }
+              className="w-full h-full flex flex-col"
               variant="nav"
             >
-              <Tabs.ListContainer className="mb-4">
+              <Tabs.ListContainer className="mb-4 shrink-0">
                 <Tabs.List className="w-full grid grid-cols-3">
-                  <Tabs.Tab id="qr">
+                  <Tabs.Tab id={AddCameraTab.QR}>
                     <Tabs.Indicator />
                     QR Code
                   </Tabs.Tab>
-                  <Tabs.Tab id="password">
-                    {" "}
+                  <Tabs.Tab id={AddCameraTab.PASSWORD}>
                     <Tabs.Indicator />
                     Password
                   </Tabs.Tab>
-                  <Tabs.Tab id="manual">
-                    {" "}
+                  <Tabs.Tab id={AddCameraTab.MANUAL}>
                     <Tabs.Indicator />
                     Manual
                   </Tabs.Tab>
@@ -307,8 +356,11 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
               </Tabs.ListContainer>
 
               {/* QR Panel */}
-              <Tabs.Panel id="qr" className="space-y-3">
-                <div className="flex items-end gap-2">
+              <Tabs.Panel
+                id={AddCameraTab.QR}
+                className="space-y-4 flex-1 flex flex-col justify-between"
+              >
+                <div className="flex items-end gap-2 shrink-0">
                   <div className="flex-1">
                     <Select
                       selectedKey={region}
@@ -316,7 +368,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                         handleRegionChange((k as string) || "us")
                       }
                     >
-                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">
+                      <Label className="text-xs text-muted-foreground font-medium block">
                         Account Region
                       </Label>
                       <Select.Trigger>
@@ -346,64 +398,73 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                     aria-label="Refresh QR"
                   >
                     <RefreshCw
-                      className={`size-4 ${isQrLoading ? "animate-spin" : ""}`}
+                      className={cn("size-4", isQrLoading && "animate-spin")}
                     />
                   </Button>
                 </div>
 
-                <Surface className="bg-transparent flex flex-col items-center justify-center p-4 rounded-2xl">
-                  {isQrLoading ? (
-                    <div className="h-44 flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                      <Spinner color="current" size="md" />
-                    </div>
-                  ) : qrPayload || qrToken || qrDataUrl ? (
-                    <div className="flex flex-col items-center gap-2">
-                      <StyledQrCode
-                        data={
-                          qrPayload ||
-                          (qrToken ? `tuyaSmart--qrLogin?token=${qrToken}` : "")
-                        }
-                        size={190}
-                      />
-                      <p className="mt-1 opacity-70 text-[11px] text-muted-foreground text-center">
-                        Scan with <strong>Tuya Smart</strong> or{" "}
-                        <strong>Smart Life</strong> app
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="h-44 flex flex-col items-center justify-center gap-2 text-rose-500">
-                      <AlertCircle className="size-6" />
-                      <p className="text-xs font-medium">Failed to load QR</p>
-                      <Button size="sm" onPress={() => fetchQr(region)}>
-                        Retry
-                      </Button>
-                    </div>
-                  )}
-                </Surface>
+                <div className="flex flex-col items-center justify-center flex-1 space-y-3">
+                  <Surface className="bg-transparent flex flex-col items-center justify-center p-3 rounded-2xl">
+                    {isQrLoading ? (
+                      <div className="h-55 w-62 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                        <Spinner color="current" size="md" />
+                      </div>
+                    ) : qrPayload || qrToken || qrDataUrl ? (
+                      <div className="flex h-55 w-62 fade-in flex-col items-center gap-2">
+                        <StyledQrCode
+                          data={
+                            qrPayload ||
+                            (qrToken
+                              ? `tuyaSmart--qrLogin?token=${qrToken}`
+                              : "")
+                          }
+                          size={190}
+                        />
+                        <p className="mt-1 opacity-70 text-[11px] text-muted-foreground text-center">
+                          Scan with <strong>Tuya Smart</strong> or{" "}
+                          <strong>Smart Life</strong> app
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="h-50 flex flex-col items-center justify-center gap-2 text-rose-500">
+                        <AlertCircle className="size-6" />
+                        <p className="text-xs font-medium">Failed to load QR</p>
+                        <Button size="sm" onPress={() => fetchQr(region)}>
+                          Retry
+                        </Button>
+                      </div>
+                    )}
+                  </Surface>
 
-                <Alert
-                  status="warning"
-                  className="p-3 text-xs border border-warning/25 bg-warning/10 text-warning-soft-foreground"
-                >
-                  <Alert.Indicator />
-                  <Alert.Content>
-                    <Alert.Title className="font-semibold text-xs text-warning-soft-foreground">
-                      Session Expiry Note
-                    </Alert.Title>
-                    <Alert.Description className="text-[11px] text-muted-foreground leading-relaxed">
-                      QR authorization tokens may periodically expire on Tuya
-                      servers. For uninterrupted 24/7 background streaming and
-                      automatic reconnects, logging in with{" "}
-                      <strong>Email &amp; Password</strong> in the Password tab
-                      is recommended.
-                    </Alert.Description>
-                  </Alert.Content>
-                </Alert>
+                  <Alert
+                    status="warning"
+                    className="bg-warning-soft! w-full h-fit"
+                  >
+                    <Alert.Indicator />
+                    <Alert.Content>
+                      <Alert.Title className="font-semibold text-xs text-warning-soft-foreground">
+                        Session Expiry Note
+                      </Alert.Title>
+                      <Alert.Description className="text-[11px] text-warning-soft-foreground leading-relaxed">
+                        QR authorization tokens may periodically expire on Tuya
+                        servers. For uninterrupted 24/7 background streaming,
+                        logging in with <strong>Email &amp; Password</strong> in
+                        the Password tab is recommended.
+                      </Alert.Description>
+                    </Alert.Content>
+                  </Alert>
+                </div>
               </Tabs.Panel>
 
               {/* Password Panel */}
-              <Tabs.Panel id="password">
-                <form onSubmit={handlePasswordSubmit} className="space-y-3">
+              <Tabs.Panel
+                id={AddCameraTab.PASSWORD}
+                className="flex-1 flex flex-col"
+              >
+                <form
+                  onSubmit={handlePasswordSubmit}
+                  className="space-y-3 flex flex-col flex-1 justify-between"
+                >
                   <div className="space-y-3">
                     <Select
                       selectedKey={region}
@@ -455,14 +516,11 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                               return defaultChildren;
                             }
                             const selectedKey = state.selectedItems[0]?.key;
-                            const country =
-                              POPULAR_COUNTRIES.find(
-                                (c) => `${c.code}-${c.iso}` === selectedKey,
-                              ) ||
-                              REMAINING_COUNTRIES.find(
-                                (c) => `${c.code}-${c.iso}` === selectedKey,
-                              );
+                            const country = selectedKey
+                              ? countriesMap.get(String(selectedKey))
+                              : null;
                             if (!country) return defaultChildren;
+
                             return (
                               <div className="flex items-center justify-between w-full gap-2 text-left pr-2">
                                 <span className="truncate">
@@ -477,7 +535,8 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                         </Autocomplete.Value>
                         <Autocomplete.Indicator />
                       </Autocomplete.Trigger>
-                      <Autocomplete.Popover className="min-w-[340px] sm:min-w-[380px] max-h-80 overflow-y-auto">
+
+                      <Autocomplete.Popover className="min-w-85 sm:min-w-95 max-h-80 overflow-y-auto">
                         <Autocomplete.Filter filter={contains}>
                           <SearchField
                             autoFocus
@@ -491,6 +550,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                               <SearchField.ClearButton />
                             </SearchField.Group>
                           </SearchField>
+
                           <ListBox
                             renderEmptyState={() => (
                               <EmptyState className="p-3 text-xs text-muted-foreground text-center">
@@ -502,163 +562,148 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                               <Header className="px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
                                 Popular
                               </Header>
-                              {POPULAR_COUNTRIES.map((c) => (
-                                <ListBox.Item
-                                  key={`${c.code}-${c.iso}`}
-                                  id={`${c.code}-${c.iso}`}
-                                  textValue={`${c.flag} ${c.name} (+${c.code})`}
-                                >
-                                  <div className="flex items-center justify-between w-full gap-2 text-left pr-6">
-                                    <span className="truncate">
-                                      {c.flag} {c.name}
-                                    </span>
-                                    <span className="text-xs text-muted-foreground font-mono shrink-0">
-                                      +{c.code}
-                                    </span>
-                                  </div>
-                                  <ListBox.ItemIndicator />
-                                </ListBox.Item>
-                              ))}
+                              {POPULAR_COUNTRIES.map(renderCountryItem)}
                             </ListBox.Section>
                             <Separator />
                             <ListBox.Section>
                               <Header className="px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
                                 All Countries
                               </Header>
-                              {REMAINING_COUNTRIES.map((c) => (
-                                <ListBox.Item
-                                  key={`${c.code}-${c.iso}`}
-                                  id={`${c.code}-${c.iso}`}
-                                  textValue={`${c.flag} ${c.name} (+${c.code})`}
-                                >
-                                  <div className="flex items-center justify-between w-full gap-2 text-left pr-6">
-                                    <span className="truncate">
-                                      {c.flag} {c.name}
-                                    </span>
-                                    <span className="text-xs text-muted-foreground font-mono shrink-0">
-                                      +{c.code}
-                                    </span>
-                                  </div>
-                                  <ListBox.ItemIndicator />
-                                </ListBox.Item>
-                              ))}
+                              {REMAINING_COUNTRIES.map(renderCountryItem)}
                             </ListBox.Section>
                           </ListBox>
                         </Autocomplete.Filter>
                       </Autocomplete.Popover>
                     </Autocomplete>
+
+                    <TextField value={email} onChange={setEmail} isRequired>
+                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">
+                        Email or User
+                      </Label>
+                      <Input placeholder="name@example.com" />
+                    </TextField>
+
+                    <TextField
+                      value={password}
+                      onChange={setPassword}
+                      type="password"
+                      isRequired
+                    >
+                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">
+                        Password
+                      </Label>
+                      <Input type="password" placeholder="••••••••" />
+                    </TextField>
                   </div>
 
-                  <TextField value={email} onChange={setEmail} isRequired>
-                    <Label className="text-xs text-muted-foreground font-medium mb-1 block">
-                      Email or User
-                    </Label>
-                    <Input placeholder="name@example.com" />
-                  </TextField>
-
-                  <TextField
-                    value={password}
-                    onChange={setPassword}
-                    type="password"
-                    isRequired
-                  >
-                    <Label className="text-xs text-muted-foreground font-medium mb-1 block">
-                      Password
-                    </Label>
-                    <Input type="password" placeholder="••••••••" />
-                  </TextField>
-
-                  <Button
-                    type="submit"
-                    variant="accent"
-                    isDisabled={isPasswordLoading}
-                    className="w-full font-semibold mt-2"
-                  >
-                    {isPasswordLoading ? (
-                      <Spinner size="sm" />
-                    ) : (
-                      "Sign In & Discover"
-                    )}
-                  </Button>
+                  <div className="pt-3">
+                    <Button
+                      type="submit"
+                      variant="accent"
+                      isDisabled={isPasswordLoading}
+                      className="w-full font-semibold"
+                    >
+                      {isPasswordLoading ? (
+                        <Spinner size="sm" />
+                      ) : (
+                        "Sign In & Discover"
+                      )}
+                    </Button>
+                  </div>
                 </form>
               </Tabs.Panel>
 
               {/* Manual Entry Panel */}
-              <Tabs.Panel id="manual">
-                <form onSubmit={handleManualSubmit} className="space-y-2.5">
-                  <TextField
-                    value={manualName}
-                    onChange={setManualName}
-                    isRequired
-                  >
-                    <Label className="text-xs text-muted-foreground font-medium mb-1 block">
-                      Camera Name
-                    </Label>
-                    <Input placeholder="Front Door" />
-                  </TextField>
-
-                  <TextField
-                    value={manualDid}
-                    onChange={setManualDid}
-                    isRequired
-                  >
-                    <Label className="text-xs text-muted-foreground font-medium mb-1 block">
-                      Device ID (DID)
-                    </Label>
-                    <Input placeholder="bf12345678abcdef" />
-                  </TextField>
-
-                  <TextField
-                    value={manualLocalKey}
-                    onChange={setManualLocalKey}
-                  >
-                    <Label className="text-xs text-muted-foreground font-medium mb-1 block">
-                      Local Key (Optional)
-                    </Label>
-                    <Input placeholder="16-character key" />
-                  </TextField>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <TextField value={manualIp} onChange={setManualIp}>
-                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">
-                        Local IP (Optional)
-                      </Label>
-                      <Input placeholder="192.168.1.50" />
-                    </TextField>
-                    <Select
-                      selectedKey={manualQuality}
-                      onSelectionChange={(k) =>
-                        setManualQuality((k as "hd" | "sd") || "hd")
-                      }
+              <Tabs.Panel
+                id={AddCameraTab.MANUAL}
+                className="flex-1 flex flex-col"
+              >
+                <form
+                  onSubmit={handleManualSubmit}
+                  className="space-y-3 flex flex-col flex-1 justify-between"
+                >
+                  <div className="space-y-3">
+                    <TextField
+                      value={manualName}
+                      onChange={setManualName}
+                      isRequired
                     >
                       <Label className="text-xs text-muted-foreground font-medium mb-1 block">
-                        Quality
+                        Camera Name
                       </Label>
-                      <Select.Trigger>
-                        <Select.Value />
-                        <Select.Indicator />
-                      </Select.Trigger>
-                      <Select.Popover>
-                        <ListBox>
-                          <ListBox.Item id="hd" textValue="HD Stream">
-                            HD Stream
-                          </ListBox.Item>
-                          <ListBox.Item id="sd" textValue="SD Stream">
-                            SD Stream
-                          </ListBox.Item>
-                        </ListBox>
-                      </Select.Popover>
-                    </Select>
+                      <Input placeholder="Front Door" />
+                    </TextField>
+
+                    <TextField
+                      value={manualDid}
+                      onChange={setManualDid}
+                      isRequired
+                    >
+                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">
+                        Device ID (DID)
+                      </Label>
+                      <Input placeholder="bf12345678abcdef" />
+                    </TextField>
+
+                    <TextField
+                      value={manualLocalKey}
+                      onChange={setManualLocalKey}
+                    >
+                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">
+                        Local Key (Optional)
+                      </Label>
+                      <Input placeholder="16-character key" />
+                    </TextField>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <TextField value={manualIp} onChange={setManualIp}>
+                        <Label className="text-xs text-muted-foreground font-medium mb-1 block">
+                          Local IP (Optional)
+                        </Label>
+                        <Input placeholder="192.168.1.50" />
+                      </TextField>
+
+                      <Select
+                        selectedKey={manualQuality}
+                        onSelectionChange={(k) =>
+                          setManualQuality((k as "hd" | "sd") || "hd")
+                        }
+                      >
+                        <Label className="text-xs text-muted-foreground font-medium mb-1 block">
+                          Quality
+                        </Label>
+                        <Select.Trigger>
+                          <Select.Value />
+                          <Select.Indicator />
+                        </Select.Trigger>
+                        <Select.Popover>
+                          <ListBox>
+                            <ListBox.Item id="hd" textValue="HD Stream">
+                              HD Stream
+                            </ListBox.Item>
+                            <ListBox.Item id="sd" textValue="SD Stream">
+                              SD Stream
+                            </ListBox.Item>
+                          </ListBox>
+                        </Select.Popover>
+                      </Select>
+                    </div>
                   </div>
 
-                  <Button
-                    type="submit"
-                    variant="accent"
-                    isDisabled={isManualSubmitting}
-                    className="w-full font-semibold mt-2"
-                  >
-                    {isManualSubmitting ? <Spinner size="sm" /> : "Save Camera"}
-                  </Button>
+                  <div className="pt-3">
+                    <Button
+                      type="submit"
+                      variant="accent"
+                      isDisabled={isManualSubmitting}
+                      className="w-full font-semibold"
+                    >
+                      {isManualSubmitting ? (
+                        <Spinner size="sm" />
+                      ) : (
+                        "Save Camera"
+                      )}
+                    </Button>
+                  </div>
                 </form>
               </Tabs.Panel>
             </Tabs>
