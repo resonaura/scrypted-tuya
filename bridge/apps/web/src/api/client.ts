@@ -116,16 +116,32 @@ export async function pollQr(
   return res.json();
 }
 
+export async function initCaptcha(region = "us"): Promise<any> {
+  const res = await fetch(`${getApiBase()}/api/auth/captcha/init`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ region }),
+  });
+  if (!res.ok) {
+    const err = await res
+      .json()
+      .catch(() => ({ message: "Failed to initialize verification captcha" }));
+    throw new Error(err.message || "Failed to initialize verification captcha");
+  }
+  return res.json();
+}
+
 export async function loginWithPassword(
   email: string,
   password: string,
   countryCode = "1",
   region = "us",
+  securekey?: string,
 ) {
   const res = await fetch(`${getApiBase()}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password, countryCode, region }),
+    body: JSON.stringify({ email, password, countryCode, region, securekey }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: "Login failed" }));

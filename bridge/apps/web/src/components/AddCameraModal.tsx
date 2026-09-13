@@ -27,6 +27,7 @@ import React, {
 import { toast } from "sonner";
 import {
   createCamera,
+  initCaptcha,
   loginWithPassword,
   pollQr,
   refreshCameras,
@@ -41,6 +42,75 @@ import {
 } from "../country-codes.js";
 import { StyledQrCode } from "./StyledQrCode.js";
 import { Alert, Button, Tabs } from "./ui/index.js";
+
+function loadCaptchaScript(region: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (typeof window !== "undefined" && (window as any).yruleInitVerify) {
+      return resolve();
+    }
+    const src =
+      region === "cn"
+        ? "https://static1.tuyacn.com/static/th-lib/yrule/v1/loader.js"
+        : "https://eustatic7f2e65.cdn5th.com/static/th-lib/yrule/v1/loader.js";
+
+    const existing = document.querySelector("script[data-tuya-captcha]");
+    if (existing) {
+      existing.remove();
+    }
+
+    const script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src = src;
+    script.setAttribute("data-tuya-captcha", "true");
+    script.onload = () => resolve();
+    script.onerror = () =>
+      reject(new Error("Failed to load Tuya verification security engine"));
+    document.head.appendChild(script);
+  });
+}
+
+function triggerTuyaCaptcha(initData: any): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let container = document.getElementById("captcha");
+    if (!container) {
+      container = document.createElement("div");
+      container.id = "captcha";
+      document.body.appendChild(container);
+    }
+    container.style.position = "relative";
+    container.style.zIndex = "9999999";
+
+    const yrule = (window as any).yruleInitVerify;
+    if (!yrule) {
+      return reject(
+        new Error("Verification engine not ready. Please try again."),
+      );
+    }
+
+    yrule({ ...initData }, (instance: any) => {
+      if (!instance) {
+        return reject(new Error("Failed to initialize verification puzzle"));
+      }
+
+      instance.onSuccess((res: any) => {
+        const securekey = typeof res === "string" ? res : JSON.stringify(res);
+        resolve(securekey);
+      });
+
+      instance.onClose(() => {
+        reject(new Error("Verification closed by user"));
+      });
+
+      instance.onError((err: any) => {
+        reject(new Error(err?.message || "Verification failed"));
+      });
+
+      if (typeof instance.verify === "function") {
+        instance.verify();
+      }
+    });
+  });
+}
 
 export const AddCameraTab = {
   QR: "qr",
@@ -58,10 +128,10 @@ interface AddCameraModalProps {
 }
 
 const REGIONS = [
-  { key: "eu", label: "Western Europe (EU)" },
-  { key: "we", label: "Eastern Europe (WE)" },
-  { key: "us", label: "USA West" },
-  { key: "ue", label: "USA East" },
+  { key: "eu", label: "Western Europe" },
+  { key: "we", label: "Eastern Europe" },
+  { key: "us", label: "America West" },
+  { key: "ue", label: "America East" },
   { key: "cn", label: "China" },
   { key: "in", label: "India" },
 ] as const;
@@ -266,6 +336,12 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
     return stopPolling;
   }, [qrToken, isOpen, selectedTab, onAdded, onClose, stopPolling]);
 
+  useEffect(() => {
+    if (isOpen && selectedTab === AddCameraTab.PASSWORD) {
+      void loadCaptchaScript(region).catch(() => {});
+    }
+  }, [isOpen, selectedTab, region]);
+
   const handlePasswordSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!email || !password) {
@@ -278,12 +354,25 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
 
     setIsPasswordLoading(true);
     try {
-      await loginWithPassword(email, password, numericCode, region);
+      // 1. Ensure Tuya verification script is loaded
+      await loadCaptchaScript(region);
+
+      // 2. Request verification challenge for selected region
+      const captchaData = await initCaptcha(region);
+
+      // 3. Trigger interactive slider puzzle
+      const securekey = await triggerTuyaCaptcha(captchaData);
+
+      // 4. Authenticate with credentials + verified securekey
+      await loginWithPassword(email, password, numericCode, region, securekey);
       toast.success("Logged in successfully!");
       await refreshCameras().catch(() => {});
       onAdded();
       onClose();
     } catch (e: any) {
+      if (e.message && e.message.includes("closed by user")) {
+        return;
+      }
       toast.error(e.message || "Login failed");
     } finally {
       setIsPasswordLoading(false);
@@ -615,14 +704,6 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                       </Label>
                       <Input type="password" placeholder="••••••••" />
                     </TextField>
-
-                    <Alert status="default" className="py-2 px-3 text-xs bg-muted/40 border border-border/50">
-                      <Alert.Content>
-                        <Alert.Description className="text-[11px] leading-relaxed text-muted-foreground">
-                          💡 Match Country &amp; Region with your Smart Life registration (e.g. Canada/US use dial code +1 and USA West/East). If you registered via Google or Apple ID, use the <strong>QR Code</strong> tab for instant 1-click login.
-                        </Alert.Description>
-                      </Alert.Content>
-                    </Alert>
                   </div>
 
                   <div className="pt-3">

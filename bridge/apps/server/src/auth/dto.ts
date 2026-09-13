@@ -9,6 +9,11 @@ export const PasswordLoginSchema = z.object({
   password: z.string().min(1),
   countryCode: z.string().optional().default("1"),
   region: z.string().optional().default("us"),
+  securekey: z.string().optional(),
+});
+
+export const CaptchaInitSchema = z.object({
+  region: z.string().optional().default("us"),
 });
 
 export const PollQrSchema = z.object({

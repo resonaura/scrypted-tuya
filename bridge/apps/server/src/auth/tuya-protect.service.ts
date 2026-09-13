@@ -24,22 +24,22 @@ export const TUYA_REGIONS: Record<string, TuyaRegion> = {
   eu: {
     key: "eu-central",
     host: "protect-eu.ismartlife.me",
-    label: "Western Europe (EU)",
+    label: "Western Europe",
   },
   we: {
     key: "eu-east",
     host: "protect-we.ismartlife.me",
-    label: "Eastern Europe (WE)",
+    label: "Eastern Europe",
   },
   us: {
     key: "us-west",
     host: "protect-us.ismartlife.me",
-    label: "USA West",
+    label: "America West",
   },
   ue: {
     key: "us-east",
     host: "protect-ue.ismartlife.me",
-    label: "USA East",
+    label: "America East",
   },
   cn: {
     key: "china",
@@ -104,7 +104,7 @@ export function formatTuyaError(errorCode?: string, errorMsg?: string): string {
     return "Account does not exist in the selected country/region. Please verify the Country Code.";
   }
   if (combined.includes("REGION_PROXY_FAILED")) {
-    return "Unable to connect to the selected region server. Please try a different region (e.g. USA West / USA East).";
+    return "Unable to connect to the selected region server. Please try a different region (e.g. America West / America East).";
   }
   if (combined.includes("CHECK_VERIFY_ERROR")) {
     return "Tuya security verification triggered. Please log in using the QR Code tab.";
@@ -290,7 +290,10 @@ export class TuyaProtectService implements OnModuleInit, OnModuleDestroy {
   ): Promise<T> {
     const url = `https://${this.host}${path}`;
     const isAuthEndpoint =
-      path.startsWith("/api/login") || path.startsWith("/api/private");
+      path.startsWith("/api/login") ||
+      path.startsWith("/api/private") ||
+      path.startsWith("/api/password") ||
+      path.startsWith("/api/jy");
 
     const res = await axios.post(url, payload !== null ? payload : undefined, {
       headers: this.getHeaders(referer),
@@ -502,11 +505,40 @@ export class TuyaProtectService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  public async initCaptcha(regionId?: string): Promise<any> {
+    const reg = regionId || this.regionId || "us";
+    const regionConfig = TUYA_REGIONS[reg] || TUYA_REGIONS.us;
+    const host = regionConfig.host;
+
+    await axios
+      .get(`https://${host}/login`, {
+        headers: this.getHeaders("/login"),
+        timeout: 10000,
+      })
+      .then((r) => this.updateCookiesFromResponse(r.headers))
+      .catch(() => {});
+
+    const res = await axios.post(
+      `https://${host}/api/jy/init`,
+      {},
+      {
+        headers: this.getHeaders("/login"),
+        timeout: 10000,
+      },
+    );
+    this.updateCookiesFromResponse(res.headers);
+    if (!res.data?.result) {
+      throw new Error(res.data?.errorMsg || "Failed to initialize Tuya captcha");
+    }
+    return res.data.result;
+  }
+
   public async passwordLogin(
     email: string,
     password: string,
     countryCode = "1",
     regionId?: string,
+    securekey?: string,
   ): Promise<TuyaLoginResult> {
     const cleanEmail = email.trim();
     const cleanCc = String(countryCode).replace(/[^0-9]/g, "") || "1";
@@ -515,6 +547,71 @@ export class TuyaProtectService implements OnModuleInit, OnModuleDestroy {
     }
 
     const requestedRegion = regionId || this.regionId || "us";
+
+    // When securekey (solved slider puzzle) is provided, perform direct official password login
+    if (securekey) {
+      this.setRegion(requestedRegion);
+      try {
+        await axios
+          .get(`https://${this.host}/login`, {
+            headers: this.getHeaders("/login"),
+            timeout: 15000,
+          })
+          .then((r) => this.updateCookiesFromResponse(r.headers))
+          .catch(() => {});
+
+        const md5Pass = crypto.createHash("md5").update(password).digest("hex");
+
+        const loginRes = await this.postApi<{
+          result: TuyaLoginResult;
+          success: boolean;
+        }>("/api/password/login", {
+          countryCode: cleanCc,
+          userName: cleanEmail,
+          password: md5Pass,
+          securekey,
+          domain: this.host,
+        });
+
+        let login = loginRes.result;
+        if (!login || (!login.sid && !login.uid && !login.token)) {
+          const profile = await this.fetchUserInfo();
+          if (profile) {
+            login = { ...profile, ...login };
+          } else if (login?.uid) {
+            login = {
+              ...login,
+              email: cleanEmail,
+              username: cleanEmail,
+            };
+          } else {
+            throw new Error("Login succeeded but no user session was returned");
+          }
+        }
+
+        this.loginResult = login;
+        this.lastError = null;
+        await this.saveSession();
+        await this.saveCredentials({
+          email: cleanEmail,
+          password,
+          countryCode: cleanCc,
+          region: this.regionId,
+          savedAt: new Date().toISOString(),
+        });
+        this.logger.log(
+          `Logged in successfully with password & captcha as ${cleanEmail} (${this.regionId.toUpperCase()})`,
+        );
+        this.events.emit("session_authenticated");
+        return login;
+      } catch (err: any) {
+        const formatted = formatTuyaError(err?.errorCode, err?.message);
+        this.lastError = formatted;
+        this.logger.error(`Password login failed: ${formatted}`);
+        throw new Error(formatted);
+      }
+    }
+
     const candidateRegions: string[] = [requestedRegion];
 
     // Smart region fallbacks for North America and Europe

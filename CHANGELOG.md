@@ -3,12 +3,12 @@
 ## 2.2.4
 
 - **Smart Multi-Region Failover & Dual Password Encryption**:
-  - Implemented automatic regional fallback for North American accounts (trying `USA West` and `USA East` for dial code `+1`) and European accounts (`Western Europe` and `Eastern Europe`) on network/proxy failure.
-  - Added dual encryption handshake: attempts RSA PKCS#1 encrypted password (`ifencrypt: 1`) and automatically falls back to raw MD5 digest (`ifencrypt: 0`), matching Smart Life mobile web client standards.
+  - Implemented automatic regional fallback for North American accounts (trying `America West` and `America East` for dial code `+1`) and European accounts (`Western Europe` and `Eastern Europe`) on network/proxy failure.
+  - Added dual encryption handshake: attempts raw MD5 digest (`ifencrypt: 0`) and RSA PKCS#1 encrypted password (`ifencrypt: 1`), matching Smart Life mobile web client standards.
   - Enhanced error descriptions with actionable guidance for Country Code matching (e.g. Canada/US dial code `+1`), server regions, and 5-minute lockout recovery.
-- **Smart Country-Region Synchronization & Password Helper**:
-  - Selecting Canada (`1-CA`) or USA (`1-US`) in the Autocomplete selector now automatically sets dial code `+1` and aligns the server region to Americas data centers (`USA West` / `USA East`).
-  - Added an in-app tip alert under the Password form advising users on Country & Region matching and recommending the 1-click QR Code tab as an instant alternative.
+- **Smart Country-Region Synchronization**:
+  - Selecting Canada (`1-CA`) or USA (`1-US`) in the Autocomplete selector now automatically sets dial code `+1` and aligns the server region to Americas data centers (`America West` / `America East`).
+  - Streamlined region labels across UI and server without bracket noise (`Western Europe`, `Eastern Europe`, `America West`, `America East`).
 - **Button Spinner Visibility**:
   - Updated all form action buttons to `<Spinner color="current" size="sm" />`, ensuring spinner graphics inherit button text color (`currentColor`) and remain clearly visible against accent buttons.
 

@@ -10,7 +10,7 @@ import {
 } from "@nestjs/common";
 import { TuyaProtectService } from "./tuya-protect.service.js";
 import { CamerasService } from "../cameras/cameras.service.js";
-import { StartQrSchema, PasswordLoginSchema } from "./dto.js";
+import { StartQrSchema, PasswordLoginSchema, CaptchaInitSchema } from "./dto.js";
 
 @Controller("api/auth")
 export class AuthController {
@@ -24,6 +24,19 @@ export class AuthController {
   @Get("state")
   async getState() {
     return this.tuyaProtect.getState();
+  }
+
+  @Post("captcha/init")
+  async initCaptcha(@Body() body: unknown) {
+    const parse = CaptchaInitSchema.safeParse(body || {});
+    if (!parse.success) {
+      throw new BadRequestException(parse.error.format());
+    }
+    try {
+      return await this.tuyaProtect.initCaptcha(parse.data.region);
+    } catch (e: any) {
+      throw new BadRequestException(e.message || "Failed to initialize verification captcha");
+    }
   }
 
   @Post("qr/start")
@@ -54,13 +67,14 @@ export class AuthController {
     if (!parse.success) {
       throw new BadRequestException(parse.error.format());
     }
-    const { email, password, countryCode, region } = parse.data;
+    const { email, password, countryCode, region, securekey } = parse.data;
     try {
       const res = await this.tuyaProtect.passwordLogin(
         email,
         password,
         countryCode,
         region,
+        securekey,
       );
       return { success: true, user: res };
     } catch (e: any) {
