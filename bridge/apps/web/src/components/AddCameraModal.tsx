@@ -360,7 +360,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
               {/* Password Panel */}
               <Tabs.Panel id="password">
                 <form onSubmit={handlePasswordSubmit} className="space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-3">
                     <Select
                       selectedKey={region}
                       onSelectionChange={(k) =>
@@ -368,7 +368,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                       }
                     >
                       <Label className="text-xs text-muted-foreground font-medium mb-1 block">
-                        Region
+                        Account Region
                       </Label>
                       <Select.Trigger>
                         <Select.Value />
@@ -402,11 +402,38 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                         Country
                       </Label>
                       <Autocomplete.Trigger>
-                        <Autocomplete.Value />
-                        <Autocomplete.ClearButton />
+                        <Autocomplete.Value>
+                          {({ defaultChildren, isPlaceholder, state }) => {
+                            if (
+                              isPlaceholder ||
+                              state.selectedItems.length === 0
+                            ) {
+                              return defaultChildren;
+                            }
+                            const selectedKey = state.selectedItems[0]?.key;
+                            const country =
+                              POPULAR_COUNTRIES.find(
+                                (c) => `${c.code}-${c.iso}` === selectedKey,
+                              ) ||
+                              REMAINING_COUNTRIES.find(
+                                (c) => `${c.code}-${c.iso}` === selectedKey,
+                              );
+                            if (!country) return defaultChildren;
+                            return (
+                              <div className="flex items-center justify-between w-full gap-2 text-left pr-2">
+                                <span className="truncate">
+                                  {country.flag} {country.name}
+                                </span>
+                                <span className="text-xs text-muted-foreground font-mono shrink-0">
+                                  +{country.code}
+                                </span>
+                              </div>
+                            );
+                          }}
+                        </Autocomplete.Value>
                         <Autocomplete.Indicator />
                       </Autocomplete.Trigger>
-                      <Autocomplete.Popover className="max-h-72 overflow-y-auto">
+                      <Autocomplete.Popover className="min-w-[340px] sm:min-w-[380px] max-h-80 overflow-y-auto">
                         <Autocomplete.Filter filter={contains}>
                           <SearchField
                             autoFocus
@@ -437,7 +464,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                                   id={`${c.code}-${c.iso}`}
                                   textValue={`${c.flag} ${c.name} (+${c.code})`}
                                 >
-                                  <div className="flex items-center justify-between w-full gap-2 text-left">
+                                  <div className="flex items-center justify-between w-full gap-2 text-left pr-6">
                                     <span className="truncate">
                                       {c.flag} {c.name}
                                     </span>
@@ -460,7 +487,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                                   id={`${c.code}-${c.iso}`}
                                   textValue={`${c.flag} ${c.name} (+${c.code})`}
                                 >
-                                  <div className="flex items-center justify-between w-full gap-2 text-left">
+                                  <div className="flex items-center justify-between w-full gap-2 text-left pr-6">
                                     <span className="truncate">
                                       {c.flag} {c.name}
                                     </span>
