@@ -32,12 +32,20 @@ export class AuthController {
     if (!parse.success) {
       throw new BadRequestException(parse.error.format());
     }
-    return this.tuyaProtect.startQrFlow(parse.data.region);
+    try {
+      return await this.tuyaProtect.startQrFlow(parse.data.region);
+    } catch (e: any) {
+      throw new BadRequestException(e.message || "Failed to start QR flow");
+    }
   }
 
   @Get("qr/poll")
   async pollQr(@Query("token") token?: string) {
-    return this.tuyaProtect.pollQr(token);
+    try {
+      return await this.tuyaProtect.pollQr(token);
+    } catch (e: any) {
+      throw new BadRequestException(e.message || "Failed to poll QR");
+    }
   }
 
   @Post("login")
@@ -47,19 +55,30 @@ export class AuthController {
       throw new BadRequestException(parse.error.format());
     }
     const { email, password, countryCode, region } = parse.data;
-    const res = await this.tuyaProtect.passwordLogin(
-      email,
-      password,
-      countryCode,
-      region,
-    );
-    return { success: true, user: res };
+    try {
+      const res = await this.tuyaProtect.passwordLogin(
+        email,
+        password,
+        countryCode,
+        region,
+      );
+      return { success: true, user: res };
+    } catch (e: any) {
+      throw new BadRequestException(
+        e.message ||
+          "Incorrect email or password. Please verify your Tuya / Smart Life credentials.",
+      );
+    }
   }
 
   @Post("logout")
   async logout() {
-    await this.camerasService.logoutProfile();
-    await this.tuyaProtect.logout();
-    return { success: true };
+    try {
+      await this.camerasService.logoutProfile();
+      await this.tuyaProtect.logout();
+      return { success: true };
+    } catch (e: any) {
+      throw new BadRequestException(e.message || "Failed to logout");
+    }
   }
 }

@@ -604,7 +604,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                       className="w-full font-semibold"
                     >
                       {isPasswordLoading ? (
-                        <Spinner size="sm" />
+                        <Spinner color="current" size="sm" />
                       ) : (
                         "Sign In & Discover"
                       )}
@@ -698,7 +698,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                       className="w-full font-semibold"
                     >
                       {isManualSubmitting ? (
-                        <Spinner size="sm" />
+                        <Spinner color="current" size="sm" />
                       ) : (
                         "Save Camera"
                       )}
