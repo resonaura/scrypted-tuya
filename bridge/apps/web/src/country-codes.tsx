@@ -3060,3 +3060,434 @@ export function getDefaultCountryCodeForRegion(regionId: string): string {
       return "1";
   }
 }
+
+/**
+ * Detect user's ISO country code and Tuya cloud region using timezone & locale
+ * without requesting browser geolocation permissions.
+ */
+export function detectUserLocation(): {
+  region: string;
+  countryKey: string;
+  iso: string;
+} {
+  let detectedIso = "";
+  let detectedRegion = "";
+
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+
+    // 1. Timezone-based ISO and Tuya region detection
+    if (tz) {
+      if (
+        tz.startsWith("America/Toronto") ||
+        tz.startsWith("America/Vancouver") ||
+        tz.startsWith("America/Montreal") ||
+        tz.startsWith("America/Edmonton") ||
+        tz.startsWith("America/Calgary") ||
+        tz.startsWith("America/Winnipeg") ||
+        tz.startsWith("America/Halifax") ||
+        tz.startsWith("America/St_Johns") ||
+        tz.startsWith("America/Regina") ||
+        tz.startsWith("America/Moncton")
+      ) {
+        detectedIso = "CA";
+        detectedRegion =
+          tz.includes("Toronto") ||
+          tz.includes("Montreal") ||
+          tz.includes("Halifax") ||
+          tz.includes("St_Johns") ||
+          tz.includes("Moncton")
+            ? "ue"
+            : "us";
+      } else if (
+        tz.startsWith("America/New_York") ||
+        tz.startsWith("America/Detroit") ||
+        tz.startsWith("America/Indiana") ||
+        tz.startsWith("America/Kentucky")
+      ) {
+        detectedIso = "US";
+        detectedRegion = "ue";
+      } else if (
+        tz.startsWith("America/Los_Angeles") ||
+        tz.startsWith("America/Chicago") ||
+        tz.startsWith("America/Denver") ||
+        tz.startsWith("America/Phoenix") ||
+        tz.startsWith("America/Anchorage") ||
+        tz.startsWith("America/Honolulu") ||
+        tz.startsWith("America/Boise") ||
+        tz.startsWith("America/North_Dakota")
+      ) {
+        detectedIso = "US";
+        detectedRegion = "us";
+      } else if (
+        tz.startsWith("Europe/Kyiv") ||
+        tz.startsWith("Europe/Kiev") ||
+        tz.startsWith("Europe/Uzhgorod") ||
+        tz.startsWith("Europe/Zaporozhye")
+      ) {
+        detectedIso = "UA";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Warsaw")) {
+        detectedIso = "PL";
+        detectedRegion = "eu";
+      } else if (
+        tz.startsWith("Europe/Berlin") ||
+        tz.startsWith("Europe/Busingen")
+      ) {
+        detectedIso = "DE";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Paris")) {
+        detectedIso = "FR";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/London")) {
+        detectedIso = "GB";
+        detectedRegion = "eu";
+      } else if (
+        tz.startsWith("Europe/Rome") ||
+        tz.startsWith("Europe/San_Marino") ||
+        tz.startsWith("Europe/Vatican")
+      ) {
+        detectedIso = "IT";
+        detectedRegion = "eu";
+      } else if (
+        tz.startsWith("Europe/Madrid") ||
+        tz.startsWith("Atlantic/Canary") ||
+        tz.startsWith("Africa/Ceuta")
+      ) {
+        detectedIso = "ES";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Amsterdam")) {
+        detectedIso = "NL";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Brussels")) {
+        detectedIso = "BE";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Vienna")) {
+        detectedIso = "AT";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Zurich")) {
+        detectedIso = "CH";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Stockholm")) {
+        detectedIso = "SE";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Oslo")) {
+        detectedIso = "NO";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Copenhagen")) {
+        detectedIso = "DK";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Helsinki")) {
+        detectedIso = "FI";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Dublin")) {
+        detectedIso = "IE";
+        detectedRegion = "eu";
+      } else if (
+        tz.startsWith("Europe/Lisbon") ||
+        tz.startsWith("Atlantic/Madeira") ||
+        tz.startsWith("Atlantic/Azores")
+      ) {
+        detectedIso = "PT";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Prague")) {
+        detectedIso = "CZ";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Bucharest")) {
+        detectedIso = "RO";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Budapest")) {
+        detectedIso = "HU";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Athens")) {
+        detectedIso = "GR";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Sofia")) {
+        detectedIso = "BG";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Zagreb")) {
+        detectedIso = "HR";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Belgrade")) {
+        detectedIso = "RS";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Bratislava")) {
+        detectedIso = "SK";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Ljubljana")) {
+        detectedIso = "SI";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Tallinn")) {
+        detectedIso = "EE";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Riga")) {
+        detectedIso = "LV";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Vilnius")) {
+        detectedIso = "LT";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Europe/Chisinau")) {
+        detectedIso = "MD";
+        detectedRegion = "eu";
+      } else if (
+        tz.startsWith("Europe/Istanbul") ||
+        tz.startsWith("Asia/Istanbul")
+      ) {
+        detectedIso = "TR";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Asia/Dubai")) {
+        detectedIso = "AE";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Asia/Riyadh")) {
+        detectedIso = "SA";
+        detectedRegion = "eu";
+      } else if (
+        tz.startsWith("Asia/Jerusalem") ||
+        tz.startsWith("Asia/Tel_Aviv")
+      ) {
+        detectedIso = "IL";
+        detectedRegion = "eu";
+      } else if (tz.startsWith("Asia/Tbilisi")) {
+        detectedIso = "GE";
+        detectedRegion = "we";
+      } else if (tz.startsWith("Asia/Yerevan")) {
+        detectedIso = "AM";
+        detectedRegion = "we";
+      } else if (tz.startsWith("Asia/Baku")) {
+        detectedIso = "AZ";
+        detectedRegion = "we";
+      } else if (
+        tz.startsWith("Asia/Almaty") ||
+        tz.startsWith("Asia/Qyzylorda") ||
+        tz.startsWith("Asia/Aqtobe") ||
+        tz.startsWith("Asia/Aqtau") ||
+        tz.startsWith("Asia/Atyrau") ||
+        tz.startsWith("Asia/Oral")
+      ) {
+        detectedIso = "KZ";
+        detectedRegion = "we";
+      } else if (
+        tz.startsWith("Asia/Tashkent") ||
+        tz.startsWith("Asia/Samarkand")
+      ) {
+        detectedIso = "UZ";
+        detectedRegion = "we";
+      } else if (tz.startsWith("Europe/Minsk")) {
+        detectedIso = "BY";
+        detectedRegion = "we";
+      } else if (
+        tz.startsWith("Europe/Moscow") ||
+        tz.startsWith("Europe/Samara") ||
+        tz.startsWith("Europe/Volgograd") ||
+        tz.startsWith("Europe/Kaliningrad") ||
+        tz.startsWith("Europe/Kirov") ||
+        tz.startsWith("Europe/Astrakhan") ||
+        tz.startsWith("Europe/Ulyanovsk") ||
+        tz.startsWith("Europe/Saratov") ||
+        tz.startsWith("Asia/Yekaterinburg") ||
+        tz.startsWith("Asia/Omsk") ||
+        tz.startsWith("Asia/Novosibirsk") ||
+        tz.startsWith("Asia/Barnaul") ||
+        tz.startsWith("Asia/Tomsk") ||
+        tz.startsWith("Asia/Novokuznetsk") ||
+        tz.startsWith("Asia/Krasnoyarsk") ||
+        tz.startsWith("Asia/Irkutsk") ||
+        tz.startsWith("Asia/Chita") ||
+        tz.startsWith("Asia/Yakutsk") ||
+        tz.startsWith("Asia/Vladivostok") ||
+        tz.startsWith("Asia/Magadan") ||
+        tz.startsWith("Asia/Sakhalin") ||
+        tz.startsWith("Asia/Kamchatka")
+      ) {
+        detectedIso = "RU";
+        detectedRegion = "we";
+      } else if (
+        tz.startsWith("Asia/Shanghai") ||
+        tz.startsWith("Asia/Beijing") ||
+        tz.startsWith("Asia/Chongqing") ||
+        tz.startsWith("Asia/Harbin") ||
+        tz.startsWith("Asia/Urumqi") ||
+        tz.startsWith("Asia/Hong_Kong") ||
+        tz.startsWith("Asia/Macau") ||
+        tz.startsWith("Asia/Taipei")
+      ) {
+        detectedIso = "CN";
+        detectedRegion = "cn";
+      } else if (
+        tz.startsWith("Asia/Kolkata") ||
+        tz.startsWith("Asia/Calcutta")
+      ) {
+        detectedIso = "IN";
+        detectedRegion = "in";
+      } else if (tz.startsWith("Asia/Tokyo")) {
+        detectedIso = "JP";
+        detectedRegion = "us";
+      } else if (tz.startsWith("Asia/Seoul")) {
+        detectedIso = "KR";
+        detectedRegion = "us";
+      } else if (tz.startsWith("Asia/Singapore")) {
+        detectedIso = "SG";
+        detectedRegion = "us";
+      } else if (tz.startsWith("Australia/")) {
+        detectedIso = "AU";
+        detectedRegion = "us";
+      } else if (tz.startsWith("Pacific/Auckland")) {
+        detectedIso = "NZ";
+        detectedRegion = "us";
+      } else if (
+        tz.startsWith("America/Sao_Paulo") ||
+        tz.startsWith("America/Bahia") ||
+        tz.startsWith("America/Recife") ||
+        tz.startsWith("America/Manaus")
+      ) {
+        detectedIso = "BR";
+        detectedRegion = "us";
+      } else if (
+        tz.startsWith("America/Mexico_City") ||
+        tz.startsWith("America/Monterrey") ||
+        tz.startsWith("America/Cancun") ||
+        tz.startsWith("America/Tijuana")
+      ) {
+        detectedIso = "MX";
+        detectedRegion = "us";
+      } else if (tz.startsWith("Europe/")) {
+        detectedRegion = "eu";
+      } else if (tz.startsWith("America/")) {
+        detectedRegion = "us";
+      } else if (tz.startsWith("Asia/")) {
+        detectedRegion = "us";
+      }
+    }
+
+    // 2. Locale fallback if ISO is still empty
+    if (!detectedIso && typeof navigator !== "undefined") {
+      const languages = navigator.languages || [navigator.language];
+      for (const lang of languages) {
+        if (!lang) continue;
+        const parts = lang.split("-");
+        if (parts.length > 1 && parts[1]?.length === 2) {
+          detectedIso = parts[1].toUpperCase();
+          break;
+        }
+        if (parts[0] === "uk") {
+          detectedIso = "UA";
+          break;
+        }
+        if (parts[0] === "de") {
+          detectedIso = "DE";
+          break;
+        }
+        if (parts[0] === "fr") {
+          detectedIso = "FR";
+          break;
+        }
+        if (parts[0] === "pl") {
+          detectedIso = "PL";
+          break;
+        }
+        if (parts[0] === "it") {
+          detectedIso = "IT";
+          break;
+        }
+        if (parts[0] === "es") {
+          detectedIso = "ES";
+          break;
+        }
+        if (parts[0] === "ru") {
+          detectedIso = "RU";
+          break;
+        }
+        if (parts[0] === "ja") {
+          detectedIso = "JP";
+          break;
+        }
+        if (parts[0] === "ko") {
+          detectedIso = "KR";
+          break;
+        }
+        if (parts[0] === "zh") {
+          detectedIso = "CN";
+          break;
+        }
+        if (parts[0] === "hi") {
+          detectedIso = "IN";
+          break;
+        }
+      }
+    }
+  } catch {}
+
+  // 3. Fallback defaults
+  if (!detectedIso) detectedIso = "US";
+  if (!detectedRegion) {
+    if (
+      [
+        "UA",
+        "PL",
+        "DE",
+        "FR",
+        "GB",
+        "IT",
+        "ES",
+        "NL",
+        "BE",
+        "AT",
+        "CH",
+        "SE",
+        "NO",
+        "DK",
+        "FI",
+        "IE",
+        "PT",
+        "CZ",
+        "RO",
+        "HU",
+        "GR",
+        "BG",
+        "HR",
+        "RS",
+        "SK",
+        "SI",
+        "EE",
+        "LV",
+        "LT",
+        "MD",
+        "TR",
+        "IL",
+        "AE",
+        "SA",
+      ].includes(detectedIso)
+    ) {
+      detectedRegion = "eu";
+    } else if (
+      [
+        "RU",
+        "BY",
+        "KZ",
+        "UZ",
+        "KG",
+        "TJ",
+        "TM",
+        "AZ",
+        "AM",
+        "GE",
+      ].includes(detectedIso)
+    ) {
+      detectedRegion = "we";
+    } else if (["CN", "HK", "MO", "TW"].includes(detectedIso)) {
+      detectedRegion = "cn";
+    } else if (["IN", "BD", "NP", "LK", "PK"].includes(detectedIso)) {
+      detectedRegion = "in";
+    } else {
+      detectedRegion = "us";
+    }
+  }
+
+  // Find country item matching ISO
+  const countryItem = ALL_COUNTRIES_ORDERED.find((c) => c.iso === detectedIso);
+  const countryKey = countryItem
+    ? `${countryItem.code}-${countryItem.iso}`
+    : "1-US";
+
+  return { region: detectedRegion, countryKey, iso: detectedIso };
+}

@@ -29,6 +29,7 @@ import {
   POPULAR_COUNTRIES,
   REMAINING_COUNTRIES,
   cleanCountryCode,
+  detectUserLocation,
 } from "../country-codes.js";
 import { StyledQrCode } from "./StyledQrCode.js";
 import { Alert, Button, Tabs } from "./ui/index.js";
@@ -50,9 +51,35 @@ const REGIONS = [
 ];
 
 function getDefaultCountrySelection(reg: string): string {
+  const detected = detectUserLocation();
+  if (detected.region === reg) {
+    return detected.countryKey;
+  }
+  if (
+    (reg === "us" || reg === "ue") &&
+    (detected.iso === "US" || detected.iso === "CA")
+  ) {
+    return detected.countryKey;
+  }
   switch (reg) {
     case "eu":
-      return "49-DE";
+      return detected.iso &&
+        [
+          "UA",
+          "PL",
+          "DE",
+          "FR",
+          "GB",
+          "IT",
+          "ES",
+          "NL",
+          "CH",
+          "AT",
+          "SE",
+          "NO",
+        ].includes(detected.iso)
+        ? detected.countryKey
+        : "49-DE";
     case "we":
       return "7-RU";
     case "us":
@@ -75,9 +102,15 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
 }) => {
   const { contains } = useFilter({ sensitivity: "base" });
   const [selectedTab, setSelectedTab] = useState<string>("qr");
-  const [region, setRegion] = useState<string>(
-    () => initialRegion || localStorage.getItem("tuya-bridge.region") || "us",
-  );
+  const [region, setRegion] = useState<string>(() => {
+    const detected = detectUserLocation();
+    return (
+      initialRegion ||
+      localStorage.getItem("tuya-bridge.region") ||
+      detected.region ||
+      "us"
+    );
+  });
 
   // QR Flow State
   const [qrToken, setQrToken] = useState<string | null>(null);
@@ -89,11 +122,15 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
   // Password Flow State
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [countrySelection, setCountrySelection] = useState<Key | null>(() =>
-    getDefaultCountrySelection(
-      initialRegion || localStorage.getItem("tuya-bridge.region") || "us",
-    ),
-  );
+  const [countrySelection, setCountrySelection] = useState<Key | null>(() => {
+    const detected = detectUserLocation();
+    const initialReg =
+      initialRegion ||
+      localStorage.getItem("tuya-bridge.region") ||
+      detected.region ||
+      "us";
+    return getDefaultCountrySelection(initialReg);
+  });
   const [isPasswordLoading, setIsPasswordLoading] = useState(false);
 
   // Manual Camera State
@@ -106,8 +143,12 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
+    const detected = detectUserLocation();
     const nextRegion =
-      initialRegion || localStorage.getItem("tuya-bridge.region") || "us";
+      initialRegion ||
+      localStorage.getItem("tuya-bridge.region") ||
+      detected.region ||
+      "us";
     setRegion(nextRegion);
     setCountrySelection(getDefaultCountrySelection(nextRegion));
   }, [initialRegion, isOpen]);
@@ -340,10 +381,13 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                   )}
                 </Surface>
 
-                <Alert status="default" className="p-3 text-xs">
+                <Alert
+                  status="warning"
+                  className="p-3 text-xs border border-warning/25 bg-warning/10 text-warning-soft-foreground"
+                >
                   <Alert.Indicator />
                   <Alert.Content>
-                    <Alert.Title className="font-semibold text-xs">
+                    <Alert.Title className="font-semibold text-xs text-warning-soft-foreground">
                       Session Expiry Note
                     </Alert.Title>
                     <Alert.Description className="text-[11px] text-muted-foreground leading-relaxed">
