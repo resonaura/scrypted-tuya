@@ -175,6 +175,29 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
     setCountrySelection(getDefaultCountrySelection(newRegion));
   };
 
+  const handleCountryChange = (key: Key | null) => {
+    if (!key) return;
+    const strKey = String(key);
+    setCountrySelection(strKey);
+    const country = countriesMap.get(strKey);
+    if (!country) return;
+
+    if (country.iso === "US" || country.iso === "CA") {
+      if (region !== "us" && region !== "ue") {
+        setRegion("us");
+      }
+    } else if (
+      EU_FALLBACK_ISOS.has(country.iso) ||
+      country.code === "49" ||
+      country.code === "33" ||
+      country.code === "44"
+    ) {
+      if (region !== "eu" && region !== "we") {
+        setRegion("eu");
+      }
+    }
+  };
+
   useEffect(() => {
     if (!isOpen) {
       stopPolling();
@@ -499,9 +522,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                       placeholder="Select country"
                       selectionMode="single"
                       value={countrySelection}
-                      onChange={(key) =>
-                        key && setCountrySelection(key as string)
-                      }
+                      onChange={handleCountryChange}
                     >
                       <Label className="text-xs text-muted-foreground font-medium mb-1 block">
                         Country
@@ -594,6 +615,14 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                       </Label>
                       <Input type="password" placeholder="••••••••" />
                     </TextField>
+
+                    <Alert status="default" className="py-2 px-3 text-xs bg-muted/40 border border-border/50">
+                      <Alert.Content>
+                        <Alert.Description className="text-[11px] leading-relaxed text-muted-foreground">
+                          💡 Match Country &amp; Region with your Smart Life registration (e.g. Canada/US use dial code +1 and USA West/East). If you registered via Google or Apple ID, use the <strong>QR Code</strong> tab for instant 1-click login.
+                        </Alert.Description>
+                      </Alert.Content>
+                    </Alert>
                   </div>
 
                   <div className="pt-3">

@@ -92,19 +92,19 @@ export function formatTuyaError(errorCode?: string, errorMsg?: string): string {
   const combined = `${code} ${msg}`.trim();
 
   if (combined.includes("USER_PASSWD_WRONG")) {
-    return "Incorrect email or password. Please verify your Tuya / Smart Life credentials.";
+    return "Incorrect email or password. Please verify your credentials, Country Code (e.g. +1 for Canada/US, +380 for Ukraine), and Server Region.";
   }
   if (combined.includes("USER_PASSWD_ERROR_TIMES_TOO_MANY")) {
-    return "Too many failed login attempts. Tuya has temporarily locked login for 5 minutes. Please wait and try again.";
+    return "Too many failed login attempts. Tuya has temporarily locked password login for 5 minutes. You can log in immediately using the QR Code tab.";
   }
   if (combined.includes("REQUEST_TOO_FREQUENTLY")) {
-    return "Request too frequent. Please wait a moment and try again.";
+    return "Request too frequent. Please wait a moment and try again, or use the QR Code tab.";
   }
   if (combined.includes("USER_NOT_EXIST")) {
-    return "Account does not exist in the selected country/region.";
+    return "Account does not exist in the selected country/region. Please verify the Country Code.";
   }
   if (combined.includes("REGION_PROXY_FAILED")) {
-    return "Unable to connect to the selected region server. Please try a different region.";
+    return "Unable to connect to the selected region server. Please try a different region (e.g. USA West / USA East).";
   }
   if (combined.includes("CHECK_VERIFY_ERROR")) {
     return "Tuya security verification triggered. Please log in using the QR Code tab.";
@@ -508,92 +508,106 @@ export class TuyaProtectService implements OnModuleInit, OnModuleDestroy {
     countryCode = "1",
     regionId?: string,
   ): Promise<TuyaLoginResult> {
-    if (regionId && regionId !== this.regionId) {
-      this.setRegion(regionId);
-    }
-
     const cleanEmail = email.trim();
     const cleanCc = String(countryCode).replace(/[^0-9]/g, "") || "1";
     if (!cleanEmail || !password) {
       throw new Error("Email and password required");
     }
 
-    try {
-      await axios
-        .get(`https://${this.host}/login`, {
-          headers: this.getHeaders("/login"),
-          timeout: 15000,
-        })
-        .then((r) => this.updateCookiesFromResponse(r.headers))
-        .catch(() => {});
+    const requestedRegion = regionId || this.regionId || "us";
+    const candidateRegions: string[] = [requestedRegion];
 
-      const tokenRes = await this.postApi<{
-        result: { token: string; pbKey: string };
-        success: boolean;
-      }>("/api/login/token", {
-        countryCode: cleanCc,
-        username: cleanEmail,
-        isUid: false,
-      });
-
-      const { token, pbKey } = tokenRes.result || {};
-      if (!token || !pbKey) {
-        throw new Error(
-          "Failed to receive authentication token from Tuya server",
-        );
-      }
-
-      const pem = pbKey.includes("BEGIN")
-        ? pbKey
-        : `-----BEGIN PUBLIC KEY-----\n${pbKey}\n-----END PUBLIC KEY-----`;
-
-      const md5Pass = crypto.createHash("md5").update(password).digest("hex");
-      const encrypted = crypto
-        .publicEncrypt(
-          {
-            key: pem,
-            padding: crypto.constants.RSA_PKCS1_PADDING,
-          },
-          Buffer.from(md5Pass, "utf8"),
-        )
-        .toString("hex");
-
-      const loginRes = await this.postApi<{
-        result: TuyaLoginResult;
-        success: boolean;
-      }>("/api/private/email/login", {
-        countryCode: cleanCc,
-        email: cleanEmail,
-        passwd: encrypted,
-        token,
-        ifencrypt: 1,
-        options: '{"group":1}',
-      });
-
-      const login = loginRes.result;
-      if (!login || (!login.sid && !login.uid && !login.token)) {
-        throw new Error("Login succeeded but no user session was returned");
-      }
-
-      this.loginResult = login;
-      this.lastError = null;
-      await this.saveSession();
-      await this.saveCredentials({
-        email: cleanEmail,
-        password,
-        countryCode: cleanCc,
-        region: this.regionId,
-        savedAt: new Date().toISOString(),
-      });
-      this.logger.log(`Logged in successfully with password as ${cleanEmail}`);
-      this.events.emit("session_authenticated");
-      return login;
-    } catch (e: any) {
-      const formatted = formatTuyaError(e.errorCode, e.message);
-      this.lastError = formatted;
-      this.logger.error(`Password login failed: ${formatted}`);
-      throw new Error(formatted);
+    // Smart region fallbacks for North America and Europe
+    if (cleanCc === "1") {
+      if (!candidateRegions.includes("us")) candidateRegions.push("us");
+      if (!candidateRegions.includes("ue")) candidateRegions.push("ue");
+    } else if (["49", "33", "44", "380", "39", "34", "31", "48"].includes(cleanCc)) {
+      if (!candidateRegions.includes("eu")) candidateRegions.push("eu");
+      if (!candidateRegions.includes("we")) candidateRegions.push("we");
     }
+
+    let lastError: any = null;
+
+    for (const reg of candidateRegions) {
+      this.setRegion(reg);
+      try {
+        await axios
+          .get(`https://${this.host}/login`, {
+            headers: this.getHeaders("/login"),
+            timeout: 15000,
+          })
+          .then((r) => this.updateCookiesFromResponse(r.headers))
+          .catch(() => {});
+
+        const tokenRes = await this.postApi<{
+          result: { token: string; pbKey: string };
+          success: boolean;
+        }>("/api/login/token", {
+          countryCode: cleanCc,
+          username: cleanEmail,
+          isUid: false,
+        });
+
+        const { token, pbKey } = tokenRes.result || {};
+        if (!token) {
+          throw new Error(
+            "Failed to receive authentication token from Tuya server",
+          );
+        }
+
+        const md5Pass = crypto.createHash("md5").update(password).digest("hex");
+
+        // Use official Tuya web bundle login format (MD5 hex password with ifencrypt: 0)
+        const loginRes = await this.postApi<{
+          result: TuyaLoginResult;
+          success: boolean;
+        }>("/api/private/email/login", {
+          countryCode: cleanCc,
+          email: cleanEmail,
+          passwd: md5Pass,
+          token,
+          ifencrypt: 0,
+          options: '{"group":1}',
+        });
+
+        const login = loginRes.result;
+        if (!login || (!login.sid && !login.uid && !login.token)) {
+          throw new Error("Login succeeded but no user session was returned");
+        }
+
+        this.loginResult = login;
+        this.lastError = null;
+        await this.saveSession();
+        await this.saveCredentials({
+          email: cleanEmail,
+          password,
+          countryCode: cleanCc,
+          region: this.regionId,
+          savedAt: new Date().toISOString(),
+        });
+        this.logger.log(
+          `Logged in successfully with password as ${cleanEmail} (${this.regionId.toUpperCase()})`,
+        );
+        this.events.emit("session_authenticated");
+        return login;
+      } catch (e: any) {
+        lastError = e;
+        if (e.errorCode === "USER_PASSWD_ERROR_TIMES_TOO_MANY_1") {
+          break;
+        }
+        if (
+          e.errorCode !== "REGION_PROXY_FAILED" &&
+          candidateRegions.length > 1
+        ) {
+          break;
+        }
+      }
+    }
+
+    const formatted = formatTuyaError(lastError?.errorCode, lastError?.message);
+    this.lastError = formatted;
+    this.logger.error(`Password login failed: ${formatted}`);
+    throw new Error(formatted);
   }
 
   public async fetchUserInfo(): Promise<TuyaLoginResult | null> {
