@@ -8,7 +8,7 @@ import {
   Surface,
   TextField,
 } from "@heroui/react";
-import { AlertCircle, QrCode, RefreshCw } from "lucide-react";
+import { AlertCircle, Info, QrCode, RefreshCw } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -18,6 +18,7 @@ import {
   refreshCameras,
   startQrFlow,
 } from "../api/client.js";
+import { POPULAR_COUNTRIES, cleanCountryCode } from "../country-codes.js";
 import { StyledQrCode } from "./StyledQrCode.js";
 import { Button, Tabs } from "./ui/index.js";
 
@@ -36,6 +37,24 @@ const REGIONS = [
   { key: "cn", label: "China" },
   { key: "in", label: "India" },
 ];
+
+function getDefaultCountrySelection(reg: string): string {
+  switch (reg) {
+    case "eu":
+      return "49-DE";
+    case "we":
+      return "7-RU";
+    case "us":
+    case "ue":
+      return "1-US";
+    case "cn":
+      return "86-CN";
+    case "in":
+      return "91-IN";
+    default:
+      return "1-US";
+  }
+}
 
 export const AddCameraModal: React.FC<AddCameraModalProps> = ({
   isOpen,
@@ -58,7 +77,11 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
   // Password Flow State
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [countryCode, setCountryCode] = useState("1");
+  const [countrySelection, setCountrySelection] = useState<string>(() =>
+    getDefaultCountrySelection(
+      initialRegion || localStorage.getItem("tuya-bridge.region") || "us",
+    ),
+  );
   const [isPasswordLoading, setIsPasswordLoading] = useState(false);
 
   // Manual Camera State
@@ -74,13 +97,17 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
     const nextRegion =
       initialRegion || localStorage.getItem("tuya-bridge.region") || "us";
     setRegion(nextRegion);
+    setCountrySelection(getDefaultCountrySelection(nextRegion));
   }, [initialRegion, isOpen]);
 
   useEffect(() => {
     localStorage.setItem("tuya-bridge.region", region);
-    if (region === "us" || region === "ue")
-      setCountryCode((current) => (current === "49" ? "1" : current));
   }, [region]);
+
+  const handleRegionChange = (newRegion: string) => {
+    setRegion(newRegion);
+    setCountrySelection(getDefaultCountrySelection(newRegion));
+  };
 
   const fetchQr = async (selectedRegion = region) => {
     setIsQrLoading(true);
@@ -141,9 +168,11 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
       return;
     }
 
+    const numericCode = cleanCountryCode(countrySelection.split("-")[0] || "1");
+
     setIsPasswordLoading(true);
     try {
-      await loginWithPassword(email, password, countryCode, region);
+      await loginWithPassword(email, password, numericCode, region);
       toast.success("Logged in successfully!");
       await refreshCameras().catch(() => {});
       onAdded();
@@ -230,7 +259,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                     <Select
                       selectedKey={region}
                       onSelectionChange={(k) =>
-                        setRegion((k as string) || "us")
+                        handleRegionChange((k as string) || "us")
                       }
                     >
                       <Label className="text-xs text-muted-foreground font-medium mb-1 block">
@@ -297,6 +326,20 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                     </div>
                   )}
                 </Surface>
+
+                <div className="p-3 rounded-xl bg-muted/40 border border-border/50 text-[11px] text-muted-foreground leading-relaxed flex items-start gap-2.5">
+                  <Info className="size-4 shrink-0 text-muted-foreground/80 mt-0.5" />
+                  <div>
+                    <span className="font-semibold text-foreground/90">
+                      Session Expiry Note:
+                    </span>{" "}
+                    QR authorization tokens may periodically expire on Tuya
+                    servers. For uninterrupted 24/7 background streaming and
+                    automatic reconnects, logging in with{" "}
+                    <strong>Email &amp; Password</strong> in the Password tab is
+                    recommended.
+                  </div>
+                </div>
               </Tabs.Panel>
 
               {/* Password Panel */}
@@ -306,7 +349,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                     <Select
                       selectedKey={region}
                       onSelectionChange={(k) =>
-                        setRegion((k as string) || "us")
+                        handleRegionChange((k as string) || "us")
                       }
                     >
                       <Label className="text-xs text-muted-foreground font-medium mb-1 block">
@@ -331,12 +374,40 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                       </Select.Popover>
                     </Select>
 
-                    <TextField value={countryCode} onChange={setCountryCode}>
+                    <Select
+                      selectedKey={countrySelection}
+                      onSelectionChange={(k) =>
+                        setCountrySelection((k as string) || "1-US")
+                      }
+                    >
                       <Label className="text-xs text-muted-foreground font-medium mb-1 block">
-                        Country Code
+                        Country
                       </Label>
-                      <Input placeholder="49" />
-                    </TextField>
+                      <Select.Trigger>
+                        <Select.Value />
+                        <Select.Indicator />
+                      </Select.Trigger>
+                      <Select.Popover className="max-h-64 overflow-y-auto">
+                        <ListBox>
+                          {POPULAR_COUNTRIES.map((c) => (
+                            <ListBox.Item
+                              key={`${c.code}-${c.iso}`}
+                              id={`${c.code}-${c.iso}`}
+                              textValue={`${c.flag} ${c.name} (+${c.code})`}
+                            >
+                              <span className="flex items-center justify-between w-full gap-2">
+                                <span className="truncate">
+                                  {c.flag} {c.name}
+                                </span>
+                                <span className="text-xs text-muted-foreground font-mono shrink-0">
+                                  +{c.code}
+                                </span>
+                              </span>
+                            </ListBox.Item>
+                          ))}
+                        </ListBox>
+                      </Select.Popover>
+                    </Select>
                   </div>
 
                   <TextField value={email} onChange={setEmail} isRequired>

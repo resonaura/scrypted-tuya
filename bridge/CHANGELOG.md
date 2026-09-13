@@ -1,5 +1,17 @@
 # Tuya Camera Bridge — Changelog
 
+## 2.2.2
+
+- **Tuya Smart Life Password Authentication & Automatic Re-authentication**:
+  - Implemented password authentication with RSA encryption and MD5 hashing directly integrated with Tuya Protect APIs (`/api/login/token`, `/api/private/email/login`).
+  - Saved credentials securely in database (`SettingEntity` under `tuya_credentials`) on successful password login.
+  - Added background auto-reauthentication: when session tokens expire (`401`, `403`, `USER_SESSION_INVALID`), the bridge automatically re-authenticates in the background with exponential backoff and restores camera WebRTC streams without user intervention.
+  - Added comprehensive Tuya error code translation (`USER_PASSWD_WRONG`, `USER_PASSWD_ERROR_TIMES_TOO_MANY`, `REQUEST_TOO_FREQUENTLY`, `USER_NOT_EXIST`, `REGION_PROXY_FAILED`, `CHECK_VERIFY_ERROR`).
+- **Country Selector & UI Polish**:
+  - Replaced raw numeric country code text field with a rich, country selector featuring flags, ISO codes, and dial codes (including United States, Canada, Russia, Kazakhstan, Germany, UK, and 50+ countries).
+  - Region selection automatically syncs the default country code (`US`/`UE` -> `+1`, `EU` -> `+49`, `WE` -> `+7`, `CN` -> `+86`, `IN` -> `+91`).
+  - Added gray informative callout in QR code tab highlighting session token expiration behavior and recommending password login for unattended 24/7 background streaming.
+
 ## 2.2.1
 
 - **Zero-Dip Continuous RTSP Relay & Instant Fallback on Reconnects**:

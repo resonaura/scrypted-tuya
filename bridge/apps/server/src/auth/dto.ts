@@ -7,7 +7,7 @@ export const StartQrSchema = z.object({
 export const PasswordLoginSchema = z.object({
   email: z.string().min(1),
   password: z.string().min(1),
-  countryCode: z.string().optional().default("49"),
+  countryCode: z.string().optional().default("1"),
   region: z.string().optional().default("us"),
 });
 
