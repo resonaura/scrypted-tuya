@@ -1,14 +1,21 @@
+import type { Key } from "@heroui/react";
 import {
+  Autocomplete,
+  EmptyState,
+  Header,
   Input,
   Label,
   ListBox,
   Modal,
+  SearchField,
   Select,
+  Separator,
   Spinner,
   Surface,
   TextField,
+  useFilter,
 } from "@heroui/react";
-import { AlertCircle, Info, QrCode, RefreshCw } from "lucide-react";
+import { AlertCircle, QrCode, RefreshCw } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -18,9 +25,13 @@ import {
   refreshCameras,
   startQrFlow,
 } from "../api/client.js";
-import { ALL_COUNTRIES, cleanCountryCode } from "../country-codes.js";
+import {
+  POPULAR_COUNTRIES,
+  REMAINING_COUNTRIES,
+  cleanCountryCode,
+} from "../country-codes.js";
 import { StyledQrCode } from "./StyledQrCode.js";
-import { Button, Tabs } from "./ui/index.js";
+import { Alert, Button, Tabs } from "./ui/index.js";
 
 interface AddCameraModalProps {
   isOpen: boolean;
@@ -62,6 +73,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
   onClose,
   onAdded,
 }) => {
+  const { contains } = useFilter({ sensitivity: "base" });
   const [selectedTab, setSelectedTab] = useState<string>("qr");
   const [region, setRegion] = useState<string>(
     () => initialRegion || localStorage.getItem("tuya-bridge.region") || "us",
@@ -77,7 +89,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
   // Password Flow State
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [countrySelection, setCountrySelection] = useState<string>(() =>
+  const [countrySelection, setCountrySelection] = useState<Key | null>(() =>
     getDefaultCountrySelection(
       initialRegion || localStorage.getItem("tuya-bridge.region") || "us",
     ),
@@ -168,7 +180,8 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
       return;
     }
 
-    const numericCode = cleanCountryCode(countrySelection.split("-")[0] || "1");
+    const countryKey = String(countrySelection || "1-US");
+    const numericCode = cleanCountryCode(countryKey.split("-")[0] || "1");
 
     setIsPasswordLoading(true);
     try {
@@ -327,19 +340,21 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                   )}
                 </Surface>
 
-                <div className="p-3 rounded-xl bg-muted/40 border border-border/50 text-[11px] text-muted-foreground leading-relaxed flex items-start gap-2.5">
-                  <Info className="size-4 shrink-0 text-muted-foreground/80 mt-0.5" />
-                  <div>
-                    <span className="font-semibold text-foreground/90">
-                      Session Expiry Note:
-                    </span>{" "}
-                    QR authorization tokens may periodically expire on Tuya
-                    servers. For uninterrupted 24/7 background streaming and
-                    automatic reconnects, logging in with{" "}
-                    <strong>Email &amp; Password</strong> in the Password tab is
-                    recommended.
-                  </div>
-                </div>
+                <Alert status="default" className="p-3 text-xs">
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title className="font-semibold text-xs">
+                      Session Expiry Note
+                    </Alert.Title>
+                    <Alert.Description className="text-[11px] text-muted-foreground leading-relaxed">
+                      QR authorization tokens may periodically expire on Tuya
+                      servers. For uninterrupted 24/7 background streaming and
+                      automatic reconnects, logging in with{" "}
+                      <strong>Email &amp; Password</strong> in the Password tab
+                      is recommended.
+                    </Alert.Description>
+                  </Alert.Content>
+                </Alert>
               </Tabs.Panel>
 
               {/* Password Panel */}
@@ -374,40 +389,93 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                       </Select.Popover>
                     </Select>
 
-                    <Select
-                      selectedKey={countrySelection}
-                      onSelectionChange={(k) =>
-                        setCountrySelection((k as string) || "1-US")
+                    <Autocomplete
+                      className="w-full"
+                      placeholder="Select country"
+                      selectionMode="single"
+                      value={countrySelection}
+                      onChange={(key) =>
+                        key && setCountrySelection(key as string)
                       }
                     >
                       <Label className="text-xs text-muted-foreground font-medium mb-1 block">
                         Country
                       </Label>
-                      <Select.Trigger>
-                        <Select.Value />
-                        <Select.Indicator />
-                      </Select.Trigger>
-                      <Select.Popover className="max-h-64 overflow-y-auto">
-                        <ListBox>
-                          {ALL_COUNTRIES.map((c) => (
-                            <ListBox.Item
-                              key={`${c.code}-${c.iso}`}
-                              id={`${c.code}-${c.iso}`}
-                              textValue={`${c.flag} ${c.name} (+${c.code})`}
-                            >
-                              <span className="flex items-center justify-between w-full gap-2">
-                                <span className="truncate">
-                                  {c.flag} {c.name}
-                                </span>
-                                <span className="text-xs text-muted-foreground font-mono shrink-0">
-                                  +{c.code}
-                                </span>
-                              </span>
-                            </ListBox.Item>
-                          ))}
-                        </ListBox>
-                      </Select.Popover>
-                    </Select>
+                      <Autocomplete.Trigger>
+                        <Autocomplete.Value />
+                        <Autocomplete.ClearButton />
+                        <Autocomplete.Indicator />
+                      </Autocomplete.Trigger>
+                      <Autocomplete.Popover className="max-h-72 overflow-y-auto">
+                        <Autocomplete.Filter filter={contains}>
+                          <SearchField
+                            autoFocus
+                            aria-label="Search countries"
+                            name="search"
+                            variant="secondary"
+                          >
+                            <SearchField.Group>
+                              <SearchField.SearchIcon />
+                              <SearchField.Input placeholder="Search country or code..." />
+                              <SearchField.ClearButton />
+                            </SearchField.Group>
+                          </SearchField>
+                          <ListBox
+                            renderEmptyState={() => (
+                              <EmptyState className="p-3 text-xs text-muted-foreground text-center">
+                                No countries found
+                              </EmptyState>
+                            )}
+                          >
+                            <ListBox.Section>
+                              <Header className="px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                                Popular
+                              </Header>
+                              {POPULAR_COUNTRIES.map((c) => (
+                                <ListBox.Item
+                                  key={`${c.code}-${c.iso}`}
+                                  id={`${c.code}-${c.iso}`}
+                                  textValue={`${c.flag} ${c.name} (+${c.code})`}
+                                >
+                                  <div className="flex items-center justify-between w-full gap-2 text-left">
+                                    <span className="truncate">
+                                      {c.flag} {c.name}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground font-mono shrink-0">
+                                      +{c.code}
+                                    </span>
+                                  </div>
+                                  <ListBox.ItemIndicator />
+                                </ListBox.Item>
+                              ))}
+                            </ListBox.Section>
+                            <Separator />
+                            <ListBox.Section>
+                              <Header className="px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                                All Countries
+                              </Header>
+                              {REMAINING_COUNTRIES.map((c) => (
+                                <ListBox.Item
+                                  key={`${c.code}-${c.iso}`}
+                                  id={`${c.code}-${c.iso}`}
+                                  textValue={`${c.flag} ${c.name} (+${c.code})`}
+                                >
+                                  <div className="flex items-center justify-between w-full gap-2 text-left">
+                                    <span className="truncate">
+                                      {c.flag} {c.name}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground font-mono shrink-0">
+                                      +{c.code}
+                                    </span>
+                                  </div>
+                                  <ListBox.ItemIndicator />
+                                </ListBox.Item>
+                              ))}
+                            </ListBox.Section>
+                          </ListBox>
+                        </Autocomplete.Filter>
+                      </Autocomplete.Popover>
+                    </Autocomplete>
                   </div>
 
                   <TextField value={email} onChange={setEmail} isRequired>
