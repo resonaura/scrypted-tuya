@@ -1,121 +1,33 @@
-import type { Key } from "@heroui/react";
 import {
-  Autocomplete,
   cn,
-  EmptyState,
-  Header,
   Input,
   Label,
   ListBox,
   Modal,
-  SearchField,
   Select,
-  Separator,
   Spinner,
   Surface,
   TextField,
-  useFilter,
 } from "@heroui/react";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import React, {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
 import { toast } from "sonner";
 import {
   createCamera,
-  getApiBase,
-  initCaptcha,
-  loginWithPassword,
   pollQr,
   refreshCameras,
   startQrFlow,
 } from "../api/client.js";
-import {
-  cleanCountryCode,
-  detectUserLocation,
-  POPULAR_COUNTRIES,
-  REMAINING_COUNTRIES,
-  type Country,
-} from "../country-codes.js";
 import { StyledQrCode } from "./StyledQrCode.js";
 import { Alert, Button, Tabs } from "./ui/index.js";
 
-function loadCaptchaScript(region: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (typeof window !== "undefined" && (window as any).yruleInitVerify) {
-      return resolve();
-    }
-    const src =
-      region === "cn"
-        ? "https://static1.tuyacn.com/static/th-lib/yrule/v1/loader.js"
-        : "https://eustatic7f2e65.cdn5th.com/static/th-lib/yrule/v1/loader.js";
-
-    const existing = document.querySelector("script[data-tuya-captcha]");
-    if (existing) {
-      existing.remove();
-    }
-
-    const script = document.createElement("script");
-    script.type = "text/javascript";
-    script.src = src;
-    script.setAttribute("data-tuya-captcha", "true");
-    script.onload = () => resolve();
-    script.onerror = () =>
-      reject(new Error("Failed to load Tuya verification security engine"));
-    document.head.appendChild(script);
-  });
-}
-
-function triggerTuyaCaptcha(initData: any): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let container = document.getElementById("captcha");
-    if (!container) {
-      container = document.createElement("div");
-      container.id = "captcha";
-      document.body.appendChild(container);
-    }
-    container.style.position = "relative";
-    container.style.zIndex = "9999999";
-
-    const yrule = (window as any).yruleInitVerify;
-    if (!yrule) {
-      return reject(
-        new Error("Verification engine not ready. Please try again."),
-      );
-    }
-
-    yrule({ ...initData }, (instance: any) => {
-      if (!instance) {
-        return reject(new Error("Failed to initialize verification puzzle"));
-      }
-
-      instance.onSuccess((res: any) => {
-        const securekey = typeof res === "string" ? res : JSON.stringify(res);
-        resolve(securekey);
-      });
-
-      instance.onClose(() => {
-        reject(new Error("Verification closed by user"));
-      });
-
-      instance.onError((err: any) => {
-        reject(new Error(err?.message || "Verification failed"));
-      });
-
-      if (typeof instance.verify === "function") {
-        instance.verify();
-      }
-    });
-  });
-}
-
 export const AddCameraTab = {
   QR: "qr",
-  PASSWORD: "password",
   MANUAL: "manual",
 } as const;
 
@@ -137,55 +49,12 @@ const REGIONS = [
   { key: "in", label: "India" },
 ] as const;
 
-const EU_FALLBACK_ISOS = new Set([
-  "UA",
-  "PL",
-  "DE",
-  "FR",
-  "GB",
-  "IT",
-  "ES",
-  "NL",
-  "CH",
-  "AT",
-  "SE",
-  "NO",
-]);
-
 function resolveInitialRegion(initialRegion?: string): string {
   return (
     initialRegion ||
     localStorage.getItem("tuya-bridge.region") ||
-    detectUserLocation().region ||
     "us"
   );
-}
-
-function getDefaultCountrySelection(reg: string): string {
-  const detected = detectUserLocation();
-
-  if (detected.region === reg) return detected.countryKey;
-  if (
-    (reg === "us" || reg === "ue") &&
-    (detected.iso === "US" || detected.iso === "CA")
-  ) {
-    return detected.countryKey;
-  }
-
-  switch (reg) {
-    case "eu":
-      return detected.iso && EU_FALLBACK_ISOS.has(detected.iso)
-        ? detected.countryKey
-        : "49-DE";
-    case "we":
-      return "7-RU";
-    case "cn":
-      return "86-CN";
-    case "in":
-      return "91-IN";
-    default:
-      return "1-US";
-  }
 }
 
 export const AddCameraModal: React.FC<AddCameraModalProps> = ({
@@ -194,16 +63,11 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
   onClose,
   onAdded,
 }) => {
-  const { contains } = useFilter({ sensitivity: "base" });
-
   const [selectedTab, setSelectedTab] = useState<AddCameraTabType>(
     AddCameraTab.QR,
   );
   const [region, setRegion] = useState<string>(() =>
     resolveInitialRegion(initialRegion),
-  );
-  const [countrySelection, setCountrySelection] = useState<Key | null>(() =>
-    getDefaultCountrySelection(resolveInitialRegion(initialRegion)),
   );
 
   // QR Flow State
@@ -213,11 +77,6 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
   const [isQrLoading, setIsQrLoading] = useState(false);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Password Flow State
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [isPasswordLoading, setIsPasswordLoading] = useState(false);
-
   // Manual Flow State
   const [manualName, setManualName] = useState("");
   const [manualDid, setManualDid] = useState("");
@@ -225,14 +84,6 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
   const [manualIp, setManualIp] = useState("");
   const [manualQuality, setManualQuality] = useState<"hd" | "sd">("hd");
   const [isManualSubmitting, setIsManualSubmitting] = useState(false);
-
-  // O(1) lookup map для стран
-  const countriesMap = useMemo(() => {
-    const map = new Map<string, Country>();
-    for (const c of POPULAR_COUNTRIES) map.set(`${c.code}-${c.iso}`, c);
-    for (const c of REMAINING_COUNTRIES) map.set(`${c.code}-${c.iso}`, c);
-    return map;
-  }, []);
 
   const stopPolling = useCallback(() => {
     if (pollIntervalRef.current) {
@@ -243,30 +94,6 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
 
   const handleRegionChange = (newRegion: string) => {
     setRegion(newRegion);
-    setCountrySelection(getDefaultCountrySelection(newRegion));
-  };
-
-  const handleCountryChange = (key: Key | null) => {
-    if (!key) return;
-    const strKey = String(key);
-    setCountrySelection(strKey);
-    const country = countriesMap.get(strKey);
-    if (!country) return;
-
-    if (country.iso === "US" || country.iso === "CA") {
-      if (region !== "us" && region !== "ue") {
-        setRegion("us");
-      }
-    } else if (
-      EU_FALLBACK_ISOS.has(country.iso) ||
-      country.code === "49" ||
-      country.code === "33" ||
-      country.code === "44"
-    ) {
-      if (region !== "eu" && region !== "we") {
-        setRegion("eu");
-      }
-    }
   };
 
   useEffect(() => {
@@ -276,7 +103,6 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
     }
     const nextRegion = resolveInitialRegion(initialRegion);
     setRegion(nextRegion);
-    setCountrySelection(getDefaultCountrySelection(nextRegion));
   }, [initialRegion, isOpen, stopPolling]);
 
   useEffect(() => {
@@ -330,60 +156,12 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
           onClose();
         }
       } catch {
-        // Игнорируем сетевые ошибки поллинга
+        // Ignore network polling errors
       }
     }, 1500);
 
     return stopPolling;
   }, [qrToken, isOpen, selectedTab, onAdded, onClose, stopPolling]);
-
-  useEffect(() => {
-    if (isOpen && selectedTab === AddCameraTab.PASSWORD) {
-      void loadCaptchaScript(region).catch(() => {});
-    }
-  }, [isOpen, selectedTab, region]);
-
-  const handlePasswordSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!email || !password) {
-      toast.warning("Enter email and password");
-      return;
-    }
-
-    const countryKey = String(countrySelection || "1-US");
-    const numericCode = cleanCountryCode(countryKey.split("-")[0] || "1");
-
-    setIsPasswordLoading(true);
-    try {
-      // 1. Ensure Tuya verification script is loaded
-      await loadCaptchaScript(region);
-
-      // 2. Request verification challenge for selected region
-      const captchaData = await initCaptcha(region);
-
-      // 3. Route apiServer through our backend proxy to bypass Tuya origin blocking
-      if (captchaData && captchaData.apiServer) {
-        captchaData.apiServer = `${getApiBase()}/api/auth/captcha/proxy`;
-      }
-
-      // 4. Trigger interactive slider puzzle
-      const securekey = await triggerTuyaCaptcha(captchaData);
-
-      // 5. Authenticate with credentials + verified securekey
-      await loginWithPassword(email, password, numericCode, region, securekey);
-      toast.success("Logged in successfully!");
-      await refreshCameras().catch(() => {});
-      onAdded();
-      onClose();
-    } catch (e: any) {
-      if (e.message && e.message.includes("closed by user")) {
-        return;
-      }
-      toast.error(e.message || "Login failed");
-    } finally {
-      setIsPasswordLoading(false);
-    }
-  };
 
   const handleManualSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -411,24 +189,6 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
     }
   };
 
-  const renderCountryItem = (c: Country) => (
-    <ListBox.Item
-      key={`${c.code}-${c.iso}`}
-      id={`${c.code}-${c.iso}`}
-      textValue={`${c.flag} ${c.name} (+${c.code})`}
-    >
-      <div className="flex items-center justify-between w-full gap-2 text-left pr-6">
-        <span className="truncate">
-          {c.flag} {c.name}
-        </span>
-        <span className="text-xs text-muted-foreground font-mono shrink-0">
-          +{c.code}
-        </span>
-      </div>
-      <ListBox.ItemIndicator />
-    </ListBox.Item>
-  );
-
   return (
     <Modal.Backdrop
       isOpen={isOpen}
@@ -439,7 +199,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
         <Modal.Dialog
           className={cn(
             "rs-card-surface max-h-[90vh] overflow-hidden transition-all duration-200 ease",
-            selectedTab === AddCameraTab.QR ? "w-135 h-167.5" : "w-115 h-130",
+            selectedTab === AddCameraTab.QR ? "w-135 h-170" : "w-115 h-135",
           )}
         >
           <Modal.CloseTrigger />
@@ -457,14 +217,10 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
               variant="nav"
             >
               <Tabs.ListContainer className="mb-4 shrink-0">
-                <Tabs.List className="w-full grid grid-cols-3">
+                <Tabs.List className="w-full grid grid-cols-2">
                   <Tabs.Tab id={AddCameraTab.QR}>
                     <Tabs.Indicator />
                     QR Code
-                  </Tabs.Tab>
-                  <Tabs.Tab id={AddCameraTab.PASSWORD}>
-                    <Tabs.Indicator />
-                    Password
                   </Tabs.Tab>
                   <Tabs.Tab id={AddCameraTab.MANUAL}>
                     <Tabs.Indicator />
@@ -561,172 +317,14 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                     <Alert.Indicator />
                     <Alert.Content>
                       <Alert.Title className="font-semibold text-xs text-warning-soft-foreground">
-                        Session Expiry Note
+                        Tuya Session Advisory
                       </Alert.Title>
                       <Alert.Description className="text-[11px] text-warning-soft-foreground leading-relaxed">
-                        QR authorization tokens may periodically expire on Tuya
-                        servers. For uninterrupted 24/7 background streaming,
-                        logging in with <strong>Email &amp; Password</strong> in
-                        the Password tab is recommended.
+                        Tuya Protect cloud sessions may periodically expire. If your session expires, re-scan the QR code to re-authenticate, or connect cameras directly via the <strong>Manual</strong> tab with their local IP and Local Key for non-expiring offline RTSP streaming. Make sure the selected Account Region matches your Tuya / Smart Life account registration.
                       </Alert.Description>
                     </Alert.Content>
                   </Alert>
                 </div>
-              </Tabs.Panel>
-
-              {/* Password Panel */}
-              <Tabs.Panel
-                id={AddCameraTab.PASSWORD}
-                className="flex-1 flex flex-col"
-              >
-                <form
-                  onSubmit={handlePasswordSubmit}
-                  className="space-y-3 flex flex-col flex-1 justify-between"
-                >
-                  <div className="space-y-3">
-                    <Select
-                      selectedKey={region}
-                      onSelectionChange={(k) =>
-                        handleRegionChange((k as string) || "us")
-                      }
-                    >
-                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">
-                        Account Region
-                      </Label>
-                      <Select.Trigger>
-                        <Select.Value />
-                        <Select.Indicator />
-                      </Select.Trigger>
-                      <Select.Popover>
-                        <ListBox>
-                          {REGIONS.map((r) => (
-                            <ListBox.Item
-                              key={r.key}
-                              id={r.key}
-                              textValue={r.label}
-                            >
-                              {r.label}
-                            </ListBox.Item>
-                          ))}
-                        </ListBox>
-                      </Select.Popover>
-                    </Select>
-
-                    <Autocomplete
-                      className="w-full"
-                      placeholder="Select country"
-                      selectionMode="single"
-                      value={countrySelection}
-                      onChange={handleCountryChange}
-                    >
-                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">
-                        Country
-                      </Label>
-                      <Autocomplete.Trigger>
-                        <Autocomplete.Value>
-                          {({ defaultChildren, isPlaceholder, state }) => {
-                            if (
-                              isPlaceholder ||
-                              state.selectedItems.length === 0
-                            ) {
-                              return defaultChildren;
-                            }
-                            const selectedKey = state.selectedItems[0]?.key;
-                            const country = selectedKey
-                              ? countriesMap.get(String(selectedKey))
-                              : null;
-                            if (!country) return defaultChildren;
-
-                            return (
-                              <div className="flex items-center justify-between w-full gap-2 text-left pr-2">
-                                <span className="truncate">
-                                  {country.flag} {country.name}
-                                </span>
-                                <span className="text-xs text-muted-foreground font-mono shrink-0">
-                                  +{country.code}
-                                </span>
-                              </div>
-                            );
-                          }}
-                        </Autocomplete.Value>
-                        <Autocomplete.Indicator />
-                      </Autocomplete.Trigger>
-
-                      <Autocomplete.Popover className="min-w-85 sm:min-w-95 max-h-80 overflow-y-auto">
-                        <Autocomplete.Filter filter={contains}>
-                          <SearchField
-                            autoFocus
-                            aria-label="Search countries"
-                            name="search"
-                            variant="secondary"
-                          >
-                            <SearchField.Group>
-                              <SearchField.SearchIcon />
-                              <SearchField.Input placeholder="Search country or code..." />
-                              <SearchField.ClearButton />
-                            </SearchField.Group>
-                          </SearchField>
-
-                          <ListBox
-                            renderEmptyState={() => (
-                              <EmptyState className="p-3 text-xs text-muted-foreground text-center">
-                                No countries found
-                              </EmptyState>
-                            )}
-                          >
-                            <ListBox.Section>
-                              <Header className="px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                                Popular
-                              </Header>
-                              {POPULAR_COUNTRIES.map(renderCountryItem)}
-                            </ListBox.Section>
-                            <Separator />
-                            <ListBox.Section>
-                              <Header className="px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                                All Countries
-                              </Header>
-                              {REMAINING_COUNTRIES.map(renderCountryItem)}
-                            </ListBox.Section>
-                          </ListBox>
-                        </Autocomplete.Filter>
-                      </Autocomplete.Popover>
-                    </Autocomplete>
-
-                    <TextField value={email} onChange={setEmail} isRequired>
-                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">
-                        Email or User
-                      </Label>
-                      <Input placeholder="name@example.com" />
-                    </TextField>
-
-                    <TextField
-                      value={password}
-                      onChange={setPassword}
-                      type="password"
-                      isRequired
-                    >
-                      <Label className="text-xs text-muted-foreground font-medium mb-1 block">
-                        Password
-                      </Label>
-                      <Input type="password" placeholder="••••••••" />
-                    </TextField>
-                  </div>
-
-                  <div className="pt-3">
-                    <Button
-                      type="submit"
-                      variant="accent"
-                      isDisabled={isPasswordLoading}
-                      className="w-full font-semibold"
-                    >
-                      {isPasswordLoading ? (
-                        <Spinner color="current" size="sm" />
-                      ) : (
-                        "Sign In & Discover"
-                      )}
-                    </Button>
-                  </div>
-                </form>
               </Tabs.Panel>
 
               {/* Manual Entry Panel */}

@@ -78,42 +78,22 @@ export interface StoredSession {
   savedAt: string;
 }
 
-export interface StoredCredentials {
-  email: string;
-  password: string;
-  countryCode: string;
-  region: string;
-  savedAt: string;
-}
-
 export function formatTuyaError(errorCode?: string, errorMsg?: string): string {
   const code = String(errorCode || "");
   const msg = String(errorMsg || "");
   const combined = `${code} ${msg}`.trim();
 
-  if (combined.includes("USER_PASSWD_WRONG")) {
-    return "Incorrect email or password. Please verify your credentials, Country Code (e.g. +1 for Canada/US, +380 for Ukraine), and Server Region.";
-  }
-  if (combined.includes("USER_PASSWD_ERROR_TIMES_TOO_MANY")) {
-    return "Too many failed login attempts. Tuya has temporarily locked password login for 5 minutes. You can log in immediately using the QR Code tab.";
-  }
   if (combined.includes("REQUEST_TOO_FREQUENTLY")) {
-    return "Request too frequent. Please wait a moment and try again, or use the QR Code tab.";
-  }
-  if (combined.includes("USER_NOT_EXIST")) {
-    return "Account does not exist in the selected country/region. Please verify the Country Code.";
+    return "Request too frequent. Please wait a moment and try again, or re-scan the QR code.";
   }
   if (combined.includes("REGION_PROXY_FAILED")) {
     return "Unable to connect to the selected region server. Please try a different region (e.g. America West / America East).";
-  }
-  if (combined.includes("CHECK_VERIFY_ERROR")) {
-    return "Tuya security verification triggered. Please log in using the QR Code tab.";
   }
   if (
     combined.includes("USER_SESSION_INVALID") ||
     combined.includes("USER_SESSION_LOSS")
   ) {
-    return "Tuya session expired. Please re-authenticate.";
+    return "Tuya session expired. Please re-authenticate using the QR Code.";
   }
 
   return msg || code || "Tuya request failed";
@@ -139,51 +119,20 @@ export class TuyaProtectService implements OnModuleInit, OnModuleDestroy {
   private lastError: string | null = null;
   private keepAliveInterval: NodeJS.Timeout | null = null;
   private sessionSaveTimeout: NodeJS.Timeout | null = null;
-  private isReauthenticating = false;
-  private lastReauthAttempt = 0;
-  private hasStoredCredentials = false;
 
   async onModuleInit() {
-    const creds = await this.loadCredentials();
-    this.hasStoredCredentials = Boolean(creds);
-
     const sessionLoaded = await this.loadStoredSession();
     if (sessionLoaded) {
       // Validate active session
       const userInfo = await this.fetchUserInfo().catch(() => null);
       if (!userInfo) {
         this.logger.warn(
-          "Stored Tuya session is invalid or expired. Attempting auto-reauth with saved credentials...",
+          "Stored Tuya session is invalid or expired. Please re-authenticate via QR Code in the Web UI.",
         );
-        if (creds) {
-          try {
-            await this.passwordLogin(
-              creds.email,
-              creds.password,
-              creds.countryCode,
-              creds.region,
-            );
-            this.logger.log(`Auto-logged in on startup as ${creds.email}`);
-          } catch (e: any) {
-            this.logger.warn(`Startup auto-login failed: ${e.message}`);
-          }
-        }
-      }
-    } else {
-      if (creds) {
-        try {
-          await this.passwordLogin(
-            creds.email,
-            creds.password,
-            creds.countryCode,
-            creds.region,
-          );
-          this.logger.log(
-            `Auto-logged in on startup with saved credentials as ${creds.email}`,
-          );
-        } catch (e: any) {
-          this.logger.warn(`Startup auto-login failed: ${e.message}`);
-        }
+      } else {
+        this.logger.log(
+          `Tuya session restored for ${userInfo.email || userInfo.username || userInfo.uid}`,
+        );
       }
     }
     this.startKeepAlive();
@@ -289,11 +238,7 @@ export class TuyaProtectService implements OnModuleInit, OnModuleDestroy {
     referer = "/login",
   ): Promise<T> {
     const url = `https://${this.host}${path}`;
-    const isAuthEndpoint =
-      path.startsWith("/api/login") ||
-      path.startsWith("/api/private") ||
-      path.startsWith("/api/password") ||
-      path.startsWith("/api/jy");
+    const isAuthEndpoint = path.startsWith("/api/login");
 
     const res = await axios.post(url, payload !== null ? payload : undefined, {
       headers: this.getHeaders(referer),
@@ -343,39 +288,6 @@ export class TuyaProtectService implements OnModuleInit, OnModuleDestroy {
   }
 
   public async handleSessionExpired(): Promise<void> {
-    const now = Date.now();
-    const creds = await this.loadCredentials();
-
-    if (
-      creds &&
-      !this.isReauthenticating &&
-      now - this.lastReauthAttempt > 15000
-    ) {
-      this.isReauthenticating = true;
-      this.lastReauthAttempt = now;
-      this.logger.log(
-        `Tuya session expired. Attempting background auto-reauthentication for ${creds.email}...`,
-      );
-      try {
-        await this.passwordLogin(
-          creds.email,
-          creds.password,
-          creds.countryCode,
-          creds.region,
-        );
-        this.logger.log(
-          `Auto-reauthentication successful for ${creds.email}! Tuya session restored.`,
-        );
-        this.isReauthenticating = false;
-        return;
-      } catch (err: any) {
-        this.logger.warn(
-          `Auto-reauthentication failed: ${err.message}. Preserving cameras in fallback mode.`,
-        );
-        this.isReauthenticating = false;
-      }
-    }
-
     this.loginResult = null;
     this.cookies.clear();
     this.currentQrToken = null;
@@ -386,7 +298,7 @@ export class TuyaProtectService implements OnModuleInit, OnModuleDestroy {
     await SettingEntity.delete({ key: "tuya_session" });
     this.events.emit("session_expired");
 
-    // Mark existing cameras as offline with reason "Session Expired · Please login in Web UI"
+    // Mark existing cameras as offline with reason "Session Expired · Scan QR in Web UI"
     // and keep their database records intact!
     try {
       const cameras = await CameraEntity.find();
@@ -505,225 +417,6 @@ export class TuyaProtectService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  public async initCaptcha(regionId?: string): Promise<any> {
-    const reg = regionId || this.regionId || "us";
-    const candidateRegions = [reg];
-    if (reg === "us") candidateRegions.push("ue");
-    else if (reg === "ue") candidateRegions.push("us");
-    else if (reg === "eu") candidateRegions.push("we");
-    else if (reg === "we") candidateRegions.push("eu");
-
-    let lastError: any = null;
-
-    for (const r of candidateRegions) {
-      const regionConfig = TUYA_REGIONS[r] || TUYA_REGIONS.us;
-      const host = regionConfig.host;
-
-      try {
-        const res = await axios.post(
-          `https://${host}/api/jy/init`,
-          {},
-          {
-            headers: {
-              "Content-Type": "application/json",
-              "User-Agent":
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-              Origin: `https://${host}`,
-              Referer: `https://${host}/login`,
-            },
-            timeout: 8000,
-          },
-        );
-
-        if (res.data?.result) {
-          this.setRegion(r);
-          this.updateCookiesFromResponse(res.headers);
-          return res.data.result;
-        }
-      } catch (err) {
-        lastError = err;
-      }
-    }
-
-    throw new Error(
-      lastError?.message || "Failed to initialize Tuya verification captcha",
-    );
-  }
-
-  public async passwordLogin(
-    email: string,
-    password: string,
-    countryCode = "1",
-    regionId?: string,
-    securekey?: string,
-  ): Promise<TuyaLoginResult> {
-    const cleanEmail = email.trim();
-    const cleanCc = String(countryCode).replace(/[^0-9]/g, "") || "1";
-    if (!cleanEmail || !password) {
-      throw new Error("Email and password required");
-    }
-
-    const requestedRegion = regionId || this.regionId || "us";
-
-    // When securekey (solved slider puzzle) is provided, perform direct official password login
-    if (securekey) {
-      this.setRegion(requestedRegion);
-      try {
-        await axios
-          .get(`https://${this.host}/login`, {
-            headers: this.getHeaders("/login"),
-            timeout: 15000,
-          })
-          .then((r) => this.updateCookiesFromResponse(r.headers))
-          .catch(() => {});
-
-        const md5Pass = crypto.createHash("md5").update(password).digest("hex");
-
-        const loginRes = await this.postApi<{
-          result: TuyaLoginResult;
-          success: boolean;
-        }>("/api/password/login", {
-          countryCode: cleanCc,
-          userName: cleanEmail,
-          password: md5Pass,
-          securekey,
-          domain: this.host,
-        });
-
-        let login = loginRes.result;
-        if (!login || (!login.sid && !login.uid && !login.token)) {
-          const profile = await this.fetchUserInfo();
-          if (profile) {
-            login = { ...profile, ...login };
-          } else if (login?.uid) {
-            login = {
-              ...login,
-              email: cleanEmail,
-              username: cleanEmail,
-            };
-          } else {
-            throw new Error("Login succeeded but no user session was returned");
-          }
-        }
-
-        this.loginResult = login;
-        this.lastError = null;
-        await this.saveSession();
-        await this.saveCredentials({
-          email: cleanEmail,
-          password,
-          countryCode: cleanCc,
-          region: this.regionId,
-          savedAt: new Date().toISOString(),
-        });
-        this.logger.log(
-          `Logged in successfully with password & captcha as ${cleanEmail} (${this.regionId.toUpperCase()})`,
-        );
-        this.events.emit("session_authenticated");
-        return login;
-      } catch (err: any) {
-        const formatted = formatTuyaError(err?.errorCode, err?.message);
-        this.lastError = formatted;
-        this.logger.error(`Password login failed: ${formatted}`);
-        throw new Error(formatted);
-      }
-    }
-
-    const candidateRegions: string[] = [requestedRegion];
-
-    // Smart region fallbacks for North America and Europe
-    if (cleanCc === "1") {
-      if (!candidateRegions.includes("us")) candidateRegions.push("us");
-      if (!candidateRegions.includes("ue")) candidateRegions.push("ue");
-    } else if (["49", "33", "44", "380", "39", "34", "31", "48"].includes(cleanCc)) {
-      if (!candidateRegions.includes("eu")) candidateRegions.push("eu");
-      if (!candidateRegions.includes("we")) candidateRegions.push("we");
-    }
-
-    let lastError: any = null;
-
-    for (const reg of candidateRegions) {
-      this.setRegion(reg);
-      try {
-        await axios
-          .get(`https://${this.host}/login`, {
-            headers: this.getHeaders("/login"),
-            timeout: 15000,
-          })
-          .then((r) => this.updateCookiesFromResponse(r.headers))
-          .catch(() => {});
-
-        const tokenRes = await this.postApi<{
-          result: { token: string; pbKey: string };
-          success: boolean;
-        }>("/api/login/token", {
-          countryCode: cleanCc,
-          username: cleanEmail,
-          isUid: false,
-        });
-
-        const { token, pbKey } = tokenRes.result || {};
-        if (!token) {
-          throw new Error(
-            "Failed to receive authentication token from Tuya server",
-          );
-        }
-
-        const md5Pass = crypto.createHash("md5").update(password).digest("hex");
-
-        // Use official Tuya web bundle login format (MD5 hex password with ifencrypt: 0)
-        const loginRes = await this.postApi<{
-          result: TuyaLoginResult;
-          success: boolean;
-        }>("/api/private/email/login", {
-          countryCode: cleanCc,
-          email: cleanEmail,
-          passwd: md5Pass,
-          token,
-          ifencrypt: 0,
-          options: '{"group":1}',
-        });
-
-        const login = loginRes.result;
-        if (!login || (!login.sid && !login.uid && !login.token)) {
-          throw new Error("Login succeeded but no user session was returned");
-        }
-
-        this.loginResult = login;
-        this.lastError = null;
-        await this.saveSession();
-        await this.saveCredentials({
-          email: cleanEmail,
-          password,
-          countryCode: cleanCc,
-          region: this.regionId,
-          savedAt: new Date().toISOString(),
-        });
-        this.logger.log(
-          `Logged in successfully with password as ${cleanEmail} (${this.regionId.toUpperCase()})`,
-        );
-        this.events.emit("session_authenticated");
-        return login;
-      } catch (e: any) {
-        lastError = e;
-        if (e.errorCode === "USER_PASSWD_ERROR_TIMES_TOO_MANY_1") {
-          break;
-        }
-        if (
-          e.errorCode !== "REGION_PROXY_FAILED" &&
-          candidateRegions.length > 1
-        ) {
-          break;
-        }
-      }
-    }
-
-    const formatted = formatTuyaError(lastError?.errorCode, lastError?.message);
-    this.lastError = formatted;
-    this.logger.error(`Password login failed: ${formatted}`);
-    throw new Error(formatted);
-  }
-
   public async fetchUserInfo(): Promise<TuyaLoginResult | null> {
     const endpoints = ["/api/common/user/info", "/api/customized/web/app/info"];
     for (const ep of endpoints) {
@@ -746,32 +439,6 @@ export class TuyaProtectService implements OnModuleInit, OnModuleDestroy {
     return null;
   }
 
-  public async saveCredentials(creds: StoredCredentials): Promise<void> {
-    let setting = await SettingEntity.findOne({
-      where: { key: "tuya_credentials" },
-    });
-    if (!setting) {
-      setting = new SettingEntity();
-      setting.key = "tuya_credentials";
-    }
-    setting.value = JSON.stringify(creds);
-    await setting.save();
-    this.hasStoredCredentials = true;
-  }
-
-  public async loadCredentials(): Promise<StoredCredentials | null> {
-    try {
-      const setting = await SettingEntity.findOne({
-        where: { key: "tuya_credentials" },
-      });
-      if (setting && setting.value) {
-        this.hasStoredCredentials = true;
-        return JSON.parse(setting.value);
-      }
-    } catch {}
-    this.hasStoredCredentials = false;
-    return null;
-  }
 
   public async saveSession(): Promise<void> {
     if (!this.loginResult) return;
@@ -836,19 +503,15 @@ export class TuyaProtectService implements OnModuleInit, OnModuleDestroy {
     this.currentQrToken = null;
     this.currentQrSvg = null;
     this.currentQrDataUrl = null;
-    this.hasStoredCredentials = false;
     await SettingEntity.delete({ key: "tuya_session" });
     await SettingEntity.delete({ key: "tuya_credentials" });
-    this.logger.log(
-      "Logged out of Tuya session and cleared stored credentials.",
-    );
+    this.logger.log("Logged out of Tuya session.");
     this.events.emit("session_expired");
   }
 
   public getState() {
     return {
       loggedIn: !!this.loginResult,
-      hasStoredCredentials: this.hasStoredCredentials,
       region: this.regionId,
       regions: TUYA_REGIONS,
       host: this.host,

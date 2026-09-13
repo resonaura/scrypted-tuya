@@ -4,18 +4,6 @@ export const StartQrSchema = z.object({
   region: z.string().optional().default("us"),
 });
 
-export const PasswordLoginSchema = z.object({
-  email: z.string().min(1),
-  password: z.string().min(1),
-  countryCode: z.string().optional().default("1"),
-  region: z.string().optional().default("us"),
-  securekey: z.string().optional(),
-});
-
-export const CaptchaInitSchema = z.object({
-  region: z.string().optional().default("us"),
-});
-
 export const PollQrSchema = z.object({
   token: z.string().optional(),
 });

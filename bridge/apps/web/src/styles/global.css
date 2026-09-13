@@ -58,10 +58,3 @@ button,
   animation: fade-in 0.2s ease forwards;
 }
 
-/* Ensure Tuya verification puzzle modal appears above all dialog backdrops */
-[class*="yrule_mask"] {
-  z-index: 999999 !important;
-}
-[class*="yrule_modal"] {
-  z-index: 1000000 !important;
-}
