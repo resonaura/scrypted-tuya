@@ -18,7 +18,7 @@ import {
   refreshCameras,
   startQrFlow,
 } from "../api/client.js";
-import { POPULAR_COUNTRIES, cleanCountryCode } from "../country-codes.js";
+import { ALL_COUNTRIES, cleanCountryCode } from "../country-codes.js";
 import { StyledQrCode } from "./StyledQrCode.js";
 import { Button, Tabs } from "./ui/index.js";
 
@@ -389,7 +389,7 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                       </Select.Trigger>
                       <Select.Popover className="max-h-64 overflow-y-auto">
                         <ListBox>
-                          {POPULAR_COUNTRIES.map((c) => (
+                          {ALL_COUNTRIES.map((c) => (
                             <ListBox.Item
                               key={`${c.code}-${c.iso}`}
                               id={`${c.code}-${c.iso}`}
