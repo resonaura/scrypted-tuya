@@ -10,7 +10,7 @@ export class SystemController {
       serverPort: env.PORT,
       webPort: env.WEB_PORT,
       core: "C++23 ZeroLatency",
-      version: "1.0.0",
+      version: "2.2.5",
     };
   }
 }

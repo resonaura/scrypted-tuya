@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.5
+
+- **Streamlined Authentication (QR Code & Manual Only)**:
+  - Removed the legacy password login tab, captcha proxy, and international country code list in favor of official, frictionless QR Code authentication via the Tuya Smart / Smart Life mobile app and Manual IP pairing.
+  - Eliminated web WAF challenges and captcha timeout issues associated with web portal login.
+  - Compacted the Add Camera modal to a clean two-tab view (`QR Code` and `Manual`).
+  - Added a concise session advisory notice in the QR Code tab.
+  - Synchronized version 2.2.5 across Scrypted plugin, Home Assistant addon config, native streaming core, and web frontend.
+
 ## 2.2.4
 
 - **Smart Multi-Region Failover & Dual Password Encryption**:

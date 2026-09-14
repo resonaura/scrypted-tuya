@@ -1,5 +1,13 @@
 # Tuya Camera Bridge — Changelog
 
+## 2.2.5
+
+- **Streamlined Authentication (QR Code & Manual Only)**:
+  - Removed password login tab, captcha proxy, and country codes list in favor of reliable QR Code and Manual pairing.
+  - Compacted Add Camera modal to two tabs (`QR Code` and `Manual`).
+  - Updated session advisory warning note.
+  - Synchronized version 2.2.5 across addon config, monorepo, and Scrypted plugin.
+
 ## 2.2.2
 
 - **Tuya Smart Life Password Authentication & Automatic Re-authentication**:
