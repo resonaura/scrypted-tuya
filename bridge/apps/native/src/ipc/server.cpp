@@ -78,7 +78,8 @@ IpcServer::~IpcServer() {
 }
 
 void IpcServer::send_event(const std::string& json_str) {
-    std::cout << json_str << std::endl;
+    std::lock_guard<std::mutex> lock(cout_mutex_);
+    std::cout << json_str << "\n" << std::flush;
 }
 
 void IpcServer::run_stdio() {
@@ -177,10 +178,10 @@ void IpcServer::handle_command(const std::string& line) {
         std::lock_guard<std::mutex> lock(sessions_mutex_);
         relays_.erase(cmd_dto.did);
     } else if (cmd == "start_viewer") {
-        std::cout << "[IPC] Received start_viewer for did=" << cmd_dto.did << " viewer_id=" << cmd_dto.viewer_id
+        std::cerr << "[IPC] Received start_viewer for did=" << cmd_dto.did << " viewer_id=" << cmd_dto.viewer_id
                   << " sdp_len=" << cmd_dto.sdp.size() << std::endl;
         if (cmd_dto.viewer_id.empty() || cmd_dto.did.empty() || cmd_dto.sdp.empty()) {
-            std::cout << "[IPC] Missing viewer_id, did, or sdp!" << std::endl;
+            std::cerr << "[IPC] Missing viewer_id, did, or sdp!" << std::endl;
             send_event(to_json(EventError{.did = cmd_dto.did, .message = "Missing viewer_id, did, or browser offer"}));
             return;
         }

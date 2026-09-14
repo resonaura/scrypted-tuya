@@ -29,7 +29,7 @@ BrowserPeer::~BrowserPeer() {
 
 bool BrowserPeer::start(const std::string& remote_offer) {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::cout << "[BrowserPeer] Starting for " << did_ << " remote_offer_len=" << remote_offer.size() << std::endl;
+    std::cerr << "[BrowserPeer] Starting for " << did_ << " remote_offer_len=" << remote_offer.size() << std::endl;
     if (running_)
         return true;
 
@@ -79,15 +79,15 @@ bool BrowserPeer::start(const std::string& remote_offer) {
     pc_ = std::make_shared<rtc::PeerConnection>(config);
 
     pc_->onStateChange([this](rtc::PeerConnection::State state) {
-        std::cout << "[BrowserPeer " << viewer_id_ << "] PeerConnection state: " << static_cast<int>(state)
+        std::cerr << "[BrowserPeer " << viewer_id_ << "] PeerConnection state: " << static_cast<int>(state)
                   << std::endl;
         if (!event_cb_)
             return;
         if (state == rtc::PeerConnection::State::Connected) {
-            std::cout << "[BrowserPeer " << viewer_id_ << "] WebRTC CONNECTED to browser!" << std::endl;
+            std::cerr << "[BrowserPeer " << viewer_id_ << "] WebRTC CONNECTED to browser!" << std::endl;
             event_cb_(to_json(EventViewerState{.viewer_id = viewer_id_, .did = did_, .state = "connected"}));
         } else if (state == rtc::PeerConnection::State::Failed || state == rtc::PeerConnection::State::Closed) {
-            std::cout << "[BrowserPeer " << viewer_id_ << "] WebRTC CLOSED/FAILED!" << std::endl;
+            std::cerr << "[BrowserPeer " << viewer_id_ << "] WebRTC CLOSED/FAILED!" << std::endl;
             event_cb_(to_json(EventViewerState{.viewer_id = viewer_id_, .did = did_, .state = "closed"}));
         }
     });
@@ -132,7 +132,7 @@ bool BrowserPeer::start(const std::string& remote_offer) {
             }
         }
 
-        std::cout << "[BrowserPeer " << viewer_id_ << "] Emitting WebRTC answer (sdp_len=" << sdp_str.size()
+        std::cerr << "[BrowserPeer " << viewer_id_ << "] Emitting WebRTC answer (sdp_len=" << sdp_str.size()
                   << ", has_cand=" << (sdp_str.find("a=candidate:") != std::string::npos) << ", ssrc=" << ssrc_ << ")"
                   << std::endl;
         event_cb_(to_json(EventViewerOffer{
@@ -145,14 +145,14 @@ bool BrowserPeer::start(const std::string& remote_offer) {
     };
 
     pc_->onGatheringStateChange([this, emit_answer_if_ready](rtc::PeerConnection::GatheringState state) {
-        std::cout << "[BrowserPeer " << viewer_id_ << "] Gathering state: " << static_cast<int>(state) << std::endl;
+        std::cerr << "[BrowserPeer " << viewer_id_ << "] Gathering state: " << static_cast<int>(state) << std::endl;
         if (state == rtc::PeerConnection::GatheringState::Complete) {
             emit_answer_if_ready();
         }
     });
 
     pc_->onLocalCandidate([this](rtc::Candidate cand) {
-        std::cout << "[BrowserPeer " << viewer_id_ << "] Local candidate: " << cand.candidate() << std::endl;
+        std::cerr << "[BrowserPeer " << viewer_id_ << "] Local candidate: " << cand.candidate() << std::endl;
         std::lock_guard<std::mutex> lk(cand_mutex_);
         local_candidates_.push_back(cand.candidate());
     });
@@ -177,7 +177,7 @@ bool BrowserPeer::start(const std::string& remote_offer) {
             audio_pt_ = static_cast<uint8_t>(std::stoi(a_match[1].str()));
         }
 
-        std::cout << "[BrowserPeer " << viewer_id_ << "] Selected PTs: video=" << int(video_pt_)
+        std::cerr << "[BrowserPeer " << viewer_id_ << "] Selected PTs: video=" << int(video_pt_)
                   << ", audio=" << int(audio_pt_) << std::endl;
 
         pc_->setRemoteDescription(rtc::Description(remote_offer, "offer"));
@@ -187,7 +187,7 @@ bool BrowserPeer::start(const std::string& remote_offer) {
         video.addSSRC(ssrc_, "tuya-browser-video");
         video_track_ = pc_->addTrack(video);
         video_track_->onOpen([this]() {
-            std::cout << "[BrowserPeer " << viewer_id_ << "] Video track OPENED (WebRTC streaming active)!"
+            std::cerr << "[BrowserPeer " << viewer_id_ << "] Video track OPENED (WebRTC streaming active)!"
                       << std::endl;
             if (event_cb_)
                 event_cb_(to_json(EventKeyframeRequested{.did = did_}));
@@ -198,7 +198,7 @@ bool BrowserPeer::start(const std::string& remote_offer) {
         audio.addSSRC(audio_ssrc_, "tuya-browser-audio");
         audio_track_ = pc_->addTrack(audio);
         audio_track_->onOpen(
-            [this]() { std::cout << "[BrowserPeer " << viewer_id_ << "] Audio track OPENED!" << std::endl; });
+            [this]() { std::cerr << "[BrowserPeer " << viewer_id_ << "] Audio track OPENED!" << std::endl; });
 
         pc_->setLocalDescription();
         answer_timer_thread_ = std::thread([this, emit_answer_if_ready]() {

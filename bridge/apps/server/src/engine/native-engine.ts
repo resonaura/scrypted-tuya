@@ -24,6 +24,52 @@ export interface NativeSessionConfig {
   ice_servers?: IceServerConfig[];
 }
 
+export function extractJsonObjects(text: string): Record<string, any>[] {
+  const results: Record<string, any>[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (char === "\\" && inString) {
+      escape = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    if (char === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (char === "}") {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        const substr = text.substring(start, i + 1);
+        try {
+          const parsed = JSON.parse(substr);
+          if (parsed && typeof parsed === "object") {
+            results.push(parsed);
+          }
+        } catch {}
+        start = -1;
+      } else if (depth < 0) {
+        depth = 0;
+        start = -1;
+      }
+    }
+  }
+  return results;
+}
+
 export class NativeMediaEngine extends EventEmitter {
   private static instance: NativeMediaEngine | null = null;
   private process: ChildProcess | null = null;
@@ -80,12 +126,22 @@ export class NativeMediaEngine extends EventEmitter {
       });
 
       this.rl.on("line", (line) => {
-        if (!line.trim()) return;
+        const trimmed = line.trim();
+        if (!trimmed) return;
         try {
-          const msg = JSON.parse(line);
+          const msg = JSON.parse(trimmed);
           this.handleEvent(msg);
-        } catch {
-          console.log(`[NativeEngine] ${line}`);
+          return;
+        } catch {}
+
+        // Fallback: extract and process all valid JSON objects if lines collided
+        const objects = extractJsonObjects(trimmed);
+        if (objects.length > 0) {
+          for (const msg of objects) {
+            this.handleEvent(msg);
+          }
+        } else {
+          console.log(`[NativeEngine] ${trimmed}`);
         }
       });
 

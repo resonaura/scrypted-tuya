@@ -54,7 +54,7 @@ bool WebRTCPeer::start() {
     };
 
     if (bind_receiver(talkback_socket_fd_, talkback_port_)) {
-        std::cout << "[WebRTCPeer] 🎙️ Talkback UDP ingest listening on 127.0.0.1:" << talkback_port_ << " for "
+        std::cerr << "[WebRTCPeer] 🎙️ Talkback UDP ingest listening on 127.0.0.1:" << talkback_port_ << " for "
                   << config_.did << std::endl;
         talkback_receiver_thread_ = std::thread(&WebRTCPeer::talkback_receive_loop, this, talkback_socket_fd_);
     }
@@ -162,7 +162,7 @@ void WebRTCPeer::talkback_receive_loop(int socket_fd) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!audio_send_track_ || !audio_send_track_->isOpen()) {
             if (packet_count % 100 == 0) {
-                std::cout << "[WebRTCPeer] ⚠️ Audio send track not open yet (isOpen="
+                std::cerr << "[WebRTCPeer] ⚠️ Audio send track not open yet (isOpen="
                           << (audio_send_track_ ? audio_send_track_->isOpen() : false)
                           << ", state=" << (pc_ ? static_cast<int>(pc_->state()) : -1) << ")" << std::endl;
             }
@@ -174,7 +174,7 @@ void WebRTCPeer::talkback_receive_loop(int socket_fd) {
             audio_send_track_->send(buffer.data(), static_cast<size_t>(len));
             packet_count++;
             if (packet_count == 1 || packet_count % 100 == 0) {
-                std::cout << "[WebRTCPeer] 🎙️ Sent " << packet_count << " talkback audio packets to camera "
+                std::cerr << "[WebRTCPeer] 🎙️ Sent " << packet_count << " talkback audio packets to camera "
                           << config_.did << " (len=" << len << ", ssrc=" << audio_send_ssrc_ << ")" << std::endl;
             }
         } catch (const std::exception& e) {
@@ -189,20 +189,37 @@ void WebRTCPeer::keyframe_loop() {
         std::this_thread::sleep_for(std::chrono::seconds(1));
         if (!running_)
             break;
-        if (!connected_)
-            continue;
         ++seconds;
         const auto now =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
                 .count();
         const auto last = last_video_packet_ms_.load();
-        if (last > 0 && now - last > 5000 && !unhealthy_sent_.exchange(true)) {
-            if (event_cb_)
-                event_cb_(to_json(EventUnhealthy{.did = config_.did}));
-        }
-        if (seconds >= 10) {
-            seconds = 0;
-            request_keyframe();
+
+        if (connected_) {
+            if (last > 0 && now - last > 5000 && !unhealthy_sent_.exchange(true)) {
+                if (event_cb_)
+                    event_cb_(to_json(EventUnhealthy{.did = config_.did}));
+            }
+            // If packets have completely halted for > 15 seconds, connection is dead
+            if (last > 0 && now - last > 15000) {
+                std::cerr << "[WebRTCPeer] ⚠️ RTP packets stalled for >15s, forcing WebRTC disconnect for " << config_.did << std::endl;
+                connected_ = false;
+                if (rtsp_server_) {
+                    rtsp_server_->clear_snapshot_annexb();
+                }
+                if (event_cb_) {
+                    event_cb_(to_json(EventWebRTCDisconnected{.did = config_.did}));
+                }
+            }
+            if (seconds >= 10) {
+                seconds = 0;
+                request_keyframe();
+            }
+        } else {
+            // Disconnected: keep keyframe cache empty
+            if (rtsp_server_) {
+                rtsp_server_->clear_snapshot_annexb();
+            }
         }
     }
 }
@@ -338,7 +355,7 @@ void WebRTCPeer::setup_peer_connection() {
 
     pc_->onStateChange([this](rtc::PeerConnection::State state) {
         if (state == rtc::PeerConnection::State::Connected) {
-            std::cout << "[WebRTCPeer] WebRTC Connected for " << config_.did << std::endl;
+            std::cerr << "[WebRTCPeer] WebRTC Connected for " << config_.did << std::endl;
             connected_ = true;
             unhealthy_sent_ = false;
             last_video_packet_ms_ = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -354,9 +371,12 @@ void WebRTCPeer::setup_peer_connection() {
             if (event_cb_) {
                 event_cb_(to_json(EventWebRTCConnected{.did = config_.did}));
             }
-        } else if (state == rtc::PeerConnection::State::Failed || state == rtc::PeerConnection::State::Closed) {
-            std::cout << "[WebRTCPeer] WebRTC Disconnected for " << config_.did << std::endl;
+        } else if (state == rtc::PeerConnection::State::Failed || state == rtc::PeerConnection::State::Closed || state == rtc::PeerConnection::State::Disconnected) {
+            std::cerr << "[WebRTCPeer] WebRTC Disconnected for " << config_.did << " (state=" << static_cast<int>(state) << ")" << std::endl;
             connected_ = false;
+            if (rtsp_server_) {
+                rtsp_server_->clear_snapshot_annexb();
+            }
             if (event_cb_) {
                 event_cb_(to_json(EventWebRTCDisconnected{.did = config_.did}));
             }
@@ -391,7 +411,7 @@ void WebRTCPeer::setup_peer_connection() {
 
     pc_->onTrack([this](std::shared_ptr<rtc::Track> track) {
         auto desc = track->description();
-        std::cout << "[WebRTCPeer] Received track: " << desc.type() << " mid=" << desc.mid() << std::endl;
+        std::cerr << "[WebRTCPeer] Received track: " << desc.type() << " mid=" << desc.mid() << std::endl;
 
         if (desc.type() == "video") {
             video_track_ = track;
@@ -435,7 +455,7 @@ void WebRTCPeer::setup_tracks() {
     audio_send_track_->setMediaHandler(std::make_shared<rtc::RtcpReceivingSession>());
 
     audio_send_track_->onOpen([this]() {
-        std::cout << "[WebRTCPeer] 🎙️ Camera WebRTC Audio Send track OPENED for " << config_.did << std::endl;
+        std::cerr << "[WebRTCPeer] 🎙️ Camera WebRTC Audio Send track OPENED for " << config_.did << std::endl;
     });
 
     // Handle incoming camera audio packets on the bidirectional SendRecv track
@@ -474,21 +494,21 @@ void WebRTCPeer::setup_data_channel() {
     data_channel_ = pc_->createDataChannel("fmp4Stream", dc_init);
 
     data_channel_->onOpen([this]() {
-        std::cout << "[WebRTCPeer] 🎉 DataChannel fmp4Stream OPENED for " << config_.did << std::endl;
+        std::cerr << "[WebRTCPeer] 🎉 DataChannel fmp4Stream OPENED for " << config_.did << std::endl;
         send_data_channel_msg("codec", "");
     });
 
     data_channel_->onClosed(
-        [this]() { std::cout << "[WebRTCPeer] DataChannel fmp4Stream CLOSED for " << config_.did << std::endl; });
+        [this]() { std::cerr << "[WebRTCPeer] DataChannel fmp4Stream CLOSED for " << config_.did << std::endl; });
 
     data_channel_->onError([this](const std::string& err) {
-        std::cout << "[WebRTCPeer] DataChannel ERROR for " << config_.did << ": " << err << std::endl;
+        std::cerr << "[WebRTCPeer] DataChannel ERROR for " << config_.did << ": " << err << std::endl;
     });
 
     data_channel_->onMessage([this](rtc::message_variant msg) {
         if (std::holds_alternative<std::string>(msg)) {
             const std::string& str = std::get<std::string>(msg);
-            std::cout << "[WebRTCPeer] 📩 DataChannel text msg: " << str << std::endl;
+            std::cerr << "[WebRTCPeer] 📩 DataChannel text msg: " << str << std::endl;
             if (str.find("\"codec\"") != std::string::npos) {
                 send_data_channel_msg("start", "frame");
                 send_data_channel_msg("start", "audio");
@@ -516,7 +536,7 @@ void WebRTCPeer::send_data_channel_msg(const std::string& type, const std::strin
     if (!data_channel_ || !data_channel_->isOpen())
         return;
     std::string payload = "{\"type\":\"" + type + "\",\"msg\":\"" + msg + "\"}";
-    std::cout << "[WebRTCPeer] 📤 Sending DataChannel message: " << payload << std::endl;
+    std::cerr << "[WebRTCPeer] 📤 Sending DataChannel message: " << payload << std::endl;
     try {
         data_channel_->send(payload);
     } catch (const std::exception& e) {
@@ -558,13 +578,13 @@ void WebRTCPeer::set_remote_description(const std::string& raw_sdp, const std::s
             if (recvonly_pos != std::string::npos) {
                 audio_sec.replace(recvonly_pos, 10, "a=sendrecv");
                 sdp.replace(audio_pos, len, audio_sec);
-                std::cout << "[WebRTCPeer] Overrode camera audio SDP direction: a=recvonly -> a=sendrecv" << std::endl;
+                std::cerr << "[WebRTCPeer] Overrode camera audio SDP direction: a=recvonly -> a=sendrecv" << std::endl;
             }
         }
 
         rtc::Description desc(sdp, type);
         pc_->setRemoteDescription(desc);
-        std::cout << "[WebRTCPeer] Remote description successfully set (" << type << ")" << std::endl;
+        std::cerr << "[WebRTCPeer] Remote description successfully set (" << type << ")" << std::endl;
 
         // Also extract and add all candidates from the answer SDP if present
         std::istringstream stream(sdp);
@@ -585,7 +605,7 @@ void WebRTCPeer::set_remote_description(const std::string& raw_sdp, const std::s
                     rtc::Candidate cand(cand_str, current_mid);
                     if (cand.family() != rtc::Candidate::Family::Ipv6) {
                         pc_->addRemoteCandidate(cand);
-                        std::cout << "[WebRTCPeer] Added embedded ICE candidate: " << cand_str << " mid=" << current_mid
+                        std::cerr << "[WebRTCPeer] Added embedded ICE candidate: " << cand_str << " mid=" << current_mid
                                   << std::endl;
                     }
                 } catch (const std::exception& e) {
@@ -618,7 +638,7 @@ void WebRTCPeer::add_remote_candidate(const std::string& candidate, const std::s
         rtc::Candidate cand(cand_cleaned, target_mid);
         if (cand.family() != rtc::Candidate::Family::Ipv6) {
             pc_->addRemoteCandidate(cand);
-            std::cout << "[WebRTCPeer] Added remote ICE candidate: " << cand_cleaned << " mid=" << target_mid
+            std::cerr << "[WebRTCPeer] Added remote ICE candidate: " << cand_cleaned << " mid=" << target_mid
                       << std::endl;
         }
     } catch (const std::exception& e) {
@@ -631,7 +651,7 @@ void WebRTCPeer::request_keyframe() {
     if (video_track_ && video_track_->isOpen()) {
         try {
             video_track_->requestKeyframe();
-            std::cout << "[WebRTCPeer] 🔑 Sent RTCP PLI/FIR keyframe request" << std::endl;
+            std::cerr << "[WebRTCPeer] 🔑 Sent RTCP PLI/FIR keyframe request" << std::endl;
         } catch (const std::exception& e) {
             std::cerr << "[WebRTCPeer] Keyframe request error: " << e.what() << std::endl;
         }

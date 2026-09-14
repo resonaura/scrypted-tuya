@@ -36,6 +36,11 @@ std::vector<uint8_t> RTSPServer::get_latest_annexb() const {
     return snapshot_annexb_;
 }
 
+void RTSPServer::clear_snapshot_annexb() {
+    std::lock_guard<std::mutex> lock(snap_mutex_);
+    snapshot_annexb_.clear();
+}
+
 static void append_annexb_unit(std::vector<uint8_t>& out, const uint8_t* unit, size_t len) {
     static const uint8_t start_code[4] = {0x00, 0x00, 0x00, 0x01};
     out.insert(out.end(), start_code, start_code + 4);

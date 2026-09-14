@@ -45,7 +45,7 @@ bool StreamSession::start() {
         webrtc_peer_->start();
     }
 
-    std::cout << "[NativeSession] Stream session active for " << config_.did
+    std::cerr << "[NativeSession] Stream session active for " << config_.did
               << " rtsp=rtsp://0.0.0.0:" << config_.rtsp_port << "/" << config_.rtsp_path << std::endl;
     return true;
 }
@@ -54,6 +54,10 @@ bool StreamSession::restart_p2p(const SessionConfig& new_cfg) {
     config_ = new_cfg;
     seen_first_keyframe_ = false;
     quality_switched_ = false;
+
+    if (rtsp_server_) {
+        rtsp_server_->clear_snapshot_annexb();
+    }
 
     if (webrtc_peer_) {
         webrtc_peer_->stop();
@@ -65,7 +69,7 @@ bool StreamSession::restart_p2p(const SessionConfig& new_cfg) {
     wcfg.ice_servers = config_.ice_servers;
     wcfg.resolution = (config_.p2p_quality_channel == 1) ? "sd" : "hd";
 
-    std::cout << "[NativeSession] Preserving RTSP server on port " << config_.rtsp_port
+    std::cerr << "[NativeSession] Preserving RTSP server on port " << config_.rtsp_port
               << " while reconnecting WebRTC session for " << config_.did << std::endl;
 
     webrtc_peer_ = std::make_unique<WebRTCPeer>(wcfg, rtsp_server_, event_cb_);
@@ -73,6 +77,9 @@ bool StreamSession::restart_p2p(const SessionConfig& new_cfg) {
 }
 
 void StreamSession::stop() {
+    if (rtsp_server_) {
+        rtsp_server_->clear_snapshot_annexb();
+    }
     if (webrtc_peer_) {
         webrtc_peer_->stop();
     }

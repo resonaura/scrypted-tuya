@@ -543,13 +543,24 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
         this.logger.debug(
           `Snapshot unavailable for ${cam.name}, retry ${count}/${max}`,
         );
-        if (count >= max) this.engine.requestKeyframe(cam.did);
+        if (count === max) {
+          this.engine.requestKeyframe(cam.did);
+        } else if (count >= max * 2) {
+          this.logger.warn(
+            `⚠️ Snapshot unavailable for ${cam.name} for ${count} consecutive attempts (~${count * 10}s). Media pipeline stalled, triggering automatic recovery...`,
+          );
+          this.activeStreams.delete(cam.did);
+          this.transcoder.switchToFallback({
+            did: cam.did,
+            slug,
+            targetRtspPort: cam.rtspPort || env.RTSP_BASE_PORT,
+            targetRtspPath: cam.rtspPath,
+          });
+          this.scheduleStreamRecovery(cam, 1000);
+        }
       },
     );
     snapshotter.on("unhealthy", () => {
-      // Snapshot generation is downstream of the live stream. Keep serving
-      // the last good frame and let the next interval retry without tearing
-      // down the camera's WebRTC session.
       this.engine.requestKeyframe(cam.did);
     });
     this.snapshotters.set(cam.did, snapshotter);

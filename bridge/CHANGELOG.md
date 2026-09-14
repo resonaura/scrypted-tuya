@@ -1,5 +1,15 @@
 # Tuya Camera Bridge — Changelog
 
+## 2.2.6
+
+- **Bulletproof WebRTC Disconnect & IPC Race Condition Fix**:
+  - **Thread-Safe IPC Stdio**: Added a dedicated `std::mutex` around stdout in `IpcServer::send_event` with synchronized newline flushing, eliminating race condition collisions between heavy snapshot JSONs and WebRTC state changes.
+  - **Diagnostic Log Isolation**: Redirected all C++ native core logging from `std::cout` to `std::cerr`, ensuring stdout is reserved exclusively for clean JSON IPC frames.
+  - **Resilient Concatenated JSON Parser**: Added `extractJsonObjects` in `native-engine.ts` to parse multiple top-level JSON objects even if stdout lines are concatenated.
+  - **Comprehensive Disconnect State Handling**: Added `rtc::PeerConnection::State::Disconnected` to WebRTC state monitoring to catch any transient drops.
+  - **Snapshot Invalidation on Disconnect**: Cleared cached Annex-B keyframes in `RTSPServer` on stream disconnect and stop, preventing stale frozen keyframes from being served as fresh snapshots.
+  - **Stall Watchdog & Automatic Self-Healing**: Added native RTP packet stall watchdog (15s timeout) and snapshot stall detection in `CamerasService` (6 consecutive snapshot failures) to automatically trigger fallback and reconnect.
+
 ## 2.2.5
 
 - **Streamlined Authentication (QR Code & Manual Only)**:

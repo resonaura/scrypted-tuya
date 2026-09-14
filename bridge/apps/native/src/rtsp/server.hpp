@@ -69,6 +69,7 @@ public:
 
     void set_snapshot_callback(std::function<void(const std::vector<uint8_t>&)> cb);
     std::vector<uint8_t> get_latest_annexb() const;
+    void clear_snapshot_annexb();
 
 private:
     void accept_loop();

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.6
+
+- **Bulletproof WebRTC Disconnect & IPC Race Condition Fix**:
+  - **Thread-Safe IPC Stdio**: Added a dedicated `std::mutex` around stdout in `IpcServer::send_event` and ensured newline and flush synchronization, preventing large snapshot payloads and WebRTC lifecycle events from colliding or corrupting stdout lines.
+  - **Diagnostic Log Isolation**: Redirected all non-IPC C++ logging from `std::cout` to `std::cerr`, guaranteeing that `stdout` is reserved exclusively for clean, uncorrupted JSON IPC events.
+  - **Resilient Concatenated JSON Parser**: Added `extractJsonObjects` in `native-engine.ts` to reliably parse multiple top-level JSON objects even if stdout lines are spliced or concatenated.
+  - **Comprehensive Disconnect State Handling**: Added `rtc::PeerConnection::State::Disconnected` to WebRTC state monitors, ensuring peer disconnects immediately trigger reconnection.
+  - **Snapshot Invalidation on Disconnect**: Cleared cached Annex-B keyframes in `RTSPServer` on stream disconnect and stop, preventing stale frozen keyframes from masquerading as healthy snapshots.
+  - **Stall Watchdog & Automatic Self-Healing**: Added active RTP stall detection in the native core (15s video freeze) and snapshot stall detection in `CamerasService` (6 consecutive snapshot failures) to automatically trigger fallback and re-establish live streams.
+
 ## 2.2.5
 
 - **Streamlined Authentication (QR Code & Manual Only)**:
