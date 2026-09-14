@@ -317,10 +317,10 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({
                     <Alert.Indicator />
                     <Alert.Content>
                       <Alert.Title className="font-semibold text-xs text-warning-soft-foreground">
-                        Tuya Session Advisory
+                        Session Advisory
                       </Alert.Title>
                       <Alert.Description className="text-[11px] text-warning-soft-foreground leading-relaxed">
-                        Tuya Protect cloud sessions may periodically expire. If your session expires, re-scan the QR code to re-authenticate, or connect cameras directly via the <strong>Manual</strong> tab with their local IP and Local Key for non-expiring offline RTSP streaming. Make sure the selected Account Region matches your Tuya / Smart Life account registration.
+                        Cloud sessions may periodically expire. Re-scan the QR code to re-authenticate, or use the <strong>Manual</strong> tab for persistent local streaming.
                       </Alert.Description>
                     </Alert.Content>
                   </Alert>
