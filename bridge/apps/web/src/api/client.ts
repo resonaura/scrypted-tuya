@@ -139,7 +139,7 @@ export async function fetchSystemConfig(): Promise<SystemConfig> {
       serverPort: 6766,
       webPort: 6767,
       core: "C++23 ZeroLatency",
-      version: "2.2.6",
+      version: "2.2.7",
     };
   return res.json();
 }

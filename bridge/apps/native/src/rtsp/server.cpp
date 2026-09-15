@@ -392,8 +392,21 @@ void RTSPServer::handle_rtsp_request(int client_fd, const std::string& req, RTSP
                     << "\r\n";
             }
         } else {
-            sdp << "a=rtpmap:96 H264/90000\r\n"
-                << "a=fmtp:96 packetization-mode=1;profile-level-id=42001f\r\n";
+            sdp << "a=rtpmap:96 H264/90000\r\n";
+            std::lock_guard<std::mutex> param_lock(param_mutex_);
+            std::string profile_level = "420028";
+            if (sps_pkt_.size() >= 16) {
+                char pl_buf[7];
+                snprintf(pl_buf, sizeof(pl_buf), "%02x%02x%02x", sps_pkt_[13], sps_pkt_[14], sps_pkt_[15]);
+                profile_level = pl_buf;
+            }
+            sdp << "a=fmtp:96 packetization-mode=1;profile-level-id=" << profile_level;
+            if (!sps_pkt_.empty() && !pps_pkt_.empty()) {
+                std::string b64_sps = base64_encode(sps_pkt_.data() + 12, sps_pkt_.size() - 12);
+                std::string b64_pps = base64_encode(pps_pkt_.data() + 12, pps_pkt_.size() - 12);
+                sdp << ";sprop-parameter-sets=" << b64_sps << "," << b64_pps;
+            }
+            sdp << "\r\n";
         }
         sdp << "a=control:track0\r\n";
         if (audio_is_aac_) {

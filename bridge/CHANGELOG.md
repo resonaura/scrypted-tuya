@@ -1,5 +1,12 @@
 # Tuya Camera Bridge — Changelog
 
+## 2.2.7
+
+- **Fix Green Screen Rendering on Intel Macs & Legacy HomeKit Clients**:
+  - **Explicit BT.709 Colorimetry & VUI Parameters**: Injected `-color_range tv -colorspace bt709 -color_primaries bt709 -color_trc bt709` into live and fallback FFmpeg encoders alongside x264 parameters (`colorprim=bt709:transfer=bt709:colormatrix=bt709:fullrange=off`), ensuring VideoToolbox hardware decoders (especially on Intel GPUs) always receive valid chroma plane metadata.
+  - **Dynamic Out-of-Band H.264 Parameter Sets (`sprop-parameter-sets`)**: Automatically extracted cached SPS/PPS NALUs and encoded base64 parameter sets directly into RTSP SDP responses (`a=fmtp:96 ...;sprop-parameter-sets=...`), enabling older VideoToolbox decoders to immediately allocate decompression sessions without green uninitialized chroma surfaces.
+  - **Synchronized Profile & Level**: Aligned the H.264 profile and level across FFmpeg encoding and RTSP SDP to Baseline Level 4.0 (`420028`) with exact derivation from the SPS payload.
+
 ## 2.2.6
 
 - **Bulletproof WebRTC Disconnect & IPC Race Condition Fix**:
