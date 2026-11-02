@@ -1,3 +1,8 @@
+## 2.2.8
+
+- Persist the last real JPEG separately from Offline cards and expose its original capture time through a dedicated Haus snapshot endpoint.
+- Advertise camera RTSP identity and the real-snapshot path without device credentials, enabling automatic Generic-camera matching in Haus.
+
 # Tuya Camera Bridge — Changelog
 
 ## 2.2.7

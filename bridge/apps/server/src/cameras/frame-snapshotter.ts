@@ -1,3 +1,4 @@
+import { saveLastLive } from "./last-live.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
@@ -171,7 +172,7 @@ export class FrameSnapshotter extends EventEmitter {
         }
       }, 8000);
 
-      proc.on("exit", (code) => {
+      proc.on("exit", async (code) => {
         clearTimeout(killTimer);
         if (this.proc === proc) this.proc = null;
         this.inFlight = false;
@@ -181,6 +182,11 @@ export class FrameSnapshotter extends EventEmitter {
             const buf = fs.readFileSync(tempPath);
             if (buf.length > 1000) {
               fs.renameSync(tempPath, this.currentPath);
+              await saveLastLive(
+                path.join(this.dataDir, "frames"),
+                this.slug,
+                buf,
+              );
               this.lastBuffer = buf;
               this.consecutiveFailures = 0;
               this.emit("frame", {
@@ -255,6 +261,7 @@ export class FrameSnapshotter extends EventEmitter {
         const swapPath = `${this.currentPath}.${Date.now()}.swap.jpg`;
         fs.writeFileSync(swapPath, buf);
         fs.renameSync(swapPath, this.currentPath);
+        await saveLastLive(path.join(this.dataDir, "frames"), this.slug, buf);
         this.lastBuffer = buf;
         this.emit("frame", { slug: this.slug, did: this.did, buffer: buf });
         return true;

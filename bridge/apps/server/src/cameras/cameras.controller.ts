@@ -80,6 +80,24 @@ export class CamerasController {
     return { success: true, cameras };
   }
 
+  @Get(":id/snapshot/last-live")
+  async getLastLive(@Param("id") id: string, @Res() res: FastifyReply) {
+    try {
+      const { buffer, at } = await this.camerasService.getLastLive(id);
+      res.headers({
+        "Content-Type": "image/jpeg",
+        "Cache-Control": "no-store",
+        "X-Haus-Snapshot-Profile": "1",
+        "X-Haus-Snapshot-Provider": "tuya",
+        "X-Haus-Snapshot-Captured-At": String(at),
+        "X-Haus-Snapshot-Stale": Date.now() - at >= 30000 ? "1" : "0",
+      });
+      return res.send(buffer);
+    } catch {
+      throw new NotFoundException("No real frame captured yet");
+    }
+  }
+
   @Get(":id/snapshot")
   async getSnapshot(@Param("id") id: string, @Res() res: FastifyReply) {
     const { buffer, mimeType } = await this.camerasService.getSnapshot(id);
