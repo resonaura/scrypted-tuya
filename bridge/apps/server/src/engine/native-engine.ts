@@ -95,7 +95,7 @@ export class NativeMediaEngine extends EventEmitter {
   private pendingSnapshots: Map<
     string,
     {
-      resolve: (b64: string) => void;
+      resolve: (frame: { data: string; capturedAt: number }) => void;
       reject: (e: Error) => void;
       timer: NodeJS.Timeout;
     }
@@ -238,9 +238,10 @@ export class NativeMediaEngine extends EventEmitter {
       if (pending) {
         clearTimeout(pending.timer);
         this.pendingSnapshots.delete(msg.did);
-        pending.resolve(
-          typeof msg.data_base64 === "string" ? msg.data_base64 : "",
-        );
+        pending.resolve({
+          data: typeof msg.data_base64 === "string" ? msg.data_base64 : "",
+          capturedAt: Number(msg.captured_at) || 0,
+        });
       }
     } else if (msg.event === "error") {
       const pending = this.pendingSnapshots.get(msg.did);
@@ -337,9 +338,19 @@ export class NativeMediaEngine extends EventEmitter {
   }
 
   public getSnapshot(did: string, timeoutMs = 4000): Promise<string> {
+    return this.getSnapshotFrame(did, timeoutMs).then((frame) => frame.data);
+  }
+
+  public getSnapshotFrame(
+    did: string,
+    timeoutMs = 4000,
+  ): Promise<{ data: string; capturedAt: number }> {
     return new Promise((resolve, reject) => {
       const existing = this.pendingSnapshots.get(did);
-      if (existing) clearTimeout(existing.timer);
+      if (existing) {
+        clearTimeout(existing.timer);
+        existing.reject(new Error("Snapshot request superseded"));
+      }
       const timer = setTimeout(() => {
         this.pendingSnapshots.delete(did);
         reject(new Error("snapshot request timed out"));

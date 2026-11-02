@@ -31,14 +31,17 @@ void RTSPServer::set_snapshot_callback(std::function<void(const std::vector<uint
     snap_cb_ = std::move(cb);
 }
 
-std::vector<uint8_t> RTSPServer::get_latest_annexb() const {
+std::vector<uint8_t> RTSPServer::get_latest_annexb(uint64_t* captured_at) const {
     std::lock_guard<std::mutex> lock(snap_mutex_);
+    if (captured_at)
+        *captured_at = snapshot_captured_at_;
     return snapshot_annexb_;
 }
 
 void RTSPServer::clear_snapshot_annexb() {
     std::lock_guard<std::mutex> lock(snap_mutex_);
     snapshot_annexb_.clear();
+    snapshot_captured_at_ = 0;
 }
 
 static void append_annexb_unit(std::vector<uint8_t>& out, const uint8_t* unit, size_t len) {
@@ -122,8 +125,12 @@ void RTSPServer::rebuild_snapshot_annexb() {
 
     {
         std::lock_guard<std::mutex> lock(snap_mutex_);
-        if (!annexb.empty())
+        if (!annexb.empty()) {
             snapshot_annexb_.swap(annexb);
+            snapshot_captured_at_ = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        std::chrono::system_clock::now().time_since_epoch())
+                                        .count();
+        }
         if (snap_cb_ && !snapshot_annexb_.empty())
             snap_cb_(snapshot_annexb_);
     }
@@ -649,6 +656,14 @@ void RTSPServer::send_client_rtp_packet(int fd, RTSPClientSession& session, bool
 
 void RTSPServer::feed_frame(const MediaFrame& frame) {
     if (frame.is_video) {
+        if (frame.is_keyframe && frame.data.size() >= 4 && frame.data[0] == 0 && frame.data[1] == 0 &&
+            (frame.data[2] == 1 || (frame.data[2] == 0 && frame.data[3] == 1))) {
+            std::lock_guard<std::mutex> lock(snap_mutex_);
+            snapshot_annexb_ = frame.data;
+            snapshot_captured_at_ = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        std::chrono::system_clock::now().time_since_epoch())
+                                        .count();
+        }
         if (frame.is_keyframe) {
             std::lock_guard<std::mutex> lock(gop_mutex_);
             gop_cache_.clear();

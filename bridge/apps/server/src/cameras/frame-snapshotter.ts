@@ -11,7 +11,10 @@ export interface FrameSnapshotterOptions {
   dataDir: string;
   intervalMs?: number;
   maxConsecutiveFailures?: number;
-  getSnapshot?: (did: string, timeoutMs?: number) => Promise<string>;
+  getSnapshot?: (
+    did: string,
+    timeoutMs?: number,
+  ) => Promise<string | { data: string; capturedAt: number }>;
 }
 
 export class FrameSnapshotter extends EventEmitter {
@@ -33,7 +36,7 @@ export class FrameSnapshotter extends EventEmitter {
   private readonly getSnapshot?: (
     did: string,
     timeoutMs?: number,
-  ) => Promise<string>;
+  ) => Promise<string | { data: string; capturedAt: number }>;
 
   constructor(options: FrameSnapshotterOptions) {
     super();
@@ -182,11 +185,7 @@ export class FrameSnapshotter extends EventEmitter {
             const buf = fs.readFileSync(tempPath);
             if (buf.length > 1000) {
               fs.renameSync(tempPath, this.currentPath);
-              await saveLastLive(
-                path.join(this.dataDir, "frames"),
-                this.slug,
-                buf,
-              );
+              // Legacy RTSP snapshots may contain a fallback card.
               this.lastBuffer = buf;
               this.consecutiveFailures = 0;
               this.emit("frame", {
@@ -226,7 +225,16 @@ export class FrameSnapshotter extends EventEmitter {
 
   private async grabFromKeyframe(): Promise<boolean> {
     try {
-      const b64 = await this.getSnapshot!(this.did, 4000);
+      const result = await this.getSnapshot!(this.did, 4000);
+      const b64 = typeof result === "string" ? result : result.data;
+      const capturedAt =
+        typeof result === "string" ? Date.now() : result.capturedAt;
+      if (
+        !Number.isFinite(capturedAt) ||
+        capturedAt <= 0 ||
+        capturedAt > Date.now() + 5000
+      )
+        return false;
       if (!b64) return false;
       const annexb = Buffer.from(b64, "base64");
       if (annexb.length < 64) return false;
@@ -261,7 +269,12 @@ export class FrameSnapshotter extends EventEmitter {
         const swapPath = `${this.currentPath}.${Date.now()}.swap.jpg`;
         fs.writeFileSync(swapPath, buf);
         fs.renameSync(swapPath, this.currentPath);
-        await saveLastLive(path.join(this.dataDir, "frames"), this.slug, buf);
+        await saveLastLive(
+          path.join(this.dataDir, "frames"),
+          this.slug,
+          buf,
+          capturedAt,
+        );
         this.lastBuffer = buf;
         this.emit("frame", { slug: this.slug, did: this.did, buffer: buf });
         return true;

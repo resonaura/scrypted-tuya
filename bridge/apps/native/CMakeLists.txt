@@ -69,3 +69,8 @@ add_executable(tuya-reassembler-test
 target_include_directories(tuya-reassembler-test PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${glaze_SOURCE_DIR}/include)
 target_link_libraries(tuya-reassembler-test PRIVATE pthread)
 add_test(NAME tuya-reassembler-test COMMAND tuya-reassembler-test)
+
+add_executable(tuya-snapshot-cache-test tests/snapshot_cache_test.cpp src/rtsp/server.cpp)
+target_include_directories(tuya-snapshot-cache-test PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(tuya-snapshot-cache-test PRIVATE pthread)
+add_test(NAME tuya-snapshot-cache-test COMMAND tuya-snapshot-cache-test)

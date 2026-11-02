@@ -528,7 +528,8 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
       dataDir: getDataDir(),
       intervalMs: 10_000,
       maxConsecutiveFailures: 3,
-      getSnapshot: (did, timeoutMs) => this.engine.getSnapshot(did, timeoutMs),
+      getSnapshot: (did, timeoutMs) =>
+        this.engine.getSnapshotFrame(did, timeoutMs),
     });
     snapshotter.on("frame", ({ buffer }: { buffer: Buffer }) => {
       OfflineCardManager.getInstance().setOnline(slug);

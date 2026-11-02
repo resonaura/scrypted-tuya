@@ -107,6 +107,7 @@ struct EventSnapshot {
     std::string event = "snapshot";
     std::string did;
     std::string data_base64;
+    uint64_t captured_at = 0;
 };
 
 template<typename T>

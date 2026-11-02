@@ -1,3 +1,8 @@
+## 2.2.10 — Native snapshot capture time
+
+- Carry the actual native keyframe receive time through IPC into the dedicated Haus JPEG cache. Re-reading an unchanged keyframe never renews its age.
+- Keep generated RTSP fallback cards and unverified older caches out of the real-only handoff. Ordinary snapshot/Offline-card routes keep working.
+
 ## 2.2.9
 
 - Accept full-resolution cached JPEGs up to 6 MiB, matching the Haus handoff consumer.

@@ -40,7 +40,7 @@ public:
     void set_quality(int channel);
     void ptz(int action, int speed = 50);
 
-    std::vector<uint8_t> get_snapshot_annexb() const;
+    std::vector<uint8_t> get_snapshot_annexb(uint64_t* captured_at = nullptr) const;
 
     int get_talkback_port() const { return webrtc_peer_ ? webrtc_peer_->get_talkback_port() : 0; }
 
