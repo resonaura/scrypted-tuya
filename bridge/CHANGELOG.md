@@ -1,3 +1,8 @@
+## 2.2.9
+
+- Accept full-resolution cached JPEGs up to 6 MiB, matching the Haus handoff consumer.
+- Build HA ARM64 images on native ARM runners rather than compiling the streaming engine under QEMU. The camera transport and signaling engine are unchanged.
+
 ## 2.2.8
 
 - Persist the last real JPEG separately from Offline cards and expose its original capture time through a dedicated Haus snapshot endpoint.

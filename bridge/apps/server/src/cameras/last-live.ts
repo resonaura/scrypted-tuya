@@ -29,7 +29,7 @@ export async function readLastLive(directory: string, slug: string) {
   const file = await open(framePath(directory, slug), "r");
   try {
     const stat = await file.stat();
-    if (stat.size > 2 * 1024 ** 2) throw Error("invalid_frame");
+    if (stat.size > 6 * 1024 ** 2) throw Error("invalid_frame");
     const buffer = await file.readFile();
     if (buffer.length < 4 || buffer[0] !== 255 || buffer[1] !== 216)
       throw Error("invalid_frame");
