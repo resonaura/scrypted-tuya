@@ -1,3 +1,4 @@
+import { readLastLive } from "./last-live.js";
 import {
   Injectable,
   OnModuleInit,
@@ -573,6 +574,34 @@ export class CamerasService implements OnModuleInit, OnModuleDestroy {
     this.snapshotters.delete(did);
     snapshotter.removeAllListeners();
     snapshotter.stop();
+  }
+
+  async getLastLive(id: string) {
+    const camera = await this.getById(id);
+    if (!camera) throw Error("camera_not_found");
+    return readLastLive(
+      path.join(getDataDir(), "frames"),
+      this.getSlug(camera),
+    );
+  }
+
+  async hausCapabilities() {
+    return {
+      version: 1,
+      provider: "tuya",
+      cameras: (await this.getAll()).map((camera) => ({
+        id: camera.id,
+        stream: {
+          protocol: "rtsp:",
+          port: camera.rtspPort || env.RTSP_BASE_PORT,
+          path: "/" + (camera.rtspPath || "live/" + this.getSlug(camera)),
+        },
+        snapshotPath:
+          "/api/cameras/" +
+          encodeURIComponent(camera.id) +
+          "/snapshot/last-live",
+      })),
+    };
   }
 
   async getSnapshot(id: string): Promise<{ buffer: Buffer; mimeType: string }> {
