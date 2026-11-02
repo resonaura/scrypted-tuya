@@ -1,0 +1,26 @@
+name: Test bridge
+on:
+  pull_request:
+    paths: ["bridge/**", ".github/workflows/test.yaml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  snapshot-handoff:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: bridge/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: bridge/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: bridge
+      - run: pnpm --filter @tuya-bridge/server build
+        working-directory: bridge
+      - run: node --import tsx --test test/*.test.ts
+        working-directory: bridge/apps/server
