@@ -68,7 +68,7 @@ public:
     const std::string& get_path() const { return path_; }
 
     void set_snapshot_callback(std::function<void(const std::vector<uint8_t>&)> cb);
-    std::vector<uint8_t> get_latest_annexb() const;
+    std::vector<uint8_t> get_latest_annexb(uint64_t* captured_at = nullptr) const;
     void clear_snapshot_annexb();
 
 private:
@@ -121,6 +121,7 @@ private:
     // Last decodable keyframe in Annex-B (HEVC) form for snapshots
     mutable std::mutex snap_mutex_;
     std::vector<uint8_t> snapshot_annexb_;
+    uint64_t snapshot_captured_at_ = 0;
     std::function<void(const std::vector<uint8_t>&)> snap_cb_;
 
     // GOP caching

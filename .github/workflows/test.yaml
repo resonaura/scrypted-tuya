@@ -24,3 +24,7 @@ jobs:
         working-directory: bridge
       - run: node --import tsx --test test/*.test.ts
         working-directory: bridge/apps/server
+      - name: Check native snapshot capture timestamps
+        run: |
+          c++ -std=c++23 -pthread -I bridge/apps/native/src bridge/apps/native/tests/snapshot_cache_test.cpp bridge/apps/native/src/rtsp/server.cpp -o /tmp/tuya-snapshot-cache-test
+          /tmp/tuya-snapshot-cache-test
