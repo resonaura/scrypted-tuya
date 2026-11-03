@@ -9,6 +9,7 @@ import { WsAdapter } from "@nestjs/platform-ws";
 import { AppModule } from "./app.module.js";
 import { env } from "./config/env.js";
 import { initDatabase } from "./db/data-source.js";
+import { HausNativeService } from "./cameras/haus-native.service.js";
 
 async function bootstrap() {
   await initDatabase();
@@ -23,6 +24,12 @@ async function bootstrap() {
     { bufferLogs: false },
   );
   app.enableShutdownHooks();
+  const nativeHaus = app.get(HausNativeService);
+  adapter.getInstance().addHook("onRequest", async (request, reply) => {
+    if (!request.url.startsWith("/api/haus/v2/")) return;
+    reply.hijack();
+    await nativeHaus.handle(request.raw, reply.raw);
+  });
   app.useWebSocketAdapter(new WsAdapter(app));
 
   const corsOrigins = env.CORS_ORIGINS.split(",").map((o) => o.trim());
