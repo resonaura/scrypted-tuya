@@ -35,8 +35,8 @@ importers:
         specifier: ^8.1.1
         version: 8.3.0
       '@haus/bridge':
-        specifier: https://github.com/resonaura/haus/releases/download/haus-bridge-v0.1.1/haus-bridge-0.1.1.tgz
-        version: https://github.com/resonaura/haus/releases/download/haus-bridge-v0.1.1/haus-bridge-0.1.1.tgz
+        specifier: https://github.com/resonaura/haus/releases/download/haus-bridge-v0.1.4/haus-bridge-0.1.4.tgz
+        version: https://github.com/resonaura/haus/releases/download/haus-bridge-v0.1.4/haus-bridge-0.1.4.tgz
       '@nestjs/common':
         specifier: ^11.1.27
         version: 11.2.3(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -666,9 +666,9 @@ packages:
   '@formatjs/intl-localematcher@0.6.2':
     resolution: {integrity: sha512-XOMO2Hupl0wdd172Y06h6kLpBz6Dv+J4okPLl4LPtzbr8f66WbIoy4ev98EBuZ6ZK4h5ydTN6XneT4QVpD7cdA==}
 
-  '@haus/bridge@https://github.com/resonaura/haus/releases/download/haus-bridge-v0.1.1/haus-bridge-0.1.1.tgz':
-    resolution: {tarball: https://github.com/resonaura/haus/releases/download/haus-bridge-v0.1.1/haus-bridge-0.1.1.tgz}
-    version: 0.1.1
+  '@haus/bridge@https://github.com/resonaura/haus/releases/download/haus-bridge-v0.1.4/haus-bridge-0.1.4.tgz':
+    resolution: {tarball: https://github.com/resonaura/haus/releases/download/haus-bridge-v0.1.4/haus-bridge-0.1.4.tgz}
+    version: 0.1.4
     engines: {node: '>=22.12.0'}
 
   '@heroui/react@3.2.4':
@@ -3498,7 +3498,7 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  '@haus/bridge@https://github.com/resonaura/haus/releases/download/haus-bridge-v0.1.1/haus-bridge-0.1.1.tgz':
+  '@haus/bridge@https://github.com/resonaura/haus/releases/download/haus-bridge-v0.1.4/haus-bridge-0.1.4.tgz':
     dependencies:
       bonjour-service: 1.4.4
 
