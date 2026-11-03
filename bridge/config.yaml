@@ -1,7 +1,7 @@
 name: "Tuya Camera Bridge"
 slug: "tuya-rtsp-bridge"
 description: "Full-stack Tuya & Smart Life camera P2P/WebRTC-to-RTSP bridge with live Web UI and Scrypted integration"
-version: "2.2.10"
+version: "2.2.11"
 image: "ghcr.io/resonaura/tuya-rtsp-bridge/{arch}"
 arch:
   - aarch64
@@ -19,11 +19,13 @@ map:
   - config:rw
   - share:rw
 options:
+  disable_mqtt_with_haus: true
   api_port: 6766
   web_port: 6767
   rtsp_port: 8655
   log_level: "info"
 schema:
+  disable_mqtt_with_haus: bool?
   api_port: port?
   web_port: port?
   rtsp_port: port?

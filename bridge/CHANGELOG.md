@@ -1,3 +1,9 @@
+## 2.2.11 — Native Haus camera provider
+
+- Add the shared authenticated native camera inventory and one-use local pairing endpoint. Advertise `_rsnra-camera._tcp` / `rsnra.tuya` without credentials; disconnected cameras retain identity and their last real picture age.
+- Expose only supported native provider capabilities; device local keys, P2P configuration and unimplemented controls never enter the inventory. Existing snapshot/Offline-card routes and Tuya MQTT/P2P signaling remain unchanged.
+- Add the optional default-on `disable_mqtt_with_haus` policy for confirmed native ownership. This bridge currently has no HA MQTT publisher, so it does not disconnect the upstream Tuya MQTT signaling required for video.
+
 ## 2.2.10 — Native snapshot capture time
 
 - Carry the actual native keyframe receive time through IPC into the dedicated Haus JPEG cache. Re-reading an unchanged keyframe never renews its age.

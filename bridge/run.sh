@@ -12,6 +12,7 @@ if [[ -f "$CONFIG_PATH" ]]; then
   WEB_PORT="$(jq -r '.web_port // 6767' "$CONFIG_PATH")"
   RTSP_PORT="$(jq -r '.rtsp_port // 8655' "$CONFIG_PATH")"
   LOG_LEVEL="$(jq -r '.log_level // "info"' "$CONFIG_PATH")"
+  export DISABLE_MQTT_WITH_HAUS="$(jq -r 'if .disable_mqtt_with_haus == false then "false" else "true" end' "$CONFIG_PATH")"
 fi
 
 # Resolve host IP: accept RTSP_HOST from env if provided, else check HA Supervisor API, then hostname
