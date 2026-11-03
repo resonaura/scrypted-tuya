@@ -1,3 +1,7 @@
+## 2.2.12 — Preserve native media when HA relinquishes ownership
+
+- Update the native Haus SDK to 0.1.4 with explicit presentation release. Native media enrollment and Tuya cloud MQTT signaling remain independent of HA entity ownership. No unverified camera controls are advertised.
+
 ## 2.2.11 — Native Haus camera provider
 
 - Add the shared authenticated native camera inventory and one-use local pairing endpoint. Advertise `_rsnra-camera._tcp` / `rsnra.tuya` without credentials; disconnected cameras retain identity and their last real picture age.
